@@ -317,6 +317,8 @@ Shader 與 Vertex Input State 保持相同；索引先決定要讀取哪個頂�
 
 ## Transform Matrix 與 Vertex Uniform
 
+本節記錄前一步的四邊形實作；目前執行結果已更新為下一節的 3D 立方體。
+
 目前執行目標仍為 `GpuTriangle`，視窗標題是 `SDL GPU Transform Quad`。在 Visual Studio 將 `GpuTriangle` 設為啟始專案，選擇 Debug／x64 後重新建置並按 F5。四邊形預設縮放為 0.65 倍，每秒逆時針旋轉 45 度，8 秒完成一圈。
 
 `src/MathTypes.h/.cpp` 提供這一步所需的矩陣計算，不依賴 SDL 或其他數學函式庫：
@@ -409,3 +411,68 @@ output.position = mul(float4(input.position, 1.0f), transform);
 ```
 
 `MathTypesTests` 驗證 Identity、位移、縮放、正負 90 度旋轉、矩陣組合順序，以及橫向、直向和無效比例處理。GPU 顯示切換檢查仍可執行 `GpuTriangle.exe --test-display-settings`。
+
+## 3D Cube、Camera、Perspective 與 Depth Buffer
+
+目前執行目標為 `GpuTriangle`，視窗標題是 `SDL GPU Perspective Cube`。在 Visual Studio 將 `GpuTriangle` 設為啟始專案，選擇 Debug／x64，重新建置並按 F5。`BiggerFISTsSDL` 是先前的白色方塊程式。
+
+立方體使用 8 個頂點與 36 個 `Uint16` 索引：6 個面，每面 2 個三角形，每個三角形使用 3 個索引。Vertex Buffer 為 192 bytes，Index Buffer 為 72 bytes；啟動時上傳一次。頂點顏色會在三角形內插值，目前沒有光照或材質貼圖。
+
+`src/GpuTriangle.cpp` 的 `CubeSceneSettings` 集中設定物件與相機：
+
+| 設定 | 預設值 | 用途 |
+|---|---|---|
+| `position` | `(0, 0, 0)` | 立方體在世界中的位置 |
+| `scale` | `1` | 立方體縮放 |
+| `initialXDegrees` / `initialYDegrees` | `20` / `30` | 起始旋轉角度 |
+| `rotationXDegreesPerSecond` / `rotationYDegreesPerSecond` | `25` / `40` | 每秒旋轉角度 |
+| `cameraPosition` | `(0, 0, -3)` | 相機位置 |
+| `cameraTarget` | `(0, 0, 0)` | 相機看的位置 |
+| `cameraUp` | `(0, 1, 0)` | 相機向上的參考方向 |
+| `verticalFovDegrees` | `60` | 垂直視角 |
+| `nearPlane` / `farPlane` | `0.1` / `100` | 相機可見深度範圍 |
+
+設定目前是 C++ 常數，修改後需要重新建置。旋轉使用實際經過秒數計算，不依賴幀數；最小化或暫停後會反映已經經過的時間。
+
+### World、View、Projection
+
+`MathTypes` 新增 `Vector3`、向量相減、Dot、Cross、Normalize、X／Y 軸旋轉、LookAt 與 Perspective 計算，不新增外部數學函式庫。
+
+```text
+World = Scale * RotationX * RotationY * Translation
+transform = World * View * Projection
+clipPosition = localPosition * transform
+```
+
+World 將模型座標移到世界中；View 將世界座標轉成相機座標；Projection 產生透視投影需要的 clip position。沿用 row vector 與 row-major，依序從左往右作用。每幀傳給 Vertex Shader 的資料仍是一個 64-byte 矩陣。
+
+`TryMakeLookAtLHMatrix()` 用相機位置、目標與向上方向建立 View。相機座標中正 Z 是前方；目前相機從世界 `(0, 0, -3)` 看向原點。相機與目標不能重合，向上方向也不能與視線平行。無效設定會回報失敗。
+
+`TryMakePerspectiveLHMatrix()` 使用垂直 FOV、實際 GPU 輸出寬高比與 Near／Far。GPU 會用 clip position 的 w 進行透視除法，因此距離更遠的同尺寸物件看起來更小。Near 映射到深度 0，Far 映射到 1；中間深度不是線性距離。必須滿足 `0 < FOV < 180`、`aspectRatio > 0`、`0 < nearPlane < farPlane`。
+
+畫面比例現在由 Projection 處理，沒有再乘上先前的 `AspectCorrection`。固定垂直 FOV 時，改變寬高會改變可見範圍；立方體不會因此被拉長。Pipeline 明確啟用 `enable_depth_clip`，讓近／遠裁切生效。
+
+### Depth Buffer
+
+`DepthBuffer` 管理一張與 GPU 輸出尺寸相同的深度貼圖。每幀清除成 1，Pipeline 使用 `LESS` 比較並寫入深度：新的片段深度比該位置記錄的深度小，才可覆蓋顏色與深度。這讓近處的面遮住遠處的面，不需要靠三角形繪製順序決定遮擋。
+
+優先選擇 D32_FLOAT，若不支援則嘗試 D24_UNORM、D16_UNORM。D3D12 的 optimized clear depth 設定成 1，與 Render Pass 的清除值一致。本階段不使用 stencil。
+
+每次取得 backbuffer 後，使用其實際寬高更新深度貼圖。同尺寸直接重用；尺寸改變時先建立新貼圖，成功後才釋放舊貼圖。建立失敗會保留舊資源並結束這次執行；0 尺寸也會回報失敗。SDL 會等 GPU 安全時才真正回收已釋放的貼圖。
+
+`DepthBuffer` 是 `RunLoop()` 的區域物件，離開迴圈時由 destructor 釋放貼圖，時間點在 GPU Device 銷毀之前。
+
+### 驗證與練習
+
+`MathTypesTests` 新增 X／Y 旋轉、Dot／Cross／Normalize、固定及側面相機、無效相機設定、Near／Far 深度、透視大小，以及無效投影參數測試。既有 InputActions、WindowSettings 測試仍保留。
+
+GPU 驗證涵蓋前面遮住後面、反轉三角形繪製順序後結果一致、遠處物件較小、橫向與直向畫面比例、近／遠與相機後方裁切，以及深度貼圖尺寸更新。
+
+可以每次改一組數值再重新建置：
+
+1. 將兩個旋轉速度改成 0，觀察固定立方體。
+2. 將 `cameraPosition.z` 改成 `-5.0f`，相機遠離立方體，物件看起來會更小。
+3. 將 `verticalFovDegrees` 改成 `90.0f`，視角變寬，物件看起來會更小。
+4. 將 `position.z` 改成 `2.0f`，立方體遠離目前的相機。
+
+目前相機固定，尚未加入相機移動輸入、模型載入或光照。F11、F1、F2、F8 沿用顯示設定操作。
