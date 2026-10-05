@@ -1,4 +1,4 @@
-#include "Input.h"
+#include "Input/Input.h"
 
 void Input::BeginFrame() {
     pressed_.fill(false);

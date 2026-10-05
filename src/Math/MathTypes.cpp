@@ -1,4 +1,4 @@
-#include "MathTypes.h"
+#include "Math/MathTypes.h"
 
 #include <cmath>
 #include <numbers>

@@ -1,4 +1,4 @@
-#include "WindowSettings.h"
+#include "Platform/WindowSettings.h"
 
 #include <SDL3/SDL_main.h>
 

@@ -1,4 +1,4 @@
-#include "FrameTimer.h"
+#include "Platform/FrameTimer.h"
 
 FrameTimer::FrameTimer(int targetFps) {
     if (targetFps <= 0) {

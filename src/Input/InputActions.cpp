@@ -1,4 +1,4 @@
-#include "InputActions.h"
+#include "Input/InputActions.h"
 
 InputActions::InputActions(const InputBindings& bindings)
     : bindings_(bindings) {

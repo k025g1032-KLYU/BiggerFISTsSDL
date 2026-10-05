@@ -1,8 +1,8 @@
 #pragma once
 
-#include "GameInput.h"
-#include "Input.h"
-#include "InputBindings.h"
+#include "Input/GameInput.h"
+#include "Input/Input.h"
+#include "Input/InputBindings.h"
 
 class InputActions {
 public:

@@ -1,4 +1,4 @@
-#include "InputBindings.h"
+#include "Input/InputBindings.h"
 
 #include <sstream>
 #include <string>

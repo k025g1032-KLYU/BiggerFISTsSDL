@@ -2,5 +2,5 @@
 
 class Application {
 public:
-    int Run();
+    int Run(bool smokeTest = false);
 };

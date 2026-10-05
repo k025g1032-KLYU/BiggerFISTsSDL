@@ -1,4 +1,4 @@
-#include "WindowSettings.h"
+#include "Platform/WindowSettings.h"
 
 #include <algorithm>
 #include <sstream>

@@ -1,4 +1,4 @@
-#include "DepthBuffer.h"
+#include "Rendering/DepthBuffer.h"
 
 SDL_GPUTextureFormat SelectDepthFormat(SDL_GPUDevice* device) {
     const SDL_GPUTextureFormat candidates[] = {

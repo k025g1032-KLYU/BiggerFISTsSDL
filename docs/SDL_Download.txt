@@ -1,0 +1,12 @@
+SDL 版本：3.4.16
+固定 Git commit：fa2c02bb6e21974a89ea9824bc53c9932abe5f9c
+
+本專案使用 vendor/SDL Git submodule。CMake 直接編譯該目錄，不使用 FetchContent，也不會自動下載最新版。
+
+第一次 clone 專案：
+    git clone --recurse-submodules <repository-url>
+
+已 clone 專案，但 vendor/SDL 尚未取得時，在專案根目錄執行：
+    git submodule update --init --recursive
+
+GitHub 的一般 Download ZIP 不含 submodule。請使用 Git clone 取得完整專案。CMake 會驗證 SDL 版本與 Git checkout commit。

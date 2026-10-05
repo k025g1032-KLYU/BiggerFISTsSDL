@@ -1,4 +1,4 @@
-#include "GameConfig.h"
+#include "Data/GameConfig.h"
 
 #include <SDL3/SDL.h>
 #include <cmath>
@@ -53,7 +53,7 @@ GameConfig LoadGameConfig() {
         }
 
         if (key == "moveSpeed" &&
-            value > 0.0f && value <= 2000.0f) {
+            value > 0.0f && value <= 20.0f) {
             config.moveSpeed = value;
         }
         else if (key == "maxMovementDeltaTime" &&
@@ -75,7 +75,7 @@ GameConfig LoadGameConfig() {
     }
 
     SDL_Log(
-        "Config: moveSpeed = %.1f, maxMovementDeltaTime = %.3f, targetFps = %d",
+        "Config: moveSpeed = %.1f world units/s, maxMovementDeltaTime = %.3f, targetFps = %d",
         config.moveSpeed,
         config.maxMovementDeltaTime,
         config.targetFps
