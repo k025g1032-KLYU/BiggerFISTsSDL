@@ -365,6 +365,57 @@ int main() {
         FindModelById(missGame.GetScene(), "target") != nullptr,
         "A punch that misses leaves the Target intact without hit shake");
 
+    FirstPersonGame dynamicGame(GameConfig{}, scene.cameraPosition,
+        scene.models.front().position);
+    FirstPersonScenePresenter dynamicView(scene);
+    dynamicView.Sync(dynamicGame);
+    success &= Expect(!dynamicGame.SpawnTarget({"target", {0.0f, 4.55f, 10.0f}, 1}) &&
+        !dynamicGame.SpawnTarget({"target_new", {0.0f, 4.55f, 10.0f}, 0}) &&
+        dynamicGame.SpawnTarget({"target_new", {0.0f, 4.55f, 10.0f}, 1}) &&
+        !dynamicGame.SpawnTarget({"target_new", {0.0f, 4.55f, 11.0f}, 1}),
+        "Runtime Target spawn checks IDs, hit points and duplicates");
+    dynamicView.Sync(dynamicGame);
+    const ModelInstance* spawned = FindModelById(dynamicView.GetScene(), "target_new");
+    success &= Expect(spawned != nullptr && spawned->meshIndex == scene.models.front().meshIndex &&
+        Near(spawned->position.z, 10.0f) && dynamicView.GetScene().models.size() == 4,
+        "A spawned Target reuses the preloaded Target mesh");
+    success &= Expect(dynamicGame.MoveTarget("target_new", {1.0f, 4.55f, 11.0f}) &&
+        dynamicGame.MoveTarget("target", {2.0f, 4.55f, 8.0f}) &&
+        !dynamicGame.MoveTarget("missing", {0.0f, 0.0f, 0.0f}),
+        "Runtime Target movement accepts live IDs only");
+    dynamicView.Sync(dynamicGame);
+    spawned = FindModelById(dynamicView.GetScene(), "target_new");
+    const ModelInstance* movedTarget = FindModelById(dynamicView.GetScene(), "target");
+    Matrix4x4 movedTransform{};
+    success &= Expect(spawned != nullptr && Near(spawned->position.x, 1.0f) &&
+        Near(spawned->position.z, 11.0f) && movedTarget != nullptr &&
+        Near(movedTarget->position.x, 2.0f) &&
+        TryBuildModelTransform(dynamicView.GetScene(), *spawned, 1280, 720,
+            movedTransform),
+        "Moved Target state updates the draw transform");
+    success &= Expect(dynamicGame.RemoveTarget("target_new") &&
+        !dynamicGame.RemoveTarget("target_new"),
+        "Runtime Target removal is idempotent for callers");
+    dynamicView.Sync(dynamicGame);
+    success &= Expect(FindModelById(dynamicView.GetScene(), "target_new") == nullptr &&
+        dynamicView.GetScene().models.size() == 3,
+        "Removed Target disappears from the scene");
+    GameInput resetDynamic{};
+    resetDynamic.resetTarget.pressed = true;
+    dynamicGame.Update(0.01, resetDynamic, 0.0f, 0.0f);
+    dynamicView.Sync(dynamicGame);
+    const ModelInstance* resetModel = FindModelById(dynamicView.GetScene(), "target");
+    success &= Expect(resetModel != nullptr && Near(resetModel->position.x, 0.0f) &&
+        FindModelById(dynamicView.GetScene(), "target_new") == nullptr,
+        "Reset restores the original Target layout after runtime changes");
+    ModelScene sceneWithScenery = scene;
+    sceneWithScenery.models.push_back({});
+    sceneWithScenery.models.back().id = "arena";
+    FirstPersonScenePresenter sceneryView(sceneWithScenery);
+    sceneryView.Sync(dynamicGame);
+    success &= Expect(FindModelById(sceneryView.GetScene(), "arena") != nullptr,
+        "Sync preserves non-Target scenery models");
+
     if (success) {
         std::puts("PASS: first-person movement, independent punches, Target damage and reset");
     }

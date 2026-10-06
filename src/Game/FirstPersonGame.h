@@ -7,6 +7,7 @@
 #include "World/FirstPersonCamera.h"
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 struct FirstPersonTarget {
@@ -34,6 +35,9 @@ public:
         std::vector<FirstPersonTarget> targets);
     void Update(double deltaSeconds, const GameInput& input,
         float mouseDeltaX, float mouseDeltaY);
+    bool SpawnTarget(const FirstPersonTarget& target);
+    bool MoveTarget(std::string_view id, const Vector3& position);
+    bool RemoveTarget(std::string_view id);
     const PlayerMovement& GetPlayer() const { return player_; }
     const FirstPersonCamera& GetCamera() const { return camera_; }
     const PunchArm& GetLeftArm() const { return leftArm_; }
@@ -55,6 +59,7 @@ private:
     PunchArm leftArm_{PunchArmSide::Left};
     PunchArm rightArm_{PunchArmSide::Right};
     std::vector<FirstPersonTarget> targets_;
+    std::vector<FirstPersonTarget> initialTargets_;
     bool warmBackground_ = false;
     double elapsedSeconds_ = 0.0;
     float maxArmDeltaTime_ = 0.05f;

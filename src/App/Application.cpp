@@ -21,6 +21,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <cmath>
 #include <filesystem>
 #include <optional>
 #include <span>
@@ -274,11 +275,42 @@ int Application::Run(const ApplicationOptions& options) {
                     SDL_Log("Right Rocket Punch reconnected");
                 }
             }
+            if (options.dynamicTargetSmokeTest) {
+                bool updated = true;
+                if (renderedFrames == 5) {
+                    updated = firstPersonGame->SpawnTarget(
+                        {"target_dynamic", {0.0f, 4.55f, 10.0f}, 1});
+                } else if (renderedFrames > 5 && renderedFrames < 25) {
+                    updated = firstPersonGame->MoveTarget("target_dynamic",
+                        {0.05f * static_cast<float>(renderedFrames - 5), 4.55f, 10.0f});
+                } else if (renderedFrames == 25) {
+                    updated = firstPersonGame->RemoveTarget("target_dynamic");
+                }
+                if (!updated) {
+                    SDL_Log("Dynamic Target smoke test could not update the Target");
+                    exitCode = 1;
+                    isRunning = false;
+                    break;
+                }
+            }
             firstPersonView->Sync(*firstPersonGame);
         } else {
             game.Update(deltaTime, gameInput);
         }
         const ModelScene& scene = firstPersonView ? firstPersonView->GetScene() : game.GetScene();
+        if (options.dynamicTargetSmokeTest) {
+            const ModelInstance* dynamicTarget = FindModelById(scene, "target_dynamic");
+            const bool shouldExist = renderedFrames >= 5 && renderedFrames < 25;
+            const float expectedX = 0.05f * static_cast<float>(renderedFrames - 5);
+            if ((dynamicTarget != nullptr) != shouldExist ||
+                scene.models.size() != (shouldExist ? 5u : 4u) ||
+                (shouldExist && std::abs(dynamicTarget->position.x - expectedX) > 0.0001f)) {
+                SDL_Log("Dynamic Target smoke test scene state mismatch at frame %d",
+                    renderedFrames);
+                exitCode = 1;
+                break;
+            }
+        }
         bool frameRendered = false;
         if (!renderer.Render(scene, windowSettings, &frameRendered)) {
             SDL_Log("3D rendering failed");
@@ -287,7 +319,9 @@ int Application::Run(const ApplicationOptions& options) {
         }
         if (options.smokeTest) {
             if (frameRendered && ++renderedFrames >= 30) {
-                if (options.firstPersonPreview) {
+                if (options.dynamicTargetSmokeTest) {
+                    SDL_Log("PASS: Dynamic Target spawned, moved, removed and rendered across 30 GPU frames");
+                } else if (options.firstPersonPreview) {
                     SDL_Log("PASS: BiggerFISTsSDL first-person preview rendered 30 3D frames with static Targets and two player fists");
                 } else if (options.scenePreview) {
                     SDL_Log("PASS: BiggerFISTsSDL scene preview rendered 30 3D frames with %u models",

@@ -4,6 +4,7 @@ struct ApplicationOptions {
     bool smokeTest = false;
     bool scenePreview = false;
     bool firstPersonPreview = false;
+    bool dynamicTargetSmokeTest = false;
 };
 
 class Application {

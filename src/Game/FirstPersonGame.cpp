@@ -20,6 +20,7 @@ FirstPersonGame::FirstPersonGame(const GameConfig& config,
     : player_(std::max(config.maxMovementDeltaTime,
         static_cast<float>(SimulationTiming::kFixedStepSeconds))),
       targets_(std::move(targets)),
+      initialTargets_(targets_),
       maxArmDeltaTime_(std::max(config.maxMovementDeltaTime,
           static_cast<float>(SimulationTiming::kFixedStepSeconds))) {
     player_.Reset({ initialEyePosition.x,
@@ -28,6 +29,43 @@ FirstPersonGame::FirstPersonGame(const GameConfig& config,
     camera_.Reset(initialEyePosition);
     leftArm_.Reset(player_.GetPosition(), player_.GetBodyYaw());
     rightArm_.Reset(player_.GetPosition(), player_.GetBodyYaw());
+}
+
+bool FirstPersonGame::SpawnTarget(const FirstPersonTarget& target) {
+    if (!target.id.starts_with("target_") || target.id.size() == 7 ||
+        target.hitPoints <= 0 || !std::isfinite(target.position.x) ||
+        !std::isfinite(target.position.y) || !std::isfinite(target.position.z) ||
+        std::find_if(targets_.begin(), targets_.end(), [&](const FirstPersonTarget& existing) {
+            return existing.id == target.id;
+        }) != targets_.end()) {
+        return false;
+    }
+    targets_.push_back(target);
+    return true;
+}
+
+bool FirstPersonGame::MoveTarget(std::string_view id, const Vector3& position) {
+    if (!std::isfinite(position.x) || !std::isfinite(position.y) ||
+        !std::isfinite(position.z)) {
+        return false;
+    }
+    const auto target = std::find_if(targets_.begin(), targets_.end(),
+        [&](const FirstPersonTarget& item) { return item.id == id; });
+    if (target == targets_.end() || target->hitPoints <= 0) {
+        return false;
+    }
+    target->position = position;
+    return true;
+}
+
+bool FirstPersonGame::RemoveTarget(std::string_view id) {
+    const auto target = std::find_if(targets_.begin(), targets_.end(),
+        [&](const FirstPersonTarget& item) { return item.id == id; });
+    if (target == targets_.end()) {
+        return false;
+    }
+    targets_.erase(target);
+    return true;
 }
 
 void FirstPersonGame::Update(double deltaSeconds, const GameInput& input,
@@ -123,8 +161,6 @@ void FirstPersonGame::ProcessTargetHits() {
 }
 
 void FirstPersonGame::ResetTarget() {
-    for (FirstPersonTarget& target : targets_) {
-        target.hitPoints = FirstPersonTuning::kTargetHitPoints;
-    }
+    targets_ = initialTargets_;
     events_.targetReset = true;
 }

@@ -16,9 +16,15 @@ int main(int argc, char** argv) {
         } else if (std::strcmp(argv[i], "--first-person-preview") == 0 &&
             !options.firstPersonPreview && !options.scenePreview) {
             options.firstPersonPreview = true;
+        } else if (std::strcmp(argv[i], "--dynamic-target-smoke-test") == 0 &&
+            !options.dynamicTargetSmokeTest && !options.firstPersonPreview &&
+            !options.scenePreview && !options.smokeTest) {
+            options.dynamicTargetSmokeTest = true;
+            options.firstPersonPreview = true;
+            options.smokeTest = true;
         } else {
             std::fprintf(stderr,
-                "Unknown, duplicate or conflicting option: %s\nUsage: BiggerFISTsSDL [--scene-preview | --first-person-preview] [--smoke-test]\n",
+                "Unknown, duplicate or conflicting option: %s\nUsage: BiggerFISTsSDL [--scene-preview | --first-person-preview] [--smoke-test]\n       BiggerFISTsSDL --dynamic-target-smoke-test\n",
                 argv[i]);
             return 1;
         }
