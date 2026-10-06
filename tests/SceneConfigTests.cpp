@@ -34,7 +34,7 @@ int main() {
         "id left_fist\r\n"
         "position 1.6 0 0\r\n"
         "scale 0.8\r\n"
-        "rotation 15 30\r\n"
+        "rotation 15 30 90\r\n"
         "spin 0 -25\r\n";
     SceneConfig config;
     std::string error;
@@ -48,12 +48,14 @@ int main() {
         passed &= Expect(config.models[0].id == "target" &&
             config.models[0].relativeObjPath == "Target/Target.obj" &&
             config.models[0].position.x == -1.6f &&
+            config.models[0].initialZDegrees == 0.0f &&
             config.models[0].rotationYDegreesPerSecond == 20.0f,
             "read first model placement and spin");
         passed &= Expect(config.models[1].id == "left_fist" &&
             config.models[1].relativeObjPath == "LfistTEST/LfistTEST.obj" &&
             config.models[1].position.x == 1.6f && config.models[1].scale == 0.8f &&
-            config.models[1].initialXDegrees == 15.0f,
+            config.models[1].initialXDegrees == 15.0f &&
+            config.models[1].initialZDegrees == 90.0f,
             "read second model placement, scale and rotation");
     }
 
@@ -91,6 +93,13 @@ int main() {
         error.find(":9:") != std::string::npos &&
         error.find("duplicate model id") != std::string::npos,
         "reject duplicate ids with the line number");
+
+    WriteConfig(configPath,
+        "camera 0 0 -6\nmodel Target/Target.obj\nid target\nposition 0 0 0\n"
+        "scale 1\nrotation 0 0 90 30\nspin 0 0\n");
+    passed &= Expect(!LoadSceneConfig(configPath, config, error) &&
+        error.find("rotation") != std::string::npos,
+        "reject more than three rotation values");
 
     WriteConfig(configPath,
         "camera 0 0 -6\nmodel Target/Target.obj\nid 2target\nposition 0 0 0\n"

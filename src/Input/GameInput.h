@@ -12,4 +12,10 @@ struct GameInput {
 
     ActionState changeBackground{};
     ActionState quit{};
+    ActionState resetTarget{};
+    bool leftPunchKeyDown = false;
+    bool rightPunchKeyDown = false;
+    bool leftMouseDown = false;
+    bool rightMouseDown = false;
+    bool shiftDown = false;
 };

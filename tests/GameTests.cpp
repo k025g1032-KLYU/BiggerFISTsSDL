@@ -95,6 +95,23 @@ int main() {
         rightTransform.elements[3][0] > 0.0f,
         "Left and right model positions remain independent");
 
+    ModelScene rollScene;
+    rollScene.models.front().initialXDegrees = 0.0f;
+    rollScene.models.front().initialYDegrees = 0.0f;
+    rollScene.models.front().rotationXDegreesPerSecond = 0.0f;
+    rollScene.models.front().rotationYDegreesPerSecond = 0.0f;
+    Matrix4x4 noRoll{};
+    Matrix4x4 withRoll{};
+    success &= Expect(TryBuildModelTransform(rollScene, 1280, 720, noRoll),
+        "Build an unrolled model transform");
+    rollScene.models.front().initialZDegrees = 90.0f;
+    success &= Expect(TryBuildModelTransform(rollScene, 1280, 720, withRoll),
+        "Build a model transform with Z rotation");
+    success &= Expect(noRoll.elements[0][0] > 0.0f &&
+        std::abs(withRoll.elements[0][0]) < 0.0001f &&
+        withRoll.elements[0][1] > 0.0f,
+        "A 90-degree model roll rotates local +X toward screen +Y");
+
     if (success) {
         std::puts("PASS: 3D game input, scene state and transform");
     }

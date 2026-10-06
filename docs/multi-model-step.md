@@ -42,7 +42,7 @@ rotation 15 30
 spin 0 -25
 ```
 
-`camera` 後面依序是 X、Y、Z，這個範例的相機看向原點。每個 `model` 區塊都需要五行設定：`id` 是場景中唯一的物件名稱，`position` 是世界位置 X／Y／Z，`scale` 是大於零的等比例縮放，`rotation` 是起始 X／Y 角度，`spin` 是每秒 X／Y 旋轉角度。負的 `spin` 表示反方向。`model` 路徑從執行檔旁的 `assets/models/` 起算；要再顯示一個 Target，可以複製整個 Target 區塊，同時修改 `id` 與 `position`。同一份 OBJ 出現多次時只載入並上傳一次 mesh／PNG，每個 instance 仍有自己的名稱、位置與旋轉。`id` 規則與用途見 [場景物件 ID 教學](scene-object-id-step.md)。
+`camera` 後面依序是 X、Y、Z，這個範例的相機看向原點。每個 `model` 區塊都需要五行設定：`id` 是場景中唯一的物件名稱，`position` 是世界位置 X／Y／Z，`scale` 是大於零的等比例縮放，`rotation` 是起始 X／Y 角度，也可選填第三個 Z 軸角度，`spin` 是每秒 X／Y 旋轉角度。負的 `spin` 表示反方向。`model` 路徑從執行檔旁的 `assets/models/` 起算；要再顯示一個 Target，可以複製整個 Target 區塊，同時修改 `id` 與 `position`。同一份 OBJ 出現多次時只載入並上傳一次 mesh／PNG，每個 instance 仍有自己的名稱、位置與旋轉。`id` 規則與用途見 [場景物件 ID 教學](scene-object-id-step.md)。
 
 修改後請重新**建置** `MultiModelPreview`，讓 CMake 將 `config/scene.cfg` 同步到 `build/Debug/scene.cfg`，再按 F5。這裡的建置只是同步設定檔；若 C++ 原始碼沒有變，不需要重編譯 C++。執行中不會自動讀取修改，必須關閉並重新啟動。請修改專案內的設定檔；直接改 `build/Debug/scene.cfg` 僅適合臨時測試，下一次 CMake 設定時可能被覆蓋。
 

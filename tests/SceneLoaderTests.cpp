@@ -25,6 +25,7 @@ int main() {
     config.models[1].id = "left_fist";
     config.models[1].relativeObjPath = "LfistTEST/LfistTEST.obj";
     config.models[1].position.x = 1.6f;
+    config.models[1].initialZDegrees = 90.0f;
     config.models[2].id = "target_2";
     config.models[2].relativeObjPath = "Target/Target.obj";
     config.models[2].position.y = -1.4f;
@@ -50,6 +51,8 @@ int main() {
         passed &= Expect(scene.models[0].position.x == -1.6f &&
             scene.models[2].position.y == -1.4f && scene.models[2].scale == 0.5f,
             "preserve each instance's transform");
+        passed &= Expect(scene.models[1].initialZDegrees == 90.0f,
+            "preserve the left fist model roll");
     }
 
     config.models[1].relativeObjPath = "Missing/Missing.obj";

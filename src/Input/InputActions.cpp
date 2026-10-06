@@ -23,6 +23,18 @@ GameInput InputActions::Evaluate(const Input& input) const {
         input.IsKeyPressed(bindings_.quit),
         input.IsKeyReleased(bindings_.quit)
     };
+    result.resetTarget = {
+        input.IsKeyDown(bindings_.resetTarget),
+        input.IsKeyPressed(bindings_.resetTarget),
+        input.IsKeyReleased(bindings_.resetTarget)
+    };
+
+    result.leftPunchKeyDown = input.IsKeyDown(bindings_.leftPunch);
+    result.rightPunchKeyDown = input.IsKeyDown(bindings_.rightPunch);
+    result.leftMouseDown = input.IsMouseButtonDown(SDL_BUTTON_LEFT);
+    result.rightMouseDown = input.IsMouseButtonDown(SDL_BUTTON_RIGHT);
+    result.shiftDown = input.IsKeyDown(SDL_SCANCODE_LSHIFT) ||
+        input.IsKeyDown(SDL_SCANCODE_RSHIFT);
 
     return result;
 }

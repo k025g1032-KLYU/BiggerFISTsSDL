@@ -66,6 +66,24 @@ bool ParseFloats(const std::string& text, std::span<float> values) {
     return input.eof();
 }
 
+bool ParseRotation(const std::string& text, std::array<float, 3>& values) {
+    std::istringstream input(text);
+    input.imbue(std::locale::classic());
+    if (!(input >> values[0] >> values[1]) ||
+        !std::isfinite(values[0]) || !std::isfinite(values[1])) {
+        return false;
+    }
+    input >> std::ws;
+    if (input.eof()) {
+        return true;
+    }
+    if (!(input >> values[2]) || !std::isfinite(values[2])) {
+        return false;
+    }
+    input >> std::ws;
+    return input.eof();
+}
+
 bool IsRelativeObjPath(const std::filesystem::path& path) {
     if (path.empty() || path.is_absolute() || path.has_root_path() || path.extension() != ".obj") {
         return false;
@@ -183,13 +201,14 @@ bool LoadSceneConfig(const std::filesystem::path& configPath, SceneConfig& resul
             model.scale = values[0];
             modelFields |= ScaleField;
         } else if (key == "rotation" && !(modelFields & RotationField)) {
-            std::array<float, 2> values{};
-            if (!ParseFloats(value, values)) {
-                error = location + "expected 'rotation <x degrees> <y degrees>'";
+            std::array<float, 3> values{};
+            if (!ParseRotation(value, values)) {
+                error = location + "expected 'rotation <x degrees> <y degrees> [z degrees]'";
                 return false;
             }
             model.initialXDegrees = values[0];
             model.initialYDegrees = values[1];
+            model.initialZDegrees = values[2];
             modelFields |= RotationField;
         } else if (key == "spin" && !(modelFields & SpinField)) {
             std::array<float, 2> values{};

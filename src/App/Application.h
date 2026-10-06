@@ -3,6 +3,7 @@
 struct ApplicationOptions {
     bool smokeTest = false;
     bool scenePreview = false;
+    bool firstPersonPreview = false;
 };
 
 class Application {

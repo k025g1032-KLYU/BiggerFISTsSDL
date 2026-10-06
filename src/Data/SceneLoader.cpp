@@ -68,6 +68,7 @@ bool LoadSceneAssets(const std::filesystem::path& modelDirectory,
         instance.scale = entry.scale;
         instance.initialXDegrees = entry.initialXDegrees;
         instance.initialYDegrees = entry.initialYDegrees;
+        instance.initialZDegrees = entry.initialZDegrees;
         instance.rotationXDegreesPerSecond = entry.rotationXDegreesPerSecond;
         instance.rotationYDegreesPerSecond = entry.rotationYDegreesPerSecond;
         loadedScene.models.push_back(instance);

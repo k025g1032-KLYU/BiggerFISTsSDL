@@ -101,6 +101,7 @@ bool TryBuildModelTransform(const ModelScene& scene, const ModelInstance& model,
         !std::isfinite(model.position.x) ||
         !std::isfinite(model.position.y) || !std::isfinite(model.position.z) ||
         !std::isfinite(model.initialXDegrees) || !std::isfinite(model.initialYDegrees) ||
+        !std::isfinite(model.initialZDegrees) ||
         !std::isfinite(model.rotationXDegreesPerSecond) || !std::isfinite(model.rotationYDegreesPerSecond)) {
         return false;
     }
@@ -112,10 +113,12 @@ bool TryBuildModelTransform(const ModelScene& scene, const ModelInstance& model,
         scene.elapsedSeconds, model.initialXDegrees, model.rotationXDegreesPerSecond));
     const Matrix4x4 rotationY = MakeRotationYMatrix(CalculateRotationRadians(
         scene.elapsedSeconds, model.initialYDegrees, model.rotationYDegreesPerSecond));
+    const Matrix4x4 rotationZ = MakeRotationZMatrix(
+        model.initialZDegrees * std::numbers::pi_v<float> / 180.0f);
     const Matrix4x4 translation = MakeTranslationMatrix(
         model.position.x, model.position.y, model.position.z);
     const Matrix4x4 world = MultiplyMatrices(
-        MultiplyMatrices(MultiplyMatrices(MultiplyMatrices(center, scale), rotationX), rotationY), translation);
+        MultiplyMatrices(MultiplyMatrices(MultiplyMatrices(MultiplyMatrices(center, scale), rotationZ), rotationX), rotationY), translation);
 
     Matrix4x4 view{};
     if (!TryMakeLookAtLHMatrix(scene.cameraPosition, scene.cameraTarget, scene.cameraUp, view)) {

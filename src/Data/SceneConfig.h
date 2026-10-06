@@ -13,6 +13,7 @@ struct SceneModelConfig {
     float scale = 1.0f;
     float initialXDegrees = 0.0f;
     float initialYDegrees = 0.0f;
+    float initialZDegrees = 0.0f;
     float rotationXDegreesPerSecond = 0.0f;
     float rotationYDegreesPerSecond = 0.0f;
 };

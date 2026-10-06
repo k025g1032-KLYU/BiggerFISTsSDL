@@ -98,6 +98,17 @@ add_executable(BiggerFISTsSDL
     src/Data/ModelConfig.h
     src/Game/Game.cpp
     src/Game/Game.h
+    src/Game/FirstPersonGame.cpp
+    src/Game/FirstPersonGame.h
+    src/Collision/Collision.cpp
+    src/Collision/Collision.h
+    src/Gameplay/Player/FirstPersonTuning.h
+    src/Gameplay/Player/PlayerMovement.cpp
+    src/Gameplay/Player/PlayerMovement.h
+    src/Gameplay/Player/PunchArm.cpp
+    src/Gameplay/Player/PunchArm.h
+    src/World/FirstPersonCamera.cpp
+    src/World/FirstPersonCamera.h
     ${SCENE_LOADING_SOURCES}
     ${SCENE_RENDERING_SOURCES}
 )
@@ -148,6 +159,27 @@ add_executable(GameTests EXCLUDE_FROM_ALL
 target_include_directories(GameTests PRIVATE src)
 add_test(NAME GameTests COMMAND GameTests)
 
+add_executable(FirstPersonGameTests EXCLUDE_FROM_ALL
+    tests/FirstPersonGameTests.cpp
+    src/Game/FirstPersonGame.cpp
+    src/Collision/Collision.cpp
+    src/Gameplay/Player/PlayerMovement.cpp
+    src/Gameplay/Player/PunchArm.cpp
+    src/World/FirstPersonCamera.cpp
+    src/World/ModelScene.cpp
+    src/Math/MathTypes.cpp
+)
+target_include_directories(FirstPersonGameTests PRIVATE src)
+add_test(NAME FirstPersonGameTests COMMAND FirstPersonGameTests)
+
+add_executable(CollisionTests EXCLUDE_FROM_ALL
+    tests/CollisionTests.cpp
+    src/Collision/Collision.cpp
+    src/Collision/Collision.h
+)
+target_include_directories(CollisionTests PRIVATE src)
+add_test(NAME CollisionTests COMMAND CollisionTests)
+
 add_executable(ObjLoaderTests EXCLUDE_FROM_ALL
     tests/ObjLoaderTests.cpp
     src/Data/ObjLoader.cpp
@@ -157,6 +189,7 @@ target_compile_definitions(ObjLoaderTests PRIVATE
     OBJ_TEST_MODEL_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/models/Target/Target.obj"
     OBJ_TEST_FIST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LFist/Lfist.obj"
     OBJ_TEST_GAME_FIST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LfistTEST/LfistTEST.obj"
+    OBJ_TEST_RIGHT_FIST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RFist/Rfist.obj"
 )
 add_test(NAME ObjLoaderTests COMMAND ObjLoaderTests)
 
@@ -193,6 +226,8 @@ if(MSVC)
     target_compile_options(WindowSettingsTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(MathTypesTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(GameTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(FirstPersonGameTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(CollisionTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(ObjLoaderTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(ModelConfigTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(SceneConfigTests PRIVATE /W4 /utf-8 /EHsc)
@@ -223,6 +258,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/config/display.cfg"
     "${CMAKE_CURRENT_SOURCE_DIR}/config/model.cfg"
     "${CMAKE_CURRENT_SOURCE_DIR}/config/scene.cfg"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config/first-person-scene.cfg"
 )
 
 file(GENERATE
@@ -248,6 +284,11 @@ file(GENERATE
 file(GENERATE
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/scene.cfg"
     INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/scene.cfg"
+)
+
+file(GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/first-person-scene.cfg"
+    INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/first-person-scene.cfg"
 )
 
 find_program(GPU_DXC_EXECUTABLE
@@ -371,6 +412,17 @@ add_custom_target(ModelAssets
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LfistTEST/Lfist.png"
         "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/LfistTEST/Lfist.png"
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/RFist"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RFist/Rfist.obj"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/RFist/Rfist.obj"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RFist/Rfist.mtl"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/RFist/Rfist.mtl"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RFist/Lfist.png"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/RFist/Lfist.png"
     DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/Target/Target.obj"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/Target/Target.mtl"
@@ -381,6 +433,9 @@ add_custom_target(ModelAssets
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LfistTEST/LfistTEST.obj"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LfistTEST/LfistTEST.mtl"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LfistTEST/Lfist.png"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RFist/Rfist.obj"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RFist/Rfist.mtl"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RFist/Lfist.png"
     VERBATIM
 )
 add_dependencies(BiggerFISTsSDL ModelAssets)

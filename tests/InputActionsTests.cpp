@@ -44,6 +44,9 @@ bool HasDefaultBindings(const InputBindings& bindings) {
         bindings.moveRight == SDL_SCANCODE_D &&
         bindings.moveUp == SDL_SCANCODE_W &&
         bindings.moveDown == SDL_SCANCODE_S &&
+        bindings.leftPunch == SDL_SCANCODE_Q &&
+        bindings.rightPunch == SDL_SCANCODE_E &&
+        bindings.resetTarget == SDL_SCANCODE_R &&
         bindings.changeBackground == SDL_SCANCODE_SPACE &&
         bindings.quit == SDL_SCANCODE_ESCAPE;
 }
@@ -106,6 +109,10 @@ int main(int, char**) {
     input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_DOWN, SDL_SCANCODE_ESCAPE));
     success &= Expect(defaults.Evaluate(input).quit.pressed,
         "Escape must trigger the quit action");
+    input.BeginFrame();
+    input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_DOWN, SDL_SCANCODE_R));
+    success &= Expect(defaults.Evaluate(input).resetTarget.pressed,
+        "R must trigger the Target reset action");
 
     const SDL_Scancode invalidKeys[] = {
         SDL_SCANCODE_UNKNOWN,
@@ -124,18 +131,63 @@ int main(int, char**) {
     input.BeginFrame();
     SDL_Event otherEvent{};
     otherEvent.type = SDL_EVENT_MOUSE_MOTION;
+    otherEvent.motion.xrel = 3.0f;
+    otherEvent.motion.yrel = -2.0f;
     input.ProcessEvent(otherEvent);
+    input.ProcessEvent(otherEvent);
+    success &= Expect(input.GetMouseDeltaX() == 6.0f &&
+        input.GetMouseDeltaY() == -4.0f,
+        "Relative mouse movement accumulates during the frame");
+    input.BeginFrame();
+    success &= Expect(input.GetMouseDeltaX() == 0.0f &&
+        input.GetMouseDeltaY() == 0.0f,
+        "Relative mouse movement resets each frame");
+    input.ProcessEvent(otherEvent);
+    SDL_Event mouseDown{};
+    mouseDown.button.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+    mouseDown.button.button = SDL_BUTTON_LEFT;
+    input.ProcessEvent(mouseDown);
+    success &= Expect(defaults.Evaluate(input).leftMouseDown &&
+        !defaults.Evaluate(input).rightMouseDown,
+        "Left mouse button is mapped independently to the left arm");
+    mouseDown.button.button = SDL_BUTTON_RIGHT;
+    input.ProcessEvent(mouseDown);
+    success &= Expect(defaults.Evaluate(input).leftMouseDown &&
+        defaults.Evaluate(input).rightMouseDown,
+        "Both mouse buttons can be held independently");
+    SDL_Event mouseUp{};
+    mouseUp.button.type = SDL_EVENT_MOUSE_BUTTON_UP;
+    mouseUp.button.button = SDL_BUTTON_LEFT;
+    input.ProcessEvent(mouseUp);
+    success &= Expect(!defaults.Evaluate(input).leftMouseDown &&
+        defaults.Evaluate(input).rightMouseDown,
+        "Releasing one mouse button leaves the other held");
+    SDL_Event focusLost{};
+    focusLost.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+    input.ProcessEvent(focusLost);
+    success &= Expect(input.GetMouseDeltaX() == 0.0f &&
+        input.GetMouseDeltaY() == 0.0f,
+        "Mouse movement is discarded when the window loses focus");
+    success &= Expect(!defaults.Evaluate(input).leftMouseDown &&
+        !defaults.Evaluate(input).rightMouseDown,
+        "Losing focus releases both mouse attack buttons");
     state = defaults.Evaluate(input);
     success &= Expect(!state.changeBackground.pressed && !state.quit.pressed,
         "Non-keyboard events must not create key actions");
+    SDL_Event focusGained{};
+    focusGained.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
+    input.ProcessEvent(focusGained);
 
     const InputBindings configured = LoadTestConfig(
         "moveLeft Left\nmoveRight Right\nmoveUp Up\nmoveDown Down\n"
-        "changeBackground Return\nquit Q\n", success);
+        "leftPunch Z\nrightPunch X\nresetTarget T\nchangeBackground Return\nquit Q\n", success);
     success &= Expect(configured.moveLeft == SDL_SCANCODE_LEFT &&
         configured.moveRight == SDL_SCANCODE_RIGHT &&
         configured.moveUp == SDL_SCANCODE_UP &&
         configured.moveDown == SDL_SCANCODE_DOWN &&
+        configured.leftPunch == SDL_SCANCODE_Z &&
+        configured.rightPunch == SDL_SCANCODE_X &&
+        configured.resetTarget == SDL_SCANCODE_T &&
         configured.changeBackground == SDL_SCANCODE_RETURN &&
         configured.quit == SDL_SCANCODE_Q,
         "All actions must load their configured keys");

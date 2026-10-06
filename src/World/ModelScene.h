@@ -18,6 +18,7 @@ struct ModelInstance {
     float scale = 1.0f;
     float initialXDegrees = 20.0f;
     float initialYDegrees = 30.0f;
+    float initialZDegrees = 0.0f;
     float rotationXDegreesPerSecond = 25.0f;
     float rotationYDegreesPerSecond = 40.0f;
 };

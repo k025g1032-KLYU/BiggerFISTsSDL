@@ -54,6 +54,18 @@ int main() {
         std::cerr << error << '\n';
     }
 
+    const bool loadedRightFist = LoadObjModel(OBJ_TEST_RIGHT_FIST_PATH, model, error);
+    passed &= Expect(loadedRightFist, "load the right fist used by CombatScene");
+    if (loadedRightFist) {
+        passed &= Expect(!model.indices.empty() && model.indices.size() % 3 == 0,
+            "right fist has drawable triangles");
+        passed &= Expect(model.texturePath.filename() == "Lfist.png" &&
+            std::filesystem::exists(model.texturePath),
+            "right fist materials share a readable PNG");
+    } else {
+        std::cerr << error << '\n';
+    }
+
     // Use a tiny quad to check winding and the OBJ bottom-left UV convention.
     const auto directory = std::filesystem::current_path() / "obj-loader-test-data";
     std::filesystem::create_directories(directory);

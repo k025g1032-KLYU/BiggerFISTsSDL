@@ -2,6 +2,7 @@
 
 #include "Platform/FrameTimer.h"
 #include "Game/Game.h"
+#include "Game/FirstPersonGame.h"
 #include "Data/GameConfig.h"
 #include "Input/Input.h"
 #include "Input/InputActions.h"
@@ -16,6 +17,7 @@
 #include <SDL3/SDL.h>
 
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <string>
 #include <utility>
@@ -32,7 +34,8 @@ int Application::Run(const ApplicationOptions& options) {
     const DisplaySettings displaySettings = LoadDisplaySettings();
 
     SDL_Window* window = SDL_CreateWindow(
-        options.scenePreview ? "BiggerFISTs SDL3 Scene Preview" : "BiggerFISTs SDL3 Model Viewer",
+        options.firstPersonPreview ? "BiggerFISTs SDL3 First Person" :
+        (options.scenePreview ? "BiggerFISTs SDL3 Scene Preview" : "BiggerFISTs SDL3 Model Viewer"),
         displaySettings.windowWidth,
         displaySettings.windowHeight,
         SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY
@@ -61,9 +64,10 @@ int Application::Run(const ApplicationOptions& options) {
     std::vector<MeshData> meshes;
     ModelScene previewScene;
     std::string loadError;
-    if (options.scenePreview) {
+    if (options.scenePreview || options.firstPersonPreview) {
+        const char* sceneName = options.firstPersonPreview ? "first-person-scene.cfg" : "scene.cfg";
         SceneConfig sceneConfig;
-        if (!LoadSceneConfig(executableDirectory / "scene.cfg", sceneConfig, loadError) ||
+        if (!LoadSceneConfig(executableDirectory / sceneName, sceneConfig, loadError) ||
             !LoadSceneAssets(executableDirectory / "assets/models", sceneConfig,
                 meshes, previewScene, loadError)) {
             SDL_Log("%s", loadError.c_str());
@@ -71,7 +75,29 @@ int Application::Run(const ApplicationOptions& options) {
             SDL_Quit();
             return 1;
         }
-        SDL_Log("Loaded scene.cfg: %u model instances, %u unique mesh resources",
+        if (options.firstPersonPreview) {
+            ModelInstance* target = FindModelById(previewScene, "target");
+            ModelInstance* leftFist = FindModelById(previewScene, "left_fist");
+            ModelInstance* rightFist = FindModelById(previewScene, "right_fist");
+            if (previewScene.models.size() != 3 || target == nullptr ||
+                leftFist == nullptr || rightFist == nullptr ||
+                target->rotationXDegreesPerSecond != 0.0f ||
+                target->rotationYDegreesPerSecond != 0.0f ||
+                leftFist->rotationXDegreesPerSecond != 0.0f ||
+                leftFist->rotationYDegreesPerSecond != 0.0f ||
+                rightFist->rotationXDegreesPerSecond != 0.0f ||
+                rightFist->rotationYDegreesPerSecond != 0.0f) {
+                SDL_Log("First-person scene requires one static target, left_fist and right_fist");
+                SDL_DestroyWindow(window);
+                SDL_Quit();
+                return 1;
+            }
+            target->modelCenter = {};
+            leftFist->modelCenter = {};
+            rightFist->modelCenter = {};
+        }
+        SDL_Log("Loaded %s: %u model instances, %u unique mesh resources",
+            sceneName,
             static_cast<Uint32>(previewScene.models.size()), static_cast<Uint32>(meshes.size()));
     } else {
         ModelConfig modelConfig;
@@ -109,6 +135,17 @@ int Application::Run(const ApplicationOptions& options) {
         return 1;
     }
     Game game(config, previewScene);
+    std::optional<FirstPersonGame> firstPersonGame;
+    if (options.firstPersonPreview) {
+        firstPersonGame.emplace(config, std::move(previewScene));
+        if (!options.smokeTest && !SDL_SetWindowRelativeMouseMode(window, true)) {
+            SDL_Log("Could not capture mouse for first-person view: %s", SDL_GetError());
+            renderer.Shutdown();
+            SDL_DestroyWindow(window);
+            SDL_Quit();
+            return 1;
+        }
+    }
     FrameTimer frameTimer(config.targetFps);
     Input input;
     InputActions inputActions(bindings);
@@ -149,18 +186,32 @@ int Application::Run(const ApplicationOptions& options) {
             gameInput.moveX = 0.0f;
             gameInput.moveY = 0.0f;
         }
-        game.Update(deltaTime, gameInput);
+        if (firstPersonGame) {
+            firstPersonGame->Update(deltaTime, gameInput,
+                input.GetMouseDeltaX(), input.GetMouseDeltaY());
+            if (firstPersonGame->DidDestroyTargetThisFrame()) {
+                SDL_Log("Target destroyed by Punch. Press R to reset the Target.");
+            }
+            if (gameInput.resetTarget.pressed) {
+                SDL_Log("Target and punch states reset.");
+            }
+        } else {
+            game.Update(deltaTime, gameInput);
+        }
+        const ModelScene& scene = firstPersonGame ? firstPersonGame->GetScene() : game.GetScene();
         bool frameRendered = false;
-        if (!renderer.Render(game.GetScene(), windowSettings, &frameRendered)) {
+        if (!renderer.Render(scene, windowSettings, &frameRendered)) {
             SDL_Log("3D rendering failed");
             isRunning = false;
             exitCode = 1;
         }
         if (options.smokeTest) {
             if (frameRendered && ++renderedFrames >= 30) {
-                if (options.scenePreview) {
+                if (options.firstPersonPreview) {
+                    SDL_Log("PASS: BiggerFISTsSDL first-person preview rendered 30 3D frames with a static Target and two player fists");
+                } else if (options.scenePreview) {
                     SDL_Log("PASS: BiggerFISTsSDL scene preview rendered 30 3D frames with %u models",
-                        static_cast<Uint32>(game.GetScene().models.size()));
+                        static_cast<Uint32>(scene.models.size()));
                 } else {
                     SDL_Log("PASS: BiggerFISTsSDL rendered 30 3D frames");
                 }
@@ -176,6 +227,9 @@ int Application::Run(const ApplicationOptions& options) {
         frameTimer.EndFrame();
     }
 
+    if (options.firstPersonPreview && !options.smokeTest) {
+        SDL_SetWindowRelativeMouseMode(window, false);
+    }
     renderer.Shutdown();
     SDL_DestroyWindow(window);
     SDL_Quit();

@@ -7,6 +7,9 @@ struct InputBindings {
     SDL_Scancode moveRight = SDL_SCANCODE_D;
     SDL_Scancode moveUp = SDL_SCANCODE_W;
     SDL_Scancode moveDown = SDL_SCANCODE_S;
+    SDL_Scancode leftPunch = SDL_SCANCODE_Q;
+    SDL_Scancode rightPunch = SDL_SCANCODE_E;
+    SDL_Scancode resetTarget = SDL_SCANCODE_R;
     SDL_Scancode changeBackground = SDL_SCANCODE_SPACE;
     SDL_Scancode quit = SDL_SCANCODE_ESCAPE;
 };

@@ -59,6 +59,15 @@ InputBindings LoadInputBindings(const char* filePath) {
         else if (action == "moveDown") {
             binding = &bindings.moveDown;
         }
+        else if (action == "leftPunch") {
+            binding = &bindings.leftPunch;
+        }
+        else if (action == "rightPunch") {
+            binding = &bindings.rightPunch;
+        }
+        else if (action == "resetTarget") {
+            binding = &bindings.resetTarget;
+        }
         else if (action == "changeBackground") {
             binding = &bindings.changeBackground;
         }
@@ -91,11 +100,14 @@ InputBindings LoadInputBindings(const char* filePath) {
         *binding = key;
     }
 
-    SDL_Log("Loaded input bindings: left=%s, right=%s, up=%s, down=%s, changeBackground=%s, quit=%s",
+    SDL_Log("Loaded input bindings: left=%s, right=%s, up=%s, down=%s, leftPunch=%s, rightPunch=%s, resetTarget=%s, changeBackground=%s, quit=%s",
         SDL_GetScancodeName(bindings.moveLeft),
         SDL_GetScancodeName(bindings.moveRight),
         SDL_GetScancodeName(bindings.moveUp),
         SDL_GetScancodeName(bindings.moveDown),
+        SDL_GetScancodeName(bindings.leftPunch),
+        SDL_GetScancodeName(bindings.rightPunch),
+        SDL_GetScancodeName(bindings.resetTarget),
         SDL_GetScancodeName(bindings.changeBackground),
         SDL_GetScancodeName(bindings.quit));
 
