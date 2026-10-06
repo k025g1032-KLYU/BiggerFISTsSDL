@@ -18,6 +18,8 @@ struct FirstPersonTarget {
 struct FirstPersonEvents {
     bool targetDestroyed = false;
     bool targetReset = false;
+    bool punchHit = false;
+    bool rocketHit = false;
     bool leftRocketLaunched = false;
     bool rightRocketLaunched = false;
     bool leftRocketReconnected = false;

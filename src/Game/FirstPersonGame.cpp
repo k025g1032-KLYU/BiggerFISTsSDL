@@ -72,6 +72,14 @@ void FirstPersonGame::Update(double deltaSeconds, const GameInput& input,
     events_.rightRocketLaunched = rightArm_.DidLaunchRocketThisFrame();
     events_.leftRocketReconnected = leftArm_.DidReconnectThisFrame();
     events_.rightRocketReconnected = rightArm_.DidReconnectThisFrame();
+    if (events_.punchHit) {
+        camera_.AddShake(FirstPersonTuning::kPunchShakeStrength,
+            FirstPersonTuning::kPunchShakeDuration);
+    }
+    if (events_.leftRocketLaunched || events_.rightRocketLaunched) {
+        camera_.AddShake(FirstPersonTuning::kRocketLaunchShakeStrength,
+            FirstPersonTuning::kRocketLaunchShakeDuration);
+    }
     camera_.Follow({ playerPosition.x,
         playerPosition.y + FirstPersonTuning::kEyeHeight,
         playerPosition.z }, deltaSeconds);
@@ -84,16 +92,13 @@ void FirstPersonGame::Update(double deltaSeconds, const GameInput& input,
 void FirstPersonGame::ProcessTargetHits() {
     const auto hitsTarget = [&](const PunchArm& arm,
         const Collision::Sphere& targetSphere) {
-        if (!arm.IsPunchDamageActiveThisFrame() &&
-            !arm.IsRocketDamageActiveThisFrame()) {
-            return false;
-        }
         const float fistRadius = FirstPersonTuning::kFistRadius;
-        const bool currentOverlap = arm.IsPunchDamageActiveThisFrame() &&
-            Collision::Intersects({arm.GetFistPosition(), fistRadius}, targetSphere);
-        return currentOverlap || Collision::SweepSphereAgainstSphere(
-            arm.GetPreviousFistPosition(), arm.GetFistPosition(), fistRadius,
-            targetSphere).didHit;
+        if (arm.IsPunchDamageActiveThisFrame()) {
+            return Collision::Intersects({arm.GetFistPosition(), fistRadius}, targetSphere);
+        }
+        return arm.IsRocketDamageActiveThisFrame() &&
+            Collision::SweepSphereAgainstSphere(arm.GetPreviousFistPosition(),
+                arm.GetFistPosition(), fistRadius, targetSphere).didHit;
     };
     for (FirstPersonTarget& target : targets_) {
         if (target.hitPoints <= 0) {
@@ -101,11 +106,18 @@ void FirstPersonGame::ProcessTargetHits() {
         }
         const Collision::Sphere targetSphere{
             target.position, FirstPersonTuning::kTargetRadius};
-        if (hitsTarget(leftArm_, targetSphere) ||
-            hitsTarget(rightArm_, targetSphere)) {
+        const PunchArm* hittingArm = nullptr;
+        if (hitsTarget(leftArm_, targetSphere)) {
+            hittingArm = &leftArm_;
+        } else if (hitsTarget(rightArm_, targetSphere)) {
+            hittingArm = &rightArm_;
+        }
+        if (hittingArm != nullptr) {
             target.hitPoints = std::max(0,
                 target.hitPoints - FirstPersonTuning::kPunchDamage);
             events_.targetDestroyed |= target.hitPoints == 0;
+            events_.punchHit |= hittingArm->GetAttackType() == PunchArmAttackType::Punch;
+            events_.rocketHit |= hittingArm->GetAttackType() == PunchArmAttackType::RocketPunch;
         }
     }
 }

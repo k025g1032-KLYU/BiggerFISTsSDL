@@ -219,10 +219,15 @@ int Application::Run(const ApplicationOptions& options) {
                 firstPersonGame->Update(FixedStepClock::kStepSeconds, stepInput.game,
                     stepInput.mouseDeltaX, stepInput.mouseDeltaY);
                 if (firstPersonGame->GetEvents().targetDestroyed) {
-                    SDL_Log("Target destroyed by fist impact. Press R to reset the Target.");
+                    if (firstPersonGame->GetEvents().punchHit) {
+                        SDL_Log("Target destroyed by Punch. Press R to reset the Targets.");
+                    }
+                    if (firstPersonGame->GetEvents().rocketHit) {
+                        SDL_Log("Target destroyed by Rocket Punch. Press R to reset the Targets.");
+                    }
                 }
                 if (firstPersonGame->GetEvents().targetReset) {
-                    SDL_Log("Target and punch states reset.");
+                    SDL_Log("Targets and punch states reset.");
                 }
                 if (firstPersonGame->GetEvents().leftRocketLaunched) {
                     SDL_Log("Left Rocket Punch launched");

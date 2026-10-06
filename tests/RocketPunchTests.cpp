@@ -129,11 +129,19 @@ int main() {
         "Changing Shift during a mouse hold keeps the selected Rocket Punch");
     game.Update(kStep, {}, 0.0f, 0.0f);
     success &= Expect(game.GetEvents().leftRocketLaunched &&
-        game.GetLeftArm().GetState() == PunchArmState::RocketFlying,
-        "The game reports a left Rocket Punch launch");
+        game.GetLeftArm().GetState() == PunchArmState::RocketFlying &&
+        game.GetCamera().GetShakeTimeRemaining() > 0.0f,
+        "A left Rocket Punch launch triggers the lighter camera shake");
+    const float launchShakeRemaining = game.GetCamera().GetShakeTimeRemaining();
     GameInput rightPunch{};
     rightPunch.rightPunchKeyDown = true;
-    for (int frame = 0; frame < 5; ++frame) {
+    game.Update(kStep, rightPunch, 0.0f, 0.0f);
+    game.Update(kStep, rightPunch, 0.0f, 0.0f);
+    success &= Expect(game.GetEvents().rocketHit &&
+        !game.GetEvents().punchHit &&
+        game.GetCamera().GetShakeTimeRemaining() < launchShakeRemaining,
+        "Rocket impact is reported without restarting the launch shake");
+    for (int frame = 2; frame < 5; ++frame) {
         game.Update(kStep, rightPunch, 0.0f, 0.0f);
     }
     view.Sync(game);

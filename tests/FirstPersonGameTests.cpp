@@ -153,6 +153,19 @@ int main() {
     success &= Expect(Near(camera.GetPitch(), FirstPersonTuning::kMaximumPitch) &&
         camera.GetTarget().y < camera.GetPosition().y,
         "Mouse Y looks down and pitch is clamped");
+    camera.AddShake(FirstPersonTuning::kPunchShakeStrength,
+        FirstPersonTuning::kPunchShakeDuration);
+    camera.Follow({0.0f, 5.85f, 0.0f}, 0.05);
+    success &= Expect(camera.GetShakeTimeRemaining() > 0.0f &&
+        std::abs(camera.GetPosition().x) > 0.0001f,
+        "A hit shakes the rendered camera without changing its look angles");
+    for (int frame = 0; frame < 4; ++frame) {
+        camera.Follow({0.0f, 5.85f, 0.0f}, 0.05);
+    }
+    success &= Expect(Near(camera.GetPosition().x, 0.0f) &&
+        Near(camera.GetPosition().y, 5.85f) &&
+        Near(camera.GetShakeTimeRemaining(), 0.0f),
+        "The shake ends and the camera returns to its followed anchor");
 
     const ModelInstance targetBefore = game.GetScene().models.front();
     game.Update(0.25, input, 100.0f, -50.0f);
@@ -302,9 +315,10 @@ int main() {
     hitGame.Update(0.05, GameInput{}, 0.0f, 0.0f);
     success &= Expect(hitGame.GetTargetHitPoints() == 0 &&
         hitGame.DidDestroyTargetThisFrame() &&
+        hitGame.GetCamera().GetShakeTimeRemaining() > 0.0f &&
         FindModelById(hitGame.GetScene(), "target") == nullptr &&
         hitGame.GetScene().models.size() == 2,
-        "One charged punch destroys the one-HP Target and removes its mesh");
+        "An ordinary Punch destroys the Target and triggers camera shake");
     hitGame.Update(0.05, GameInput{}, 0.0f, 0.0f);
     success &= Expect(!hitGame.DidDestroyTargetThisFrame() &&
         hitGame.GetTargetHitPoints() == 0,
@@ -347,8 +361,9 @@ int main() {
         missGame.Update(0.05, GameInput{}, 0.0f, 0.0f);
     }
     success &= Expect(missGame.GetTargetHitPoints() == 1 &&
+        Near(missGame.GetCamera().GetShakeTimeRemaining(), 0.0f) &&
         FindModelById(missGame.GetScene(), "target") != nullptr,
-        "A punch that misses leaves the Target intact");
+        "A punch that misses leaves the Target intact without hit shake");
 
     if (success) {
         std::puts("PASS: first-person movement, independent punches, Target damage and reset");

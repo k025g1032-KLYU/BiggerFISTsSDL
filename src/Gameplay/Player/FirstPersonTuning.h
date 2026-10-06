@@ -48,4 +48,10 @@ inline constexpr float kMouseLookSensitivity = 0.0025f;
 inline constexpr float kMaximumPitch = 1.15f;
 inline constexpr float kCameraFollowResponsiveness = 20.0f;
 inline constexpr float kCameraFollowSnapDistance = 3.0f;
+inline constexpr float kPunchShakeStrength = 0.12f;
+inline constexpr float kPunchShakeDuration = 0.16f;
+inline constexpr float kRocketLaunchShakeStrength = 0.07f;
+inline constexpr float kRocketLaunchShakeDuration = 0.12f;
+inline constexpr float kShakeFrequency = 58.0f;
+inline constexpr float kSecondaryShakeFrequencyScale = 1.73f;
 }

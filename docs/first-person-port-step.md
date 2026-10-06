@@ -162,8 +162,8 @@ first-person play each update receives `1/60` second, and scene elapsed time
 records simulation time.
 
 The original also has moving enemies, dodge, controller look, camera shake,
-impact sound, vibration and extra camera modes. Those systems are outside this
-step. `gameplay.cfg` still
+impact sound, vibration and extra camera modes. Camera shake was added in the
+later [camera feedback step](camera-feedback-step.md). `gameplay.cfg` still
 controls the older model preview mode; first-person movement values are
 centralized in `FirstPersonTuning.h` for now. The Target position and mesh are
 editable through `config/first-person-scene.cfg`.

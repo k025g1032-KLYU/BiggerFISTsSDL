@@ -4,6 +4,8 @@
 
 第一人稱戰鬥預覽以固定每秒 60 次更新玩法，渲染仍依實際幀率執行；目前尚未加入畫面插值。起始提交、功能清單與驗收紀錄見 [移植基準](docs/migration-baseline.md)。
 
+普通拳擊中 Target 時會短暫震動相機；Rocket Punch 在發射時觸發較輕的震動，穿透命中不會再次震動。觸發時機與原版對照見 [相機回饋移植](docs/camera-feedback-step.md)。
+
 ## SDL 版本鎖定
 
 本專案使用 Git submodule `vendor/SDL`，主專案固定記錄 SDL **3.4.16** 的 commit `fa2c02bb6e21974a89ea9824bc53c9932abe5f9c`。CMake 直接建置這份原始碼，不會在建置時抓取最新版；設定階段也會驗證 checkout commit 與 SDL 版本，不符就停止。
