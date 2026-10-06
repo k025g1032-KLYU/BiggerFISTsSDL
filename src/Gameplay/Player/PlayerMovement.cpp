@@ -36,6 +36,28 @@ void PlayerMovement::Reset(const Vector3& position) {
     velocity_ = {};
     bodyYaw_ = 0.0f;
     ClearImpact();
+    dodgeState_ = PlayerDodgeState::Ready;
+    dodgeTimer_ = 0.0f;
+    dodgeCooldownRemaining_ = 0.0f;
+}
+
+bool PlayerMovement::TryStartDodge(float moveRight, float moveForward) {
+    if (impactState_ != PlayerImpactState::None ||
+        dodgeState_ != PlayerDodgeState::Ready || dodgeCooldownRemaining_ > 0.0f ||
+        !std::isfinite(moveRight) || !std::isfinite(moveForward)) {
+        return false;
+    }
+    const float length = std::hypot(moveRight, moveForward);
+    const float right = length > 0.00001f ? moveRight / length : 0.0f;
+    const float forward = length > 0.00001f ? moveForward / length : 1.0f;
+    dodgeDirection_ = {std::cos(bodyYaw_) * right + std::sin(bodyYaw_) * forward,
+        0.0f, -std::sin(bodyYaw_) * right + std::cos(bodyYaw_) * forward};
+    dodgeState_ = PlayerDodgeState::Boosting;
+    dodgeTimer_ = 0.0f;
+    dodgeCooldownRemaining_ = config_.dodgeCooldown;
+    velocity_ = {dodgeDirection_.x * config_.dodgeInitialSpeed, 0.0f,
+        dodgeDirection_.z * config_.dodgeInitialSpeed};
+    return true;
 }
 
 void PlayerMovement::ClearImpact() {
@@ -78,6 +100,17 @@ void PlayerMovement::StartBurstImpact(const Vector3& direction) {
         impactDirection_.z * impactInitialSpeed_};
 }
 
+void PlayerMovement::StartUltimateRecoil() {
+    impactDirection_ = {-std::sin(bodyYaw_), 0.0f,
+        -std::cos(bodyYaw_)};
+    impactState_ = PlayerImpactState::Knockback;
+    impactTimer_ = 0.0f;
+    impactInitialSpeed_ = config_.ultimateRecoilSpeed;
+    impactDuration_ = config_.ultimateRecoilDuration;
+    velocity_ = {impactDirection_.x * impactInitialSpeed_, 0.0f,
+        impactDirection_.z * impactInitialSpeed_};
+}
+
 void PlayerMovement::Update(double deltaSeconds, float moveRight, float moveForward, float cameraYaw) {
     if (!std::isfinite(deltaSeconds) || deltaSeconds < 0.0 ||
         !std::isfinite(moveRight) || !std::isfinite(moveForward) ||
@@ -85,6 +118,7 @@ void PlayerMovement::Update(double deltaSeconds, float moveRight, float moveForw
         return;
     }
     const float deltaTime = static_cast<float>(std::min(deltaSeconds, static_cast<double>(maxDeltaTime_)));
+    dodgeCooldownRemaining_ = std::max(0.0f, dodgeCooldownRemaining_ - deltaTime);
     previousPosition_ = position_;
 
     const float sine = std::sin(cameraYaw);
@@ -117,6 +151,25 @@ void PlayerMovement::Update(double deltaSeconds, float moveRight, float moveForw
                 ClearImpact();
             }
         }
+    } else if (dodgeState_ == PlayerDodgeState::Boosting) {
+        dodgeTimer_ += deltaTime;
+        velocity_ = {dodgeDirection_.x * config_.dodgeInitialSpeed, 0.0f,
+            dodgeDirection_.z * config_.dodgeInitialSpeed};
+        if (dodgeTimer_ >= config_.dodgeBoostDuration) {
+            dodgeState_ = PlayerDodgeState::Sliding;
+            dodgeTimer_ = 0.0f;
+        }
+    } else if (dodgeState_ == PlayerDodgeState::Sliding) {
+        dodgeTimer_ += deltaTime;
+        const float speed = std::max(0.0f,
+            std::hypot(velocity_.x, velocity_.z) -
+                config_.dodgeSlideDeceleration * deltaTime);
+        velocity_ = {dodgeDirection_.x * speed, 0.0f,
+            dodgeDirection_.z * speed};
+        if (dodgeTimer_ >= config_.dodgeSlideDuration) {
+            dodgeState_ = PlayerDodgeState::Recovery;
+            dodgeTimer_ = 0.0f;
+        }
     } else {
         const bool hasMovementInput = lengthSquared > 0.00001f;
         const float velocityChange = (hasMovementInput
@@ -125,6 +178,13 @@ void PlayerMovement::Update(double deltaSeconds, float moveRight, float moveForw
             directionX * FirstPersonTuning::kMaximumMoveSpeed, velocityChange);
         velocity_.z = MoveTowards(velocity_.z,
             directionZ * FirstPersonTuning::kMaximumMoveSpeed, velocityChange);
+        if (dodgeState_ == PlayerDodgeState::Recovery) {
+            dodgeTimer_ += deltaTime;
+            if (dodgeTimer_ >= config_.dodgeRecoveryDuration) {
+                dodgeState_ = PlayerDodgeState::Ready;
+                dodgeTimer_ = 0.0f;
+            }
+        }
     }
     position_.x += velocity_.x * deltaTime;
     position_.z += velocity_.z * deltaTime;

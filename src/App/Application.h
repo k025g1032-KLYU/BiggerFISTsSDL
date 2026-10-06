@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Gameplay/Combat/BattleMode.h"
+
 struct ApplicationOptions {
     bool smokeTest = false;
     bool scenePreview = false;
@@ -7,6 +9,7 @@ struct ApplicationOptions {
     bool firstPersonPreview = false;
     bool playerCombatPreview = false;
     bool dynamicTargetSmokeTest = false;
+    BattlePreviewKind battlePreview = BattlePreviewKind::None;
 };
 
 class Application {

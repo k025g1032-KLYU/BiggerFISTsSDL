@@ -28,6 +28,12 @@ GameInput InputActions::Evaluate(const Input& input) const {
         input.IsKeyPressed(bindings_.resetTarget),
         input.IsKeyReleased(bindings_.resetTarget)
     };
+    result.battleStart = {input.IsKeyDown(SDL_SCANCODE_RETURN),
+        input.IsKeyPressed(SDL_SCANCODE_RETURN),
+        input.IsKeyReleased(SDL_SCANCODE_RETURN)};
+    result.dodge = {input.IsKeyDown(SDL_SCANCODE_SPACE),
+        input.IsKeyPressed(SDL_SCANCODE_SPACE),
+        input.IsKeyReleased(SDL_SCANCODE_SPACE)};
     result.testProjectileHit.pressed = input.IsKeyPressed(SDL_SCANCODE_H);
     result.testChargeHit.pressed = input.IsKeyPressed(SDL_SCANCODE_J);
     result.testBurstHit.pressed = input.IsKeyPressed(SDL_SCANCODE_K);

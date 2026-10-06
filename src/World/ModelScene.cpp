@@ -96,7 +96,11 @@ bool TryBuildModelTransform(const ModelScene& scene, const ModelInstance& model,
     std::uint32_t outputHeight, Matrix4x4& result) {
     result = {};
     if (outputWidth == 0 || outputHeight == 0 || !std::isfinite(scene.elapsedSeconds) ||
-        !std::isfinite(model.scale) || !std::isfinite(model.modelCenter.x) ||
+        !std::isfinite(model.scale) || !std::isfinite(model.scaleAxes.x) ||
+        !std::isfinite(model.scaleAxes.y) || !std::isfinite(model.scaleAxes.z) ||
+        !std::isfinite(model.colorTint.x) || !std::isfinite(model.colorTint.y) ||
+        !std::isfinite(model.colorTint.z) ||
+        !std::isfinite(model.modelCenter.x) ||
         !std::isfinite(model.modelCenter.y) || !std::isfinite(model.modelCenter.z) ||
         !std::isfinite(model.position.x) ||
         !std::isfinite(model.position.y) || !std::isfinite(model.position.z) ||
@@ -106,7 +110,8 @@ bool TryBuildModelTransform(const ModelScene& scene, const ModelInstance& model,
         return false;
     }
 
-    const Matrix4x4 scale = MakeScaleMatrix(model.scale, model.scale, model.scale);
+    const Matrix4x4 scale = MakeScaleMatrix(model.scale * model.scaleAxes.x,
+        model.scale * model.scaleAxes.y, model.scale * model.scaleAxes.z);
     const Matrix4x4 center = MakeTranslationMatrix(
         -model.modelCenter.x, -model.modelCenter.y, -model.modelCenter.z);
     const Matrix4x4 rotationX = MakeRotationXMatrix(CalculateRotationRadians(

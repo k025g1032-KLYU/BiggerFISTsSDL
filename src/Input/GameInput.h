@@ -13,6 +13,8 @@ struct GameInput {
     ActionState changeBackground{};
     ActionState quit{};
     ActionState resetTarget{};
+    ActionState battleStart{};
+    ActionState dodge{};
     ActionState testProjectileHit{};
     ActionState testChargeHit{};
     ActionState testBurstHit{};

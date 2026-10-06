@@ -20,6 +20,8 @@ private:
     bool backgroundReleased_ = false;
     bool resetPressed_ = false;
     bool resetReleased_ = false;
+    bool battleStartPressed_ = false;
+    bool dodgePressed_ = false;
     bool projectileHitPressed_ = false;
     bool chargeHitPressed_ = false;
     bool burstHitPressed_ = false;

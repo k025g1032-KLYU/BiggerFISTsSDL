@@ -24,6 +24,9 @@ public:
     void PlayPunchHit();
     void PlayRocketHit();
     void PlayRocketLaunch();
+    void PlayUltimateLaunch();
+    void PlayDodge();
+    void PlaySystemRestart();
     void PlayPunchSwing();
     void PlayRocketReconnect();
     void PlayPlayerHit(PlayerHitType type, bool damagedHitPoints);
@@ -51,6 +54,7 @@ private:
     Clip punchSwing_;
     Clip rocketReconnect_;
     Clip chargeHit_;
+    Clip dodge_;
     CombatFeedbackConfig config_{};
     SDL_AudioDeviceID audioDevice_ = 0;
     SDL_Gamepad* gamepad_ = nullptr;

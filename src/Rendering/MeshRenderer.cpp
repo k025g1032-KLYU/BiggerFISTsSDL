@@ -196,7 +196,7 @@ SDL_GPUGraphicsPipeline* CreatePipeline(
         device,
         "triangle.frag.dxil",
         SDL_GPU_SHADERSTAGE_FRAGMENT,
-        0,
+        1,
         1
     );
 
@@ -310,7 +310,13 @@ bool MeshRenderer::Initialize(SDL_Window* window, std::span<const MeshData> mesh
         }
     }
 
-    device_ = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_DXIL, true, "direct3d12");
+#ifndef NDEBUG
+    constexpr bool kEnableGpuDebug = true;
+#else
+    constexpr bool kEnableGpuDebug = false;
+#endif
+    device_ = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_DXIL,
+        kEnableGpuDebug, "direct3d12");
     if (device_ == nullptr) {
         SDL_Log("SDL_CreateGPUDevice failed: %s", SDL_GetError());
         return false;
@@ -321,6 +327,16 @@ bool MeshRenderer::Initialize(SDL_Window* window, std::span<const MeshData> mesh
         return false;
     }
     window_ = window;
+    if (SDL_WindowSupportsGPUPresentMode(device_, window_,
+            SDL_GPU_PRESENTMODE_MAILBOX)) {
+        if (!SDL_SetGPUSwapchainParameters(device_, window_,
+                SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
+                SDL_GPU_PRESENTMODE_MAILBOX)) {
+            SDL_Log("Mailbox presentation unavailable: %s", SDL_GetError());
+        } else {
+            SDL_Log("GPU present mode: mailbox");
+        }
+    }
 
     const SDL_GPUTextureFormat depthFormat = SelectDepthFormat(device_);
     if (depthFormat == SDL_GPU_TEXTUREFORMAT_INVALID) {
@@ -473,8 +489,12 @@ bool MeshRenderer::Render(const ModelScene& scene, WindowSettings& windowSetting
     SDL_BindGPUGraphicsPipeline(pass, pipeline_);
     for (std::size_t i = 0; i < scene.models.size(); ++i) {
         const GpuMesh& mesh = meshes_[scene.models[i].meshIndex];
+        const Vector3& tint = scene.models[i].colorTint;
+        const float colorUniform[4]{tint.x, tint.y, tint.z, 1.0f};
         SDL_PushGPUVertexUniformData(commands, 0, &transformScratch_[i],
             static_cast<Uint32>(sizeof(Matrix4x4)));
+        SDL_PushGPUFragmentUniformData(commands, 0, colorUniform,
+            static_cast<Uint32>(sizeof(colorUniform)));
         SDL_GPUBufferBinding vertexBinding{};
         vertexBinding.buffer = mesh.vertexBuffer;
         SDL_BindGPUVertexBuffers(pass, 0, &vertexBinding, 1);

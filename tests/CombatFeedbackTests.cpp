@@ -23,6 +23,9 @@ int main(int argc, char** argv) {
     feedback.PlayPunchHit();
     feedback.PlayRocketHit();
     feedback.PlayRocketLaunch();
+    feedback.PlayUltimateLaunch();
+    feedback.PlayDodge();
+    feedback.PlaySystemRestart();
     feedback.PlayPunchSwing();
     feedback.PlayRocketReconnect();
     feedback.PlayPlayerHit(PlayerHitType::Projectile, false);

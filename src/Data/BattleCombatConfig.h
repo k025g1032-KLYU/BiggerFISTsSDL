@@ -1,0 +1,133 @@
+#pragma once
+
+#include <filesystem>
+#include <string>
+
+struct EnemyCombatConfig {
+    int baseHitPoints = 10;
+    int day2BaseHitPoints = 20;
+    float radius = 0.9f;
+    float dropStartHeight = 37.7f;
+    float deploymentMinimumX = -20.0f;
+    float deploymentMaximumX = 20.0f;
+    float deploymentMinimumZ = 28.5f;
+    float deploymentMaximumZ = 40.5f;
+    float combatHeightMinimum = 4.2f;
+    float combatHeightMaximum = 5.1f;
+    float chargeCombatHeight = 4.55f;
+    float dropInitialSpeed = 14.0f;
+    float dropAcceleration = 60.0f;
+    float dropMaximumSpeed = 42.0f;
+    float landingPause = 1.5f;
+    float takeoffSpeed = 4.5f;
+    float missileMoveSpeed = 3.5f;
+    float missileInitialFireDelay = 1.0f;
+    float missileFireCooldown = 2.4f;
+    float missileFirePauseBeforeLaunch = 0.3f;
+    float missileFirePauseAfterLaunch = 0.2f;
+    float bomberMoveSpeed = 3.1f;
+    float bomberMinimumMoveSpeed = 2.2f;
+    float bomberMaximumMoveSpeed = 4.2f;
+    float bomberInitialFireDelay = 1.35f;
+    float bomberFireCooldown = 4.5f;
+    float chargeApproachSpeed = 3.0f;
+    float chargeDashSpeed = 18.0f;
+    float chargeDetectionRange = 36.0f;
+    float chargeMinimumDistance = 8.0f;
+    float chargeRepositionSpeed = 4.5f;
+    float chargePrepareDuration = 0.65f;
+    float chargeHitBrakingDuration = 0.35f;
+    float chargeMissBrakingDuration = 0.5f;
+    float chargeHitBrakingInitialSpeed = 10.0f;
+    float chargeImpactDuration = 0.08f;
+    float chargeTargetPassDistance = 3.0f;
+    float chargeBaseSafetyMargin = 1.5f;
+    float defeatLaunchDuration = 1.0f;
+};
+
+struct ProjectileCombatConfig {
+    float missileSpeed = 6.5f;
+    float missileRadius = 0.45f;
+    float missileTurnDuration = 0.15f;
+    float missileTurnBoundaryZ = 24.0f;
+    float bombSpeed = 4.5f;
+    float bombRadius = 0.65f;
+    float bombOscillationAmplitude = 1.5f;
+    float bombOscillationFrequency = 2.4f;
+    float crystalSpikeSpeed = 6.5f;
+    float crystalSpikeRadius = 0.58f;
+    float crystalCubeSpeed = 4.0f;
+    float crystalCubeRadius = 0.70f;
+    float crystalCubeOscillationAmplitude = 2.15f;
+    float crystalCubeOscillationFrequency = 2.10f;
+};
+
+struct BossCombatConfig {
+    int coreHitPoints = 20;
+    int ultimateDamage = 3;
+    float coreRadius = 1.75f;
+    float hoverHeight = 4.55f;
+    float entranceSpawnHeight = 36.55f;
+    float entranceDropSpeed = 28.0f;
+    float idleDecisionInterval = 2.2f;
+    float idleMoveSpeed = 2.25f;
+    float idleMinimumDistance = 9.5f;
+    float idleMaximumDistance = 14.5f;
+    float chargeMinimumStartDistance = 11.0f;
+    float idleStrafePeriod = 1.5f;
+    float idleNoActionRetryInterval = 0.5f;
+    float boxerCooldown = 9.0f;
+    float chargeCooldown = 10.0f;
+    float cruiseCooldown = 14.0f;
+    float nearBoxerWeight = 40.0f;
+    float nearChargeWeight = 20.0f;
+    float nearRangedWeight = 20.0f;
+    float nearCruiseWeight = 8.0f;
+    float middleBoxerWeight = 40.0f;
+    float middleChargeWeight = 25.0f;
+    float middleRangedWeight = 20.0f;
+    float middleCruiseWeight = 5.0f;
+    float farBoxerWeight = 20.0f;
+    float farChargeWeight = 35.0f;
+    float farRangedWeight = 30.0f;
+    float farCruiseWeight = 10.0f;
+    float cruiseTakeoffHeight = 10.0f;
+    float cruiseTakeoffSpeed = 32.0f;
+    float cruiseFlightSpeed = 30.0f;
+    float cruiseLandingSpeed = 28.0f;
+    float cruiseMinimumFlightDuration = 2.0f;
+    float cruiseHoverOrbitRadius = 2.25f;
+    float cruiseHoverOrbitAngularSpeed = 2.2f;
+    float cruiseMinimumLandingPlayerDistance = 11.0f;
+    float spreadPressureDistance = 8.0f;
+    float spreadPressureRearmDistance = 9.0f;
+    float spreadPressureDuration = 0.4f;
+    float spreadPressureDecaySpeed = 2.0f;
+    float spreadPressureRetreatSpeed = 0.4f;
+    float spreadBurstCooldown = 10.0f;
+    float crystalSpikeInitialDelay = 1.4f;
+    float crystalSpikeInterval = 4.5f;
+    float crystalCubeInitialDelay = 2.8f;
+    float crystalCubeInterval = 6.2f;
+    float chargePrepareDuration = 0.9f;
+    float chargeSpeed = 40.0f;
+    float boxerApproachSpeed = 8.0f;
+    float boxerStrikeInterval = 0.95f;
+    float needleWindupDuration = 0.65f;
+    float needleStrikeDuration = 0.20f;
+    float needleStrikePauseDuration = 0.18f;
+    float barrageShotInterval = 0.34f;
+    float spreadWindupDuration = 0.25f;
+    float spreadSpinDuration = 0.9f;
+    float spreadBurstRadius = 9.5f;
+    float defeatDuration = 3.0f;
+};
+
+struct BattleCombatConfig {
+    EnemyCombatConfig enemy;
+    ProjectileCombatConfig projectile;
+    BossCombatConfig boss;
+};
+
+bool LoadBattleCombatConfig(const std::filesystem::path& directory,
+    BattleCombatConfig& config, std::string& error);

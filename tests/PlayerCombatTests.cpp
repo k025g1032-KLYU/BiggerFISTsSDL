@@ -239,6 +239,52 @@ int main(int argc, char** argv) {
     success &= Expect(rocketGame.GetTargets().front().hitPoints == 2,
         "Rocket Punch penetrates without repeatedly damaging one target");
 
+    PlayerMovement dodgeMovement(0.05f, config);
+    dodgeMovement.Reset(origin);
+    success &= Expect(dodgeMovement.TryStartDodge(1.0f, 0.0f) &&
+        dodgeMovement.GetDodgeState() == PlayerDodgeState::Boosting &&
+        !dodgeMovement.TryStartDodge(1.0f, 0.0f),
+        "Dodge begins in the selected direction and cannot restart during cooldown");
+    for (int frame = 0; frame < 10; ++frame) {
+        dodgeMovement.Update(kStep, 0.0f, 0.0f, 0.0f);
+    }
+    success &= Expect(dodgeMovement.GetPosition().x > origin.x + 1.0f &&
+        dodgeMovement.GetDodgeState() == PlayerDodgeState::Sliding,
+        "Dodge boost advances for the original 0.14 second interval");
+
+    FirstPersonGame ultimateGame(GameConfig{}, {0.0f, 5.85f, 0.0f},
+        std::vector<FirstPersonTarget>{}, config);
+    ultimateGame.EnableUltimate(true);
+    GameInput bothRockets{};
+    bothRockets.leftMouseDown = true;
+    bothRockets.rightMouseDown = true;
+    for (int frame = 0; frame < 40; ++frame) {
+        ultimateGame.Update(kStep, bothRockets, 0.0f, 0.0f);
+    }
+    success &= Expect(ultimateGame.GetUltimateState() == UltimateState::Forming,
+        "Two charged Rocket Punch arms begin Ultimate formation");
+    for (int frame = 0; frame < 180; ++frame) {
+        ultimateGame.Update(kStep, bothRockets, 0.0f, 0.0f);
+    }
+    success &= Expect(ultimateGame.GetUltimateState() == UltimateState::Ready,
+        "Ultimate becomes ready after three seconds of formation");
+    ultimateGame.Update(kStep, {}, 0.0f, 0.0f);
+    success &= Expect(ultimateGame.GetEvents().ultimateLaunched &&
+        ultimateGame.GetUltimateState() == UltimateState::Flying,
+        "Releasing both charged arms launches the combined fist");
+    ultimateGame.Update(kStep, {}, 0.0f, 0.0f);
+    success &= Expect(ultimateGame.IsUltimateDamageActiveThisFrame() &&
+        ultimateGame.GetUltimatePosition().z >
+            ultimateGame.GetPreviousUltimatePosition().z,
+        "Ultimate exposes a forward swept collision segment");
+    for (int frame = 0; frame < 300; ++frame) {
+        ultimateGame.Update(kStep, {}, 0.0f, 0.0f);
+    }
+    success &= Expect(ultimateGame.GetUltimateState() == UltimateState::Idle &&
+        ultimateGame.GetLeftArm().GetState() == PunchArmState::Ready &&
+        ultimateGame.GetRightArm().GetState() == PunchArmState::Ready,
+        "Ultimate returns both fists and finishes system offline recovery");
+
     ModelScene scene;
     scene.models.clear();
     scene.models.push_back({});

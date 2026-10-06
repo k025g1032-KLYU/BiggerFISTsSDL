@@ -49,6 +49,20 @@ struct PlayerCombatConfig {
     float stepBobHorizontalAmplitude = 0.04f;
     float stepBobVerticalAmplitude = 0.08f;
     float stepBobFadeSpeed = 5.0f;
+    float dodgeInitialSpeed = 12.0f;
+    float dodgeBoostDuration = 0.14f;
+    float dodgeSlideDuration = 0.28f;
+    float dodgeSlideDeceleration = 24.0f;
+    float dodgeRecoveryDuration = 0.18f;
+    float dodgeCooldown = 1.2f;
+    float ultimateChargeTime = 3.0f;
+    float ultimateSpeed = 30.0f;
+    float ultimateMaximumRange = 42.0f;
+    float ultimateRadius = 10.0f;
+    float ultimateReturnDuration = 1.0f;
+    float ultimateSystemOfflineDuration = 4.0f;
+    float ultimateRecoilSpeed = 25.0f;
+    float ultimateRecoilDuration = 0.6f;
 };
 
 bool LoadPlayerCombatConfig(const std::filesystem::path& path,

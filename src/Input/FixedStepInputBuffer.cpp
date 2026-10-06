@@ -7,6 +7,8 @@ void FixedStepInputBuffer::QueueFrame(const GameInput& input,
     backgroundReleased_ |= input.changeBackground.released;
     resetPressed_ |= input.resetTarget.pressed;
     resetReleased_ |= input.resetTarget.released;
+    battleStartPressed_ |= input.battleStart.pressed;
+    dodgePressed_ |= input.dodge.pressed;
     projectileHitPressed_ |= input.testProjectileHit.pressed;
     chargeHitPressed_ |= input.testChargeHit.pressed;
     burstHitPressed_ |= input.testBurstHit.pressed;
@@ -24,6 +26,8 @@ SimulationStepInput FixedStepInputBuffer::ConsumeStep(int remainingSteps) {
     result.game.changeBackground.released = backgroundReleased_;
     result.game.resetTarget.pressed = resetPressed_;
     result.game.resetTarget.released = resetReleased_;
+    result.game.battleStart.pressed = battleStartPressed_;
+    result.game.dodge.pressed = dodgePressed_;
     result.game.testProjectileHit.pressed = projectileHitPressed_;
     result.game.testChargeHit.pressed = chargeHitPressed_;
     result.game.testBurstHit.pressed = burstHitPressed_;
@@ -31,6 +35,8 @@ SimulationStepInput FixedStepInputBuffer::ConsumeStep(int remainingSteps) {
     backgroundReleased_ = false;
     resetPressed_ = false;
     resetReleased_ = false;
+    battleStartPressed_ = false;
+    dodgePressed_ = false;
     projectileHitPressed_ = false;
     chargeHitPressed_ = false;
     burstHitPressed_ = false;

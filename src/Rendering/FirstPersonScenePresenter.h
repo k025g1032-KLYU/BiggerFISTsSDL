@@ -4,11 +4,14 @@
 
 class FirstPersonGame;
 class PunchArm;
+class CombatSession;
+class BattleAssetCatalog;
 
 class FirstPersonScenePresenter {
 public:
     explicit FirstPersonScenePresenter(ModelScene initialScene);
     void Sync(const FirstPersonGame& game);
+    void SyncBattle(const CombatSession& battle, const BattleAssetCatalog& assets);
     const ModelScene& GetScene() const { return scene_; }
 
 private:

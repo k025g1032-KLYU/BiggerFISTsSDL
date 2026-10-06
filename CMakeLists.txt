@@ -108,6 +108,19 @@ add_executable(BiggerFISTsSDL
     src/Data/CombatFeedbackConfig.h
     src/Data/PlayerCombatConfig.cpp
     src/Data/PlayerCombatConfig.h
+    src/Data/BattleAssetCatalog.cpp
+    src/Data/BattleAssetCatalog.h
+    src/Gameplay/Combat/EncounterConfig.cpp
+    src/Gameplay/Combat/EncounterConfig.h
+    src/Gameplay/Combat/EncounterDirector.cpp
+    src/Gameplay/Combat/EncounterDirector.h
+    src/Gameplay/Combat/CombatSession.cpp
+    src/Gameplay/Combat/CombatSession.h
+    src/Gameplay/Combat/BattleBoss.cpp
+    src/Gameplay/Combat/BattleBoss.h
+    src/Data/BattleCombatConfig.cpp
+    src/Data/BattleCombatConfig.h
+    src/Rendering/BattleScenePresenter.cpp
     src/Data/ObjLoader.cpp
     src/Data/ObjLoader.h
     src/Data/MeshData.h
@@ -154,12 +167,16 @@ add_custom_target(CombatSoundAssets
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/charge_hit.wav"
         "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/sound/charge_hit.wav"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/step.wav"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/sound/step.wav"
     DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/enemy_is_hit.wav"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/RocketShot.wav"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/whoosh.wav"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/mokugyo.wav"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/charge_hit.wav"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/step.wav"
     VERBATIM
 )
 add_dependencies(BiggerFISTsSDL CombatSoundAssets)
@@ -335,6 +352,69 @@ target_compile_definitions(SceneLoaderTests PRIVATE
 )
 add_test(NAME SceneLoaderTests COMMAND SceneLoaderTests)
 
+add_executable(BattleAssetTests EXCLUDE_FROM_ALL
+    tests/BattleAssetTests.cpp
+    src/Data/BattleAssetCatalog.cpp
+    src/Data/SceneConfig.cpp
+    src/Data/SceneLoader.cpp
+    src/Data/ObjLoader.cpp
+    src/World/ModelScene.cpp
+    src/Math/MathTypes.cpp
+)
+target_include_directories(BattleAssetTests PRIVATE src)
+add_test(NAME BattleAssetTests COMMAND BattleAssetTests
+    "${CMAKE_CURRENT_SOURCE_DIR}/config"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/models")
+
+add_executable(EncounterConfigTests EXCLUDE_FROM_ALL
+    tests/EncounterConfigTests.cpp
+    src/Gameplay/Combat/EncounterConfig.cpp
+)
+target_include_directories(EncounterConfigTests PRIVATE src)
+add_test(NAME EncounterConfigTests COMMAND EncounterConfigTests
+    "${CMAKE_CURRENT_SOURCE_DIR}/config")
+
+add_executable(EncounterDirectorTests EXCLUDE_FROM_ALL
+    tests/EncounterDirectorTests.cpp
+    src/Gameplay/Combat/EncounterConfig.cpp
+    src/Gameplay/Combat/EncounterDirector.cpp
+)
+target_include_directories(EncounterDirectorTests PRIVATE src)
+add_test(NAME EncounterDirectorTests COMMAND EncounterDirectorTests
+    "${CMAKE_CURRENT_SOURCE_DIR}/config")
+
+add_executable(BattleBossTests EXCLUDE_FROM_ALL
+    tests/BattleBossTests.cpp
+    src/Data/BattleCombatConfig.cpp
+    src/Gameplay/Combat/BattleBoss.cpp
+    src/Collision/Collision.cpp
+)
+target_include_directories(BattleBossTests PRIVATE src)
+add_test(NAME BattleBossTests COMMAND BattleBossTests
+    "${CMAKE_CURRENT_SOURCE_DIR}/config")
+
+add_executable(CombatSessionTests EXCLUDE_FROM_ALL
+    tests/CombatSessionTests.cpp
+    src/Data/BattleCombatConfig.cpp
+    src/Gameplay/Combat/BattleBoss.cpp
+    src/Gameplay/Combat/CombatSession.cpp
+    src/Gameplay/Combat/EncounterConfig.cpp
+    src/Gameplay/Combat/EncounterDirector.cpp
+    src/Game/FirstPersonGame.cpp
+    src/Gameplay/Player/PlayerMovement.cpp
+    src/Gameplay/Player/PlayerVitality.cpp
+    src/Gameplay/Player/PunchArm.cpp
+    src/Gameplay/Combat/CombatHitResolver.cpp
+    src/Collision/Collision.cpp
+    src/World/FirstPersonCamera.cpp
+    src/Math/MathTypes.cpp
+    src/Input/FixedStepInputBuffer.cpp
+    src/Platform/FixedStepClock.cpp
+)
+target_include_directories(CombatSessionTests PRIVATE src)
+add_test(NAME CombatSessionTests COMMAND CombatSessionTests
+    "${CMAKE_CURRENT_SOURCE_DIR}/config")
+
 if(MSVC)
     target_compile_options(BiggerFISTsSDL PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(InputActionsTests PRIVATE /W4 /utf-8 /EHsc)
@@ -351,6 +431,11 @@ if(MSVC)
     target_compile_options(ModelConfigTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(SceneConfigTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(SceneLoaderTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(BattleAssetTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(EncounterConfigTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(EncounterDirectorTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(BattleBossTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(CombatSessionTests PRIVATE /W4 /utf-8 /EHsc)
 endif()
 
 add_custom_command(TARGET BiggerFISTsSDL POST_BUILD
@@ -387,6 +472,13 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/config/missile-unit-scene.cfg"
     "${CMAKE_CURRENT_SOURCE_DIR}/config/combat-feedback.cfg"
     "${CMAKE_CURRENT_SOURCE_DIR}/config/player-combat.cfg"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config/battlefield-scene.cfg"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config/battle-assets.cfg"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config/day1-encounter.cfg"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config/day2-encounter.cfg"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config/enemy-combat.cfg"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config/projectile-combat.cfg"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config/boss-combat.cfg"
 )
 
 file(GENERATE
@@ -432,6 +524,41 @@ file(GENERATE
 file(GENERATE
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/player-combat.cfg"
     INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/player-combat.cfg"
+)
+
+file(GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/battlefield-scene.cfg"
+    INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/battlefield-scene.cfg"
+)
+
+file(GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/battle-assets.cfg"
+    INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/battle-assets.cfg"
+)
+
+file(GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/day1-encounter.cfg"
+    INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/day1-encounter.cfg"
+)
+
+file(GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/day2-encounter.cfg"
+    INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/day2-encounter.cfg"
+)
+
+file(GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/enemy-combat.cfg"
+    INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/enemy-combat.cfg"
+)
+
+file(GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/projectile-combat.cfg"
+    INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/projectile-combat.cfg"
+)
+
+file(GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/boss-combat.cfg"
+    INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/boss-combat.cfg"
 )
 
 find_program(GPU_DXC_EXECUTABLE
@@ -614,6 +741,14 @@ add_custom_target(ModelAssets
     VERBATIM
 )
 add_dependencies(BiggerFISTsSDL ModelAssets)
+
+add_custom_target(BattleModelAssets
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models"
+    VERBATIM
+)
+add_dependencies(BiggerFISTsSDL BattleModelAssets)
 
 add_executable(MultiModelPreview
     src/Samples/MultiModelPreview.cpp

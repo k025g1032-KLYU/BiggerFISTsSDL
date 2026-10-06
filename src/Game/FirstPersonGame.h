@@ -2,6 +2,7 @@
 
 #include "Data/GameConfig.h"
 #include "Data/PlayerCombatConfig.h"
+#include "Gameplay/Combat/CombatHitResolver.h"
 #include "Gameplay/Player/PlayerMovement.h"
 #include "Gameplay/Player/PunchArm.h"
 #include "Gameplay/Player/PlayerVitality.h"
@@ -19,11 +20,15 @@ struct FirstPersonTarget {
     int hitPoints = 1;
     Vector3 previousPosition{};
     bool movedSinceLastStep = false;
+    float radius = 1.25f;
+    float punchRadiusMultiplier = 1.0f;
 };
 
 struct FirstPersonEvents {
     bool targetDestroyed = false;
     bool targetReset = false;
+    std::vector<std::string> destroyedTargetIds;
+    std::vector<CombatHitEvent> targetHits;
     bool punchHit = false;
     bool rocketHit = false;
     bool leftRocketLaunched = false;
@@ -32,11 +37,17 @@ struct FirstPersonEvents {
     bool rightRocketReconnected = false;
     bool leftPunchBegan = false;
     bool rightPunchBegan = false;
+    bool ultimateLaunched = false;
+    bool ultimateReturned = false;
+    bool systemRestarted = false;
+    bool dodgeStarted = false;
     bool playerHit = false;
     bool playerDefeated = false;
     PlayerHitType playerHitType = PlayerHitType::Projectile;
     PlayerHitResult playerHitResult{};
 };
+
+enum class UltimateState { Idle, Forming, Ready, Flying, Returning, Offline };
 
 class FirstPersonGame {
 public:
@@ -45,7 +56,10 @@ public:
     FirstPersonGame(const GameConfig& config, const Vector3& initialEyePosition,
         std::vector<FirstPersonTarget> targets, PlayerCombatConfig combatConfig = {});
     void Update(double deltaSeconds, const GameInput& input,
-        float mouseDeltaX, float mouseDeltaY);
+        float mouseDeltaX, float mouseDeltaY, bool deferTargetHits = false);
+    void ResolveTargetHits();
+    void ResetCombatState();
+    void UpdateLookOnly(float mouseDeltaX, float mouseDeltaY);
     bool SpawnTarget(const FirstPersonTarget& target);
     bool MoveTarget(std::string_view id, const Vector3& position);
     bool RemoveTarget(std::string_view id);
@@ -61,12 +75,27 @@ public:
         return targets_.empty() ? 0 : targets_.front().hitPoints;
     }
     bool IsWarmBackground() const { return warmBackground_; }
+    void EnableUltimate(bool enabled) { ultimateEnabled_ = enabled; }
+    void EnableBaseCollision(bool enabled) {
+        player_.SetResearchInstituteCollisionEnabled(enabled);
+    }
+    UltimateState GetUltimateState() const { return ultimateState_; }
+    bool IsUltimateDamageActiveThisFrame() const {
+        return ultimateDamageActiveThisFrame_;
+    }
+    const Vector3& GetUltimatePosition() const { return ultimatePosition_; }
+    const Vector3& GetPreviousUltimatePosition() const { return previousUltimatePosition_; }
+    float GetUltimateRadius() const { return combatConfig_.ultimateRadius; }
+    Vector3 GetUltimateReturnFistPosition(PunchArmSide side) const;
     double GetElapsedSeconds() const { return elapsedSeconds_; }
     const FirstPersonEvents& GetEvents() const { return events_; }
 
 private:
     void ProcessTargetHits();
     void ResetTarget();
+    void UpdateUltimate(float seconds, const GameInput& input,
+        const PunchArmInput& leftInput, const PunchArmInput& rightInput,
+        bool& lockArms);
 
     PlayerCombatConfig combatConfig_;
     PlayerMovement player_;
@@ -83,4 +112,15 @@ private:
     FirstPersonEvents events_{};
     std::unordered_set<std::string> leftHitIds_;
     std::unordered_set<std::string> rightHitIds_;
+    bool ultimateEnabled_ = false;
+    UltimateState ultimateState_ = UltimateState::Idle;
+    bool ultimateDamageActiveThisFrame_ = false;
+    Vector3 ultimatePosition_{};
+    Vector3 previousUltimatePosition_{};
+    Vector3 ultimateDirection_{0.0f, 0.0f, 1.0f};
+    Vector3 ultimateSplitPosition_{};
+    float ultimateChargeTimer_ = 0.0f;
+    float ultimateTravel_ = 0.0f;
+    float ultimateReturnTimer_ = 0.0f;
+    float ultimateOfflineTimer_ = 0.0f;
 };

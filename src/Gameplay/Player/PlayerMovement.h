@@ -4,6 +4,7 @@
 #include "Data/PlayerCombatConfig.h"
 
 enum class PlayerImpactState { None, Holding, Knockback };
+enum class PlayerDodgeState { Ready, Boosting, Sliding, Recovery };
 
 class PlayerMovement {
 public:
@@ -13,15 +14,20 @@ public:
     void Update(double deltaSeconds, float moveRight, float moveForward, float cameraYaw);
     void StartChargeImpact(const Vector3& direction, bool wasShielded);
     void StartBurstImpact(const Vector3& direction);
+    void StartUltimateRecoil();
     void ClearImpact();
+    bool TryStartDodge(float moveRight, float moveForward);
     void SetResearchInstituteCollisionEnabled(bool enabled) {
         researchInstituteCollisionEnabled_ = enabled;
     }
 
     const Vector3& GetPosition() const { return position_; }
+    const Vector3& GetPreviousPosition() const { return previousPosition_; }
     const Vector3& GetVelocity() const { return velocity_; }
     float GetBodyYaw() const { return bodyYaw_; }
     PlayerImpactState GetImpactState() const { return impactState_; }
+    PlayerDodgeState GetDodgeState() const { return dodgeState_; }
+    float GetDodgeCooldownRemaining() const { return dodgeCooldownRemaining_; }
 
 private:
     void ResolveResearchInstituteCollision();
@@ -37,4 +43,8 @@ private:
     float impactInitialSpeed_ = 0.0f;
     float impactDuration_ = 0.0f;
     bool researchInstituteCollisionEnabled_ = false;
+    PlayerDodgeState dodgeState_ = PlayerDodgeState::Ready;
+    Vector3 dodgeDirection_{0.0f, 0.0f, 1.0f};
+    float dodgeTimer_ = 0.0f;
+    float dodgeCooldownRemaining_ = 0.0f;
 };

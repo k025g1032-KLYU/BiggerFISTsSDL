@@ -46,6 +46,7 @@ inline constexpr float kTargetRadius = 1.25f;
 inline constexpr int kPunchDamage = 1;
 inline constexpr int kTargetHitPoints = 1;
 inline constexpr float kPlayerColliderRadius = 1.35f;
+inline constexpr float kPlayerColliderCenterHeight = 1.8f;
 inline constexpr float kBattlefieldMinimumX = -24.0f;
 inline constexpr float kBattlefieldMaximumX = 24.0f;
 inline constexpr float kBattlefieldMinimumZ = -16.0f;

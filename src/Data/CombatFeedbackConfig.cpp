@@ -18,7 +18,10 @@ constexpr std::array requiredKeys{
     "projectileShieldRumbleLow", "projectileShieldRumbleHigh",
     "projectileHitPointRumbleLow", "projectileHitPointRumbleHigh",
     "projectileRumbleMs", "chargeHitRumbleLow", "chargeHitRumbleHigh",
-    "chargeHitRumbleMs"};
+    "chargeHitRumbleMs", "dodgeWav", "dodgeGain",
+    "ultimateLaunchGain", "dodgeRumbleLow", "dodgeRumbleHigh",
+    "dodgeRumbleMs", "systemRestartRumbleLow",
+    "systemRestartRumbleHigh", "systemRestartRumbleMs"};
 
 std::string ToUtf8(const std::filesystem::path& path) {
     const std::u8string value = path.u8string();
@@ -81,9 +84,12 @@ bool LoadCombatFeedbackConfig(const std::filesystem::path& path,
             parsed.rocketReconnectWav = value;
         } else if (key == "chargeHitWav" && ValidWavName(value)) {
             parsed.chargeHitWav = value;
+        } else if (key == "dodgeWav" && ValidWavName(value)) {
+            parsed.dodgeWav = value;
         } else if ((key == "punchImpactGain" || key == "rocketImpactGain" ||
                 key == "rocketLaunchGain" || key == "punchSwingGain" ||
-                key == "rocketReconnectGain" || key == "chargeHitGain") &&
+                key == "rocketReconnectGain" || key == "chargeHitGain" ||
+                key == "dodgeGain" || key == "ultimateLaunchGain") &&
             ParseNumber(value, gain) &&
             std::isfinite(gain) && gain >= 0.0f && gain <= 2.0f) {
             if (key == "punchImpactGain") {
@@ -96,6 +102,10 @@ bool LoadCombatFeedbackConfig(const std::filesystem::path& path,
                 parsed.punchSwingGain = gain;
             } else if (key == "rocketReconnectGain") {
                 parsed.rocketReconnectGain = gain;
+            } else if (key == "dodgeGain") {
+                parsed.dodgeGain = gain;
+            } else if (key == "ultimateLaunchGain") {
+                parsed.ultimateLaunchGain = gain;
             } else {
                 parsed.chargeHitGain = gain;
             }
@@ -103,7 +113,10 @@ bool LoadCombatFeedbackConfig(const std::filesystem::path& path,
                 key == "rocketLaunchRumbleLow" || key == "rocketLaunchRumbleHigh" ||
                 key == "projectileShieldRumbleLow" || key == "projectileShieldRumbleHigh" ||
                 key == "projectileHitPointRumbleLow" || key == "projectileHitPointRumbleHigh" ||
-                key == "chargeHitRumbleLow" || key == "chargeHitRumbleHigh") &&
+                key == "chargeHitRumbleLow" || key == "chargeHitRumbleHigh" ||
+                key == "dodgeRumbleLow" || key == "dodgeRumbleHigh" ||
+                key == "systemRestartRumbleLow" ||
+                key == "systemRestartRumbleHigh") &&
             ParseNumber(value, whole) && whole <= 65535) {
             if (key == "punchRumbleLow") {
                 parsed.punchRumbleLow = static_cast<std::uint16_t>(whole);
@@ -123,11 +136,20 @@ bool LoadCombatFeedbackConfig(const std::filesystem::path& path,
                 parsed.projectileHitPointRumbleHigh = static_cast<std::uint16_t>(whole);
             } else if (key == "chargeHitRumbleLow") {
                 parsed.chargeHitRumbleLow = static_cast<std::uint16_t>(whole);
+            } else if (key == "dodgeRumbleLow") {
+                parsed.dodgeRumbleLow = static_cast<std::uint16_t>(whole);
+            } else if (key == "dodgeRumbleHigh") {
+                parsed.dodgeRumbleHigh = static_cast<std::uint16_t>(whole);
+            } else if (key == "systemRestartRumbleLow") {
+                parsed.systemRestartRumbleLow = static_cast<std::uint16_t>(whole);
+            } else if (key == "systemRestartRumbleHigh") {
+                parsed.systemRestartRumbleHigh = static_cast<std::uint16_t>(whole);
             } else {
                 parsed.chargeHitRumbleHigh = static_cast<std::uint16_t>(whole);
             }
         } else if ((key == "punchRumbleMs" || key == "rocketLaunchRumbleMs" ||
-                key == "projectileRumbleMs" || key == "chargeHitRumbleMs") &&
+                key == "projectileRumbleMs" || key == "chargeHitRumbleMs" ||
+                key == "dodgeRumbleMs" || key == "systemRestartRumbleMs") &&
             ParseNumber(value, whole) && whole >= 1 && whole <= 5000) {
             if (key == "punchRumbleMs") {
                 parsed.punchRumbleMs = whole;
@@ -135,6 +157,10 @@ bool LoadCombatFeedbackConfig(const std::filesystem::path& path,
                 parsed.rocketLaunchRumbleMs = whole;
             } else if (key == "projectileRumbleMs") {
                 parsed.projectileRumbleMs = whole;
+            } else if (key == "dodgeRumbleMs") {
+                parsed.dodgeRumbleMs = whole;
+            } else if (key == "systemRestartRumbleMs") {
+                parsed.systemRestartRumbleMs = whole;
             } else {
                 parsed.chargeHitRumbleMs = whole;
             }

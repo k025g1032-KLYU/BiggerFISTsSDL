@@ -13,7 +13,7 @@ namespace {
 using FloatField = float PlayerCombatConfig::*;
 using IntField = int PlayerCombatConfig::*;
 
-constexpr std::array<std::pair<std::string_view, FloatField>, 43> floatFields{{
+constexpr std::array<std::pair<std::string_view, FloatField>, 57> floatFields{{
     std::pair<std::string_view, FloatField>{"chargeTime", &PlayerCombatConfig::chargeTime},
     {"punchDuration", &PlayerCombatConfig::punchDuration},
     {"punchDistance", &PlayerCombatConfig::punchDistance},
@@ -57,6 +57,20 @@ constexpr std::array<std::pair<std::string_view, FloatField>, 43> floatFields{{
     {"stepBobHorizontalAmplitude", &PlayerCombatConfig::stepBobHorizontalAmplitude},
     {"stepBobVerticalAmplitude", &PlayerCombatConfig::stepBobVerticalAmplitude},
     {"stepBobFadeSpeed", &PlayerCombatConfig::stepBobFadeSpeed},
+    {"dodgeInitialSpeed", &PlayerCombatConfig::dodgeInitialSpeed},
+    {"dodgeBoostDuration", &PlayerCombatConfig::dodgeBoostDuration},
+    {"dodgeSlideDuration", &PlayerCombatConfig::dodgeSlideDuration},
+    {"dodgeSlideDeceleration", &PlayerCombatConfig::dodgeSlideDeceleration},
+    {"dodgeRecoveryDuration", &PlayerCombatConfig::dodgeRecoveryDuration},
+    {"dodgeCooldown", &PlayerCombatConfig::dodgeCooldown},
+    {"ultimateChargeTime", &PlayerCombatConfig::ultimateChargeTime},
+    {"ultimateSpeed", &PlayerCombatConfig::ultimateSpeed},
+    {"ultimateMaximumRange", &PlayerCombatConfig::ultimateMaximumRange},
+    {"ultimateRadius", &PlayerCombatConfig::ultimateRadius},
+    {"ultimateReturnDuration", &PlayerCombatConfig::ultimateReturnDuration},
+    {"ultimateSystemOfflineDuration", &PlayerCombatConfig::ultimateSystemOfflineDuration},
+    {"ultimateRecoilSpeed", &PlayerCombatConfig::ultimateRecoilSpeed},
+    {"ultimateRecoilDuration", &PlayerCombatConfig::ultimateRecoilDuration},
 }};
 constexpr std::array<std::pair<std::string_view, IntField>, 2> intFields{{
     std::pair<std::string_view, IntField>{"maximumHitPoints", &PlayerCombatConfig::maximumHitPoints},

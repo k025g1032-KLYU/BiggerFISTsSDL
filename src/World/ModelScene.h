@@ -16,6 +16,8 @@ struct ModelInstance {
     Vector3 position{ 0.0f, 0.0f, 0.0f };
     Vector3 modelCenter{ 0.0f, 0.0f, 0.0f };
     float scale = 1.0f;
+    Vector3 scaleAxes{ 1.0f, 1.0f, 1.0f };
+    Vector3 colorTint{ 1.0f, 1.0f, 1.0f };
     float initialXDegrees = 20.0f;
     float initialYDegrees = 30.0f;
     float initialZDegrees = 0.0f;
