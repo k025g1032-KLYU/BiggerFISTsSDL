@@ -264,11 +264,11 @@ int main() {
     FirstPersonHarness mousePunchGame(GameConfig{}, scene);
     GameInput mousePunch{};
     mousePunch.leftMouseDown = true;
-    mousePunchGame.Update(0.01, mousePunch, 0.0f, 0.0f);
-    success &= Expect(mousePunchGame.GetLeftArm().GetState() == PunchArmState::Ready,
-        "An unshifted mouse click is reserved for Rocket Punch");
     mousePunch.shiftDown = true;
     mousePunchGame.Update(0.01, mousePunch, 0.0f, 0.0f);
+    success &= Expect(mousePunchGame.GetLeftArm().GetState() == PunchArmState::Charging &&
+        mousePunchGame.GetLeftArm().GetAttackType() == PunchArmAttackType::Punch,
+        "Shift and mouse select the ordinary Punch");
     mousePunch.shiftDown = false;
     for (int frame = 0; frame < 12; ++frame) {
         mousePunchGame.Update(0.05, mousePunch, 0.0f, 0.0f);

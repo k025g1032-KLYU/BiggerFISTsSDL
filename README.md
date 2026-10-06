@@ -1,6 +1,6 @@
 # BiggerFISTs SDL3
 
-這是將原本 PC 遊戲逐步移出 KamataEngine 的獨立 SDL3 專案。`BiggerFISTsSDL` 預設依照 `config/model.cfg` 載入一個原版 OBJ 模型及其 PNG，可用 WASD 移動並旋轉預覽；加上 `--scene-preview` 時，則依 `config/scene.cfg` 顯示多個模型；加上 `--first-person-preview` 時，則可用原版移動規則與第一人稱相機接近 Target，操作左右拳蓄力、出拳並擊毀它。`MultiModelPreview` 保留為獨立多模型範例。專案已複製 Target、LFist、原版戰鬥場景使用的 LfistTEST 與 RFist。`GpuTriangle` 保留貼圖立方體範例。原版專案與 `vendor/SDL` 沒有被修改。
+這是將原本 PC 遊戲逐步移出 KamataEngine 的獨立 SDL3 專案。`BiggerFISTsSDL` 預設依照 `config/model.cfg` 載入一個原版 OBJ 模型及其 PNG，可用 WASD 移動並旋轉預覽；加上 `--scene-preview` 時，則依 `config/scene.cfg` 顯示多個模型；加上 `--first-person-preview` 時，可用原版移動規則與第一人稱相機操作左右普通拳與 Rocket Punch，擊毀兩個靜態 Target。`MultiModelPreview` 保留為獨立多模型範例。專案已複製 Target、LFist、原版戰鬥場景使用的 LfistTEST 與 RFist。`GpuTriangle` 保留貼圖立方體範例。原版專案與 `vendor/SDL` 沒有被修改。
 
 第一人稱戰鬥預覽以固定每秒 60 次更新玩法，渲染仍依實際幀率執行；目前尚未加入畫面插值。起始提交、功能清單與驗收紀錄見 [移植基準](docs/migration-baseline.md)。
 
@@ -20,12 +20,12 @@ GitHub 的一般「Download ZIP」不會包含 submodule 內容，直接拿 ZIP 
 
 | 目標 | 用途 |
 |---|---|
-| `BiggerFISTsSDL` | 主程式：預設依 `model.cfg` 載入一個模型；`--scene-preview` 顯示多個模型；`--first-person-preview` 可用左右拳擊毀並重置 Target |
+| `BiggerFISTsSDL` | 主程式：預設依 `model.cfg` 載入一個模型；`--scene-preview` 顯示多個模型；`--first-person-preview` 可用普通拳與 Rocket Punch 擊毀並重置 Target |
 | `MultiModelPreview` | 依 `config/scene.cfg` 在同一畫面顯示多個模型，各自帶 PNG 貼圖並旋轉 |
 | `GpuTriangle` | 貼圖立方體與顯示切換檢查；和主程式共用 `MeshRenderer` |
-| `InputActionsTests`、`WindowSettingsTests`、`MathTypesTests`、`GameTests`、`FirstPersonGameTests`、`FixedStepTests`、`CollisionTests`、`ObjLoaderTests`、`ModelConfigTests`、`SceneConfigTests`、`SceneLoaderTests` | 回歸測試 |
+| `InputActionsTests`、`WindowSettingsTests`、`MathTypesTests`、`GameTests`、`FirstPersonGameTests`、`RocketPunchTests`、`FixedStepTests`、`CollisionTests`、`ObjLoaderTests`、`ModelConfigTests`、`SceneConfigTests`、`SceneLoaderTests` | 回歸測試 |
 
-在 Visual Studio 開啟 `build/BiggerFISTsSDL.slnx`，將 `BiggerFISTsSDL` 設為啟始專案，選擇 Debug／x64，建置後按 F5，會進入原本的單模型模式。要看第一人稱場景，將啟動參數設為 `--first-person-preview`；也可以從 PowerShell 執行 `& '.\build\Debug\BiggerFISTsSDL.exe' --first-person-preview`。多模型模式使用 `--scene-preview`。若先前已開啟解決方案，CMake 重新產生檔案後請重新載入。操作與檔案關係見 [第一人稱移植教學](docs/first-person-port-step.md)；原有預覽模式見 [主程式場景預覽教學](docs/main-scene-preview-step.md)。
+在 Visual Studio 開啟 `build/BiggerFISTsSDL.slnx`，將 `BiggerFISTsSDL` 設為啟始專案，選擇 Debug／x64，建置後按 F5，會進入原本的單模型模式。要看第一人稱場景，將啟動參數設為 `--first-person-preview`；也可以從 PowerShell 執行 `& '.\build\Debug\BiggerFISTsSDL.exe' --first-person-preview`。多模型模式使用 `--scene-preview`。若先前已開啟解決方案，CMake 重新產生檔案後請重新載入。操作與檔案關係見 [第一人稱移植教學](docs/first-person-port-step.md)與 [Rocket Punch 移植教學](docs/rocket-punch-step.md)；原有預覽模式見 [主程式場景預覽教學](docs/main-scene-preview-step.md)。
 
 ## 操作
 
@@ -35,14 +35,15 @@ GitHub 的一般「Download ZIP」不會包含 submodule 內容，直接拿 ZIP 
 | 滑鼠移動 | 第一人稱模式：轉動視角 |
 | Q／E | 第一人稱模式：按住蓄力左／右拳，蓄滿後放開出拳 |
 | Shift＋滑鼠左／右鍵 | 第一人稱模式：以滑鼠蓄力左／右普通拳 |
-| R | 第一人稱模式：重置 Target 與左右拳狀態 |
+| 滑鼠左／右鍵 | 第一人稱模式：按住蓄力左／右 Rocket Punch，蓄滿後放開發射 |
+| R | 第一人稱模式：重置兩個 Target 與左右拳狀態 |
 | Space | 僅主程式：切換深色／暖色背景 |
 | F1／F2 | 切換 1280×720／1600×900 視窗大小 |
 | F11 | 切換無邊框全螢幕 |
 | F8 | 移至下一個顯示螢幕；只有一個螢幕時不改變 |
 | Esc | 結束程式 |
 
-`config/gameplay.cfg` 的 `moveSpeed` 用於**預設模型預覽模式**，預設 `2.4` 世界單位／秒。第一人稱移動數值目前集中在 `FirstPersonTuning.h`，採用原版的加速度和最高速度。`maxMovementDeltaTime` 限制單幀移動量。`config/input.cfg`、`config/display.cfg`、`config/model.cfg` 分別設定按鍵、顯示模式及主程式模型；`config/scene.cfg` 設定多模型預覽；`config/first-person-scene.cfg` 設定第一人稱模式的初始視點與 Target。CMake 會將設定檔放到執行檔旁邊。
+`config/gameplay.cfg` 的 `moveSpeed` 用於**預設模型預覽模式**，預設 `2.4` 世界單位／秒。第一人稱移動與攻擊數值目前集中在 `FirstPersonTuning.h`，採用原版的加速度、最高速度和 Rocket Punch 時序。`maxMovementDeltaTime` 限制單幀移動量。`config/input.cfg`、`config/display.cfg`、`config/model.cfg` 分別設定按鍵、顯示模式及主程式模型；`config/scene.cfg` 設定多模型預覽；`config/first-person-scene.cfg` 設定第一人稱模式的初始視點與靜態 Target。CMake 會將設定檔放到執行檔旁邊。
 
 ## 原始碼分類
 
@@ -94,7 +95,7 @@ src/
 ```powershell
 $cmakeExe = 'C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
 & $cmakeExe -S . -B build -G 'Visual Studio 18 2026' -A x64
-& $cmakeExe --build build --config Debug --target BiggerFISTsSDL MultiModelPreview GpuTriangle InputActionsTests WindowSettingsTests MathTypesTests GameTests FirstPersonGameTests FixedStepTests CollisionTests ObjLoaderTests ModelConfigTests SceneConfigTests SceneLoaderTests
+& $cmakeExe --build build --config Debug --target BiggerFISTsSDL MultiModelPreview GpuTriangle InputActionsTests WindowSettingsTests MathTypesTests GameTests FirstPersonGameTests RocketPunchTests FixedStepTests CollisionTests ObjLoaderTests ModelConfigTests SceneConfigTests SceneLoaderTests
 & (Join-Path (Split-Path -Parent $cmakeExe) 'ctest.exe') --test-dir build -C Debug --output-on-failure
 & '.\build\Debug\BiggerFISTsSDL.exe' --smoke-test
 & '.\build\Debug\BiggerFISTsSDL.exe' --scene-preview --smoke-test

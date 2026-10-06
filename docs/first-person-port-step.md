@@ -1,4 +1,8 @@
-# First-person movement, two controllable fists and a destructible Target
+# First-person movement, two controllable fists and static Targets
+
+This document describes the first-person foundation and ordinary Punch. Rocket
+Punch was added in the next step; see [Rocket Punch port](rocket-punch-step.md)
+for its input, flight, return and penetration rules.
 
 ## Run
 
@@ -12,18 +16,18 @@ Build `BiggerFISTsSDL` in Visual Studio, then set its command argument to
 The window captures relative mouse motion. Move the mouse to look, use W/A/S/D
 to move relative to the camera direction. Hold Q for the left punch or E for
 the right punch. Shift + left/right mouse button also charges the corresponding
-punch; an unshifted mouse button is reserved for a later Rocket Punch step.
+punch. An unshifted mouse button charges Rocket Punch.
 Release before full charge to cancel; after full charge, release to punch.
-Move closer to the Target with W, punch it to remove it, and press R to reset
-the Target and both arms for another attempt.
+Move closer to the near Target with W, punch it to remove it, and press R to
+reset both Targets and both arms for another attempt.
 Press Escape to quit. Space
 toggles the background. F1, F2, F8 and F11 retain the existing display actions.
 
-The starting eye is `(0, 5.85, 0)`, facing world `+Z`. One copied original
-`Target.obj` with `target.png` stands at `(0, 4.55, 8)`. Its configured spin is
-zero. `LfistTEST.obj` and `Rfist.obj`, each with its copied PNG, form the idle
-left and right fists near the bottom corners of the view. The Target stays in
-place until a punch hits it.
+The starting eye is `(0, 5.85, 0)`, facing world `+Z`. Two instances of the
+copied original `Target.obj` with `target.png` stand at `(0, 4.55, 8)` and
+`(0, 4.55, 12)`. Their configured spin is zero. `LfistTEST.obj` and `Rfist.obj`,
+each with its copied PNG, form the idle left and right fists near the bottom
+corners of the view. Each Target stays in place until hit.
 
 ## Why the original files are copied but not compiled
 
@@ -51,7 +55,7 @@ old engine into the new executable.
 6. `FirstPersonCamera` follows the player's eye anchor with the original
    exponential smoothing and aims according to yaw and pitch.
 7. `PunchArm` updates the two independent charge and punch states.
-   `FirstPersonGame` checks hits against the Target position and reports a
+   `FirstPersonGame` checks hits against the Target positions and reports a
    destruction or reset event. It does not own a rendering scene.
 8. `FirstPersonScenePresenter` copies the camera, background, fist poses and
    Target visibility from gameplay state to `ModelScene`. It pitches the fists
@@ -96,20 +100,20 @@ bindings can be changed in `config/input.cfg`.
 ## Target collision and reset
 
 The Target uses a sphere with radius `1.25`; each fist uses radius `0.55`.
-These match the original dummy and fist collision values. The Target has one
-hit point and a punch deals one damage. Only the `Punching` phase can hit.
+These match the original dummy and fist collision values. Each Target has one
+hit point and a punch deals one damage. Ordinary Punch hits during `Punching`.
 `Collision::Intersects` checks the current fist position. The sphere sweep also
 checks the path from the previous position to the current one, reducing missed
 hits when the fist moves farther in one frame than its collision radius.
 The collision code uses only sphere overlap and a moving-sphere-versus-static-
 sphere sweep; it is not a general physics system.
 
-On destruction, `FirstPersonGame` sets Target HP to zero, and
+On destruction, `FirstPersonGame` sets a Target's HP to zero, and
 `FirstPersonScenePresenter` removes its `ModelInstance` from `ModelScene.models`.
 Its GPU mesh remains loaded so R can restore the original instance without
 reading the OBJ or PNG again. R also returns both arms to
 `Ready`. The player and camera remain where they are, making repeated tests
-easy. The original Target starts at Z `8`; walk forward before punching because
+easy. The near Target starts at Z `8`; walk forward before punching because
 it begins outside ordinary punch range.
 
 ## Idle fist placement
@@ -157,9 +161,9 @@ to `0.05` seconds and remains a guard inside player and arm updates. In normal
 first-person play each update receives `1/60` second, and scene elapsed time
 records simulation time.
 
-The original also has Rocket Punch, moving enemies, dodge, controller look,
-camera shake, impact sound, vibration and extra camera modes. Those systems
-are outside this step. `gameplay.cfg` still
+The original also has moving enemies, dodge, controller look, camera shake,
+impact sound, vibration and extra camera modes. Those systems are outside this
+step. `gameplay.cfg` still
 controls the older model preview mode; first-person movement values are
 centralized in `FirstPersonTuning.h` for now. The Target position and mesh are
 editable through `config/first-person-scene.cfg`.
@@ -177,8 +181,9 @@ The test executable checks movement, diagonal speed, camera yaw/pitch and
 follow, both fists' idle poses, early charge cancel, full charge, independent
 punch/recovery, Shift + mouse behavior, Target damage and reset. `CollisionTests`
 checks touching spheres, missed sweeps and hits between frame endpoints. The
-smoke mode loads three meshes and PNGs, renders 30 GPU frames, then exits. For
-a visual/manual check, run without `--smoke-test`: the Target begins near the
+smoke mode loads three unique meshes and PNGs for four model instances,
+renders 30 GPU frames, then exits. For a visual/manual check, run without
+`--smoke-test`: the near Target begins near the
 center and parts of both fists appear near the bottom corners while W/A/S/D
 and mouse motion change the viewpoint. Move forward to approach the Target,
 then charge and release Q or E; it should disappear. R restores it.

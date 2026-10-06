@@ -6,13 +6,20 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 FirstPersonGame::FirstPersonGame(const GameConfig& config,
     const Vector3& initialEyePosition, const Vector3& targetPosition)
+    : FirstPersonGame(config, initialEyePosition,
+        std::vector<FirstPersonTarget>{{"target", targetPosition,
+            FirstPersonTuning::kTargetHitPoints}}) {
+}
+
+FirstPersonGame::FirstPersonGame(const GameConfig& config,
+    const Vector3& initialEyePosition, std::vector<FirstPersonTarget> targets)
     : player_(std::max(config.maxMovementDeltaTime,
         static_cast<float>(SimulationTiming::kFixedStepSeconds))),
-      targetPosition_(targetPosition),
-      targetHitPoints_(FirstPersonTuning::kTargetHitPoints),
+      targets_(std::move(targets)),
       maxArmDeltaTime_(std::max(config.maxMovementDeltaTime,
           static_cast<float>(SimulationTiming::kFixedStepSeconds))) {
     player_.Reset({ initialEyePosition.x,
@@ -35,12 +42,25 @@ void FirstPersonGame::Update(double deltaSeconds, const GameInput& input,
         deltaSeconds, static_cast<double>(maxArmDeltaTime_)));
     const Vector3 playerPosition = player_.GetPosition();
     const float bodyYaw = player_.GetBodyYaw();
-    const bool leftPunchHeld = input.leftPunchKeyDown ||
-        (input.leftMouseDown && (input.shiftDown || leftArm_.IsChargingOrCharged()));
-    const bool rightPunchHeld = input.rightPunchKeyDown ||
-        (input.rightMouseDown && (input.shiftDown || rightArm_.IsChargingOrCharged()));
-    leftArm_.Update(armDeltaTime, playerPosition, bodyYaw, leftPunchHeld);
-    rightArm_.Update(armDeltaTime, playerPosition, bodyYaw, rightPunchHeld);
+    const auto armInput = [&](const PunchArm& arm, bool keyPunchHeld,
+        bool mouseHeld) {
+        PunchArmInput result{};
+        result.punchHeld = keyPunchHeld;
+        if (mouseHeld) {
+            const bool continuePunch = arm.IsChargingOrCharged()
+                ? arm.GetAttackType() == PunchArmAttackType::Punch : input.shiftDown;
+            if (continuePunch) {
+                result.punchHeld = true;
+            } else {
+                result.rocketHeld = true;
+            }
+        }
+        return result;
+    };
+    leftArm_.Update(armDeltaTime, playerPosition, bodyYaw,
+        armInput(leftArm_, input.leftPunchKeyDown, input.leftMouseDown));
+    rightArm_.Update(armDeltaTime, playerPosition, bodyYaw,
+        armInput(rightArm_, input.rightPunchKeyDown, input.rightMouseDown));
     if (input.resetTarget.pressed) {
         ResetTarget();
         leftArm_.Reset(playerPosition, bodyYaw);
@@ -48,6 +68,10 @@ void FirstPersonGame::Update(double deltaSeconds, const GameInput& input,
     } else {
         ProcessTargetHits();
     }
+    events_.leftRocketLaunched = leftArm_.DidLaunchRocketThisFrame();
+    events_.rightRocketLaunched = rightArm_.DidLaunchRocketThisFrame();
+    events_.leftRocketReconnected = leftArm_.DidReconnectThisFrame();
+    events_.rightRocketReconnected = rightArm_.DidReconnectThisFrame();
     camera_.Follow({ playerPosition.x,
         playerPosition.y + FirstPersonTuning::kEyeHeight,
         playerPosition.z }, deltaSeconds);
@@ -58,29 +82,37 @@ void FirstPersonGame::Update(double deltaSeconds, const GameInput& input,
 }
 
 void FirstPersonGame::ProcessTargetHits() {
-    if (targetHitPoints_ <= 0) {
-        return;
-    }
-    const Collision::Sphere targetSphere{targetPosition_, FirstPersonTuning::kTargetRadius};
-    const auto hitsTarget = [&](const PunchArm& arm) {
-        if (!arm.IsPunchDamageActiveThisFrame()) {
+    const auto hitsTarget = [&](const PunchArm& arm,
+        const Collision::Sphere& targetSphere) {
+        if (!arm.IsPunchDamageActiveThisFrame() &&
+            !arm.IsRocketDamageActiveThisFrame()) {
             return false;
         }
         const float fistRadius = FirstPersonTuning::kFistRadius;
-        return Collision::Intersects({arm.GetFistPosition(), fistRadius}, targetSphere) ||
-            Collision::SweepSphereAgainstSphere(arm.GetPreviousFistPosition(),
-                arm.GetFistPosition(), fistRadius, targetSphere).didHit;
+        const bool currentOverlap = arm.IsPunchDamageActiveThisFrame() &&
+            Collision::Intersects({arm.GetFistPosition(), fistRadius}, targetSphere);
+        return currentOverlap || Collision::SweepSphereAgainstSphere(
+            arm.GetPreviousFistPosition(), arm.GetFistPosition(), fistRadius,
+            targetSphere).didHit;
     };
-    if (!hitsTarget(leftArm_) && !hitsTarget(rightArm_)) {
-        return;
-    }
-    targetHitPoints_ = std::max(0, targetHitPoints_ - FirstPersonTuning::kPunchDamage);
-    if (targetHitPoints_ == 0) {
-        events_.targetDestroyed = true;
+    for (FirstPersonTarget& target : targets_) {
+        if (target.hitPoints <= 0) {
+            continue;
+        }
+        const Collision::Sphere targetSphere{
+            target.position, FirstPersonTuning::kTargetRadius};
+        if (hitsTarget(leftArm_, targetSphere) ||
+            hitsTarget(rightArm_, targetSphere)) {
+            target.hitPoints = std::max(0,
+                target.hitPoints - FirstPersonTuning::kPunchDamage);
+            events_.targetDestroyed |= target.hitPoints == 0;
+        }
     }
 }
 
 void FirstPersonGame::ResetTarget() {
-    targetHitPoints_ = FirstPersonTuning::kTargetHitPoints;
+    for (FirstPersonTarget& target : targets_) {
+        target.hitPoints = FirstPersonTuning::kTargetHitPoints;
+    }
     events_.targetReset = true;
 }

@@ -1,5 +1,8 @@
 # PC game migration baseline
 
+This is the saved starting snapshot for the fixed-step migration round. For
+later Rocket Punch progress, see [Rocket Punch port](rocket-punch-step.md).
+
 ## Saved starting points
 
 The original game and the SDL port are separate Git repositories. At the start

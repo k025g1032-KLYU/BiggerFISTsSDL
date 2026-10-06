@@ -9,10 +9,7 @@
 #include <utility>
 
 FirstPersonScenePresenter::FirstPersonScenePresenter(ModelScene initialScene)
-    : scene_(std::move(initialScene)) {
-    if (const ModelInstance* target = FindModelById(scene_, "target")) {
-        initialTarget_ = *target;
-    }
+    : scene_(std::move(initialScene)), initialModels_(scene_.models) {
 }
 
 void FirstPersonScenePresenter::Sync(const FirstPersonGame& game) {
@@ -21,12 +18,18 @@ void FirstPersonScenePresenter::Sync(const FirstPersonGame& game) {
     scene_.elapsedSeconds = game.GetElapsedSeconds();
     scene_.warmBackground = game.IsWarmBackground();
 
-    if (game.GetTargetHitPoints() == 0) {
-        scene_.models.erase(std::remove_if(scene_.models.begin(), scene_.models.end(),
-            [](const ModelInstance& model) { return model.id == "target"; }),
-            scene_.models.end());
-    } else if (initialTarget_ && FindModelById(scene_, "target") == nullptr) {
-        scene_.models.insert(scene_.models.begin(), *initialTarget_);
+    for (const FirstPersonTarget& target : game.GetTargets()) {
+        if (target.hitPoints <= 0) {
+            scene_.models.erase(std::remove_if(scene_.models.begin(), scene_.models.end(),
+                [&](const ModelInstance& model) { return model.id == target.id; }),
+                scene_.models.end());
+        } else if (FindModelById(scene_, target.id) == nullptr) {
+            const auto original = std::find_if(initialModels_.begin(), initialModels_.end(),
+                [&](const ModelInstance& model) { return model.id == target.id; });
+            if (original != initialModels_.end()) {
+                scene_.models.insert(scene_.models.begin(), *original);
+            }
+        }
     }
 
     UpdateFistPose("left_fist", -1.0f, game, game.GetLeftArm());
@@ -44,6 +47,15 @@ void FirstPersonScenePresenter::UpdateFistPose(const char* id, float sideSign,
     const float sine = std::sin(bodyYaw);
     const float cosine = std::cos(bodyYaw);
     const Vector3& fistPosition = arm.GetFistPosition();
+    if (arm.IsFistAway()) {
+        fist->position = fistPosition;
+        fist->initialXDegrees = arm.GetRocketPosePitch() *
+            180.0f / std::numbers::pi_v<float>;
+        fist->initialYDegrees = arm.GetRocketPoseYaw() *
+            180.0f / std::numbers::pi_v<float>;
+        fist->initialZDegrees = 0.0f;
+        return;
+    }
     const float sideOffset = sideSign * FirstPersonTuning::kShoulderHalfWidth;
     const Vector3 shoulder{
         playerPosition.x + cosine * sideOffset,

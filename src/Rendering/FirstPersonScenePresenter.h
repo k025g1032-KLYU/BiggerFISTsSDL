@@ -2,8 +2,6 @@
 
 #include "World/ModelScene.h"
 
-#include <optional>
-
 class FirstPersonGame;
 class PunchArm;
 
@@ -18,5 +16,5 @@ private:
         const FirstPersonGame& game, const PunchArm& arm);
 
     ModelScene scene_;
-    std::optional<ModelInstance> initialTarget_;
+    std::vector<ModelInstance> initialModels_;
 };

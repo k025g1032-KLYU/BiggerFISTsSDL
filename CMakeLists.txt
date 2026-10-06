@@ -180,6 +180,20 @@ add_executable(FirstPersonGameTests EXCLUDE_FROM_ALL
 target_include_directories(FirstPersonGameTests PRIVATE src)
 add_test(NAME FirstPersonGameTests COMMAND FirstPersonGameTests)
 
+add_executable(RocketPunchTests EXCLUDE_FROM_ALL
+    tests/RocketPunchTests.cpp
+    src/Game/FirstPersonGame.cpp
+    src/Collision/Collision.cpp
+    src/Gameplay/Player/PlayerMovement.cpp
+    src/Gameplay/Player/PunchArm.cpp
+    src/Rendering/FirstPersonScenePresenter.cpp
+    src/World/FirstPersonCamera.cpp
+    src/World/ModelScene.cpp
+    src/Math/MathTypes.cpp
+)
+target_include_directories(RocketPunchTests PRIVATE src)
+add_test(NAME RocketPunchTests COMMAND RocketPunchTests)
+
 add_executable(FixedStepTests EXCLUDE_FROM_ALL
     tests/FixedStepTests.cpp
     src/Platform/FixedStepClock.cpp
@@ -249,6 +263,7 @@ if(MSVC)
     target_compile_options(MathTypesTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(GameTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(FirstPersonGameTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(RocketPunchTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(FixedStepTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(CollisionTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(ObjLoaderTests PRIVATE /W4 /utf-8 /EHsc)

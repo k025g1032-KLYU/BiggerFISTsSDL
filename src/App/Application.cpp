@@ -66,6 +66,7 @@ int Application::Run(const ApplicationOptions& options) {
         std::filesystem::path(std::u8string(reinterpret_cast<const char8_t*>(basePath)));
     std::vector<MeshData> meshes;
     ModelScene previewScene;
+    std::vector<FirstPersonTarget> firstPersonTargets;
     std::string loadError;
     if (options.scenePreview || options.firstPersonPreview) {
         const char* sceneName = options.firstPersonPreview ? "first-person-scene.cfg" : "scene.cfg";
@@ -79,23 +80,33 @@ int Application::Run(const ApplicationOptions& options) {
             return 1;
         }
         if (options.firstPersonPreview) {
-            ModelInstance* target = FindModelById(previewScene, "target");
             ModelInstance* leftFist = FindModelById(previewScene, "left_fist");
             ModelInstance* rightFist = FindModelById(previewScene, "right_fist");
-            if (previewScene.models.size() != 3 || target == nullptr ||
-                leftFist == nullptr || rightFist == nullptr ||
-                target->rotationXDegreesPerSecond != 0.0f ||
-                target->rotationYDegreesPerSecond != 0.0f ||
+            bool validTargets = FindModelById(previewScene, "target") != nullptr;
+            for (ModelInstance& model : previewScene.models) {
+                if (model.id == "left_fist" || model.id == "right_fist") {
+                    continue;
+                }
+                if ((model.id != "target" && !model.id.starts_with("target_")) ||
+                    model.rotationXDegreesPerSecond != 0.0f ||
+                    model.rotationYDegreesPerSecond != 0.0f) {
+                    validTargets = false;
+                    break;
+                }
+                model.modelCenter = {};
+                firstPersonTargets.push_back({model.id, model.position, 1});
+            }
+            if (previewScene.models.size() != firstPersonTargets.size() + 2 ||
+                !validTargets || leftFist == nullptr || rightFist == nullptr ||
                 leftFist->rotationXDegreesPerSecond != 0.0f ||
                 leftFist->rotationYDegreesPerSecond != 0.0f ||
                 rightFist->rotationXDegreesPerSecond != 0.0f ||
                 rightFist->rotationYDegreesPerSecond != 0.0f) {
-                SDL_Log("First-person scene requires one static target, left_fist and right_fist");
+                SDL_Log("First-person scene requires static target IDs, left_fist and right_fist");
                 SDL_DestroyWindow(window);
                 SDL_Quit();
                 return 1;
             }
-            target->modelCenter = {};
             leftFist->modelCenter = {};
             rightFist->modelCenter = {};
         }
@@ -142,8 +153,7 @@ int Application::Run(const ApplicationOptions& options) {
     std::optional<FirstPersonScenePresenter> firstPersonView;
     if (options.firstPersonPreview) {
         const Vector3 initialEyePosition = previewScene.cameraPosition;
-        const Vector3 targetPosition = FindModelById(previewScene, "target")->position;
-        firstPersonGame.emplace(config, initialEyePosition, targetPosition);
+        firstPersonGame.emplace(config, initialEyePosition, std::move(firstPersonTargets));
         firstPersonView.emplace(std::move(previewScene));
         firstPersonView->Sync(*firstPersonGame);
         if (!options.smokeTest && !SDL_SetWindowRelativeMouseMode(window, true)) {
@@ -209,10 +219,22 @@ int Application::Run(const ApplicationOptions& options) {
                 firstPersonGame->Update(FixedStepClock::kStepSeconds, stepInput.game,
                     stepInput.mouseDeltaX, stepInput.mouseDeltaY);
                 if (firstPersonGame->GetEvents().targetDestroyed) {
-                    SDL_Log("Target destroyed by Punch. Press R to reset the Target.");
+                    SDL_Log("Target destroyed by fist impact. Press R to reset the Target.");
                 }
                 if (firstPersonGame->GetEvents().targetReset) {
                     SDL_Log("Target and punch states reset.");
+                }
+                if (firstPersonGame->GetEvents().leftRocketLaunched) {
+                    SDL_Log("Left Rocket Punch launched");
+                }
+                if (firstPersonGame->GetEvents().rightRocketLaunched) {
+                    SDL_Log("Right Rocket Punch launched");
+                }
+                if (firstPersonGame->GetEvents().leftRocketReconnected) {
+                    SDL_Log("Left Rocket Punch reconnected");
+                }
+                if (firstPersonGame->GetEvents().rightRocketReconnected) {
+                    SDL_Log("Right Rocket Punch reconnected");
                 }
             }
             firstPersonView->Sync(*firstPersonGame);
@@ -229,7 +251,7 @@ int Application::Run(const ApplicationOptions& options) {
         if (options.smokeTest) {
             if (frameRendered && ++renderedFrames >= 30) {
                 if (options.firstPersonPreview) {
-                    SDL_Log("PASS: BiggerFISTsSDL first-person preview rendered 30 3D frames with a static Target and two player fists");
+                    SDL_Log("PASS: BiggerFISTsSDL first-person preview rendered 30 3D frames with static Targets and two player fists");
                 } else if (options.scenePreview) {
                     SDL_Log("PASS: BiggerFISTsSDL scene preview rendered 30 3D frames with %u models",
                         static_cast<Uint32>(scene.models.size()));
