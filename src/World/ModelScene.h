@@ -4,11 +4,14 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <string>
+#include <string_view>
 #include <vector>
 
 struct MeshData;
 
 struct ModelInstance {
+    std::string id;
     std::size_t meshIndex = 0;
     Vector3 position{ 0.0f, 0.0f, 0.0f };
     Vector3 modelCenter{ 0.0f, 0.0f, 0.0f };
@@ -38,6 +41,8 @@ struct ModelScene {
 
 bool TryCalculateModelBounds(const MeshData& mesh, ModelBounds& result);
 bool TryConfigureModelPreview(const MeshData& mesh, ModelScene& scene);
+ModelInstance* FindModelById(ModelScene& scene, std::string_view id);
+const ModelInstance* FindModelById(const ModelScene& scene, std::string_view id);
 bool TryBuildModelTransform(const ModelScene& scene, const ModelInstance& model,
     std::uint32_t outputWidth, std::uint32_t outputHeight, Matrix4x4& result);
 bool TryBuildModelTransform(const ModelScene& scene, std::uint32_t outputWidth,

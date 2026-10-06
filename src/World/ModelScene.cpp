@@ -79,6 +79,18 @@ bool TryConfigureModelPreview(const MeshData& mesh, ModelScene& scene) {
     return true;
 }
 
+ModelInstance* FindModelById(ModelScene& scene, std::string_view id) {
+    const auto found = std::find_if(scene.models.begin(), scene.models.end(),
+        [id](const ModelInstance& model) { return model.id == id; });
+    return found == scene.models.end() ? nullptr : &*found;
+}
+
+const ModelInstance* FindModelById(const ModelScene& scene, std::string_view id) {
+    const auto found = std::find_if(scene.models.begin(), scene.models.end(),
+        [id](const ModelInstance& model) { return model.id == id; });
+    return found == scene.models.end() ? nullptr : &*found;
+}
+
 bool TryBuildModelTransform(const ModelScene& scene, const ModelInstance& model,
     std::uint32_t outputWidth,
     std::uint32_t outputHeight, Matrix4x4& result) {

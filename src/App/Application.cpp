@@ -9,14 +9,19 @@
 #include "Platform/WindowSettings.h"
 #include "Data/ObjLoader.h"
 #include "Data/ModelConfig.h"
+#include "Data/SceneConfig.h"
+#include "Data/SceneLoader.h"
 #include "Rendering/MeshRenderer.h"
 
 #include <SDL3/SDL.h>
 
 #include <filesystem>
+#include <span>
 #include <string>
+#include <utility>
+#include <vector>
 
-int Application::Run(bool smokeTest) {
+int Application::Run(const ApplicationOptions& options) {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("SDL_Init failed: %s", SDL_GetError());
         return 1;
@@ -27,7 +32,7 @@ int Application::Run(bool smokeTest) {
     const DisplaySettings displaySettings = LoadDisplaySettings();
 
     SDL_Window* window = SDL_CreateWindow(
-        "BiggerFISTs SDL3 Model Viewer",
+        options.scenePreview ? "BiggerFISTs SDL3 Scene Preview" : "BiggerFISTs SDL3 Model Viewer",
         displaySettings.windowWidth,
         displaySettings.windowHeight,
         SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY
@@ -53,37 +58,52 @@ int Application::Run(bool smokeTest) {
     }
     const std::filesystem::path executableDirectory =
         std::filesystem::path(std::u8string(reinterpret_cast<const char8_t*>(basePath)));
-    ModelConfig modelConfig;
-    std::string loadError;
-    if (!LoadModelConfig(executableDirectory / "model.cfg", modelConfig, loadError)) {
-        SDL_Log("%s", loadError.c_str());
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return 1;
-    }
-    const std::filesystem::path modelPath =
-        executableDirectory / "assets/models" / modelConfig.relativeObjPath;
-    MeshData model;
-    if (!LoadObjModel(modelPath, model, loadError)) {
-        SDL_Log("%s", loadError.c_str());
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return 1;
-    }
-    const auto modelName = modelConfig.relativeObjPath.u8string();
-    SDL_Log("Loaded model %s: %u vertices, %u triangles",
-        reinterpret_cast<const char*>(modelName.c_str()),
-        static_cast<Uint32>(model.vertices.size()), static_cast<Uint32>(model.indices.size() / 3));
-
+    std::vector<MeshData> meshes;
     ModelScene previewScene;
-    if (!TryConfigureModelPreview(model, previewScene)) {
-        SDL_Log("Could not calculate preview bounds for the selected model");
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return 1;
+    std::string loadError;
+    if (options.scenePreview) {
+        SceneConfig sceneConfig;
+        if (!LoadSceneConfig(executableDirectory / "scene.cfg", sceneConfig, loadError) ||
+            !LoadSceneAssets(executableDirectory / "assets/models", sceneConfig,
+                meshes, previewScene, loadError)) {
+            SDL_Log("%s", loadError.c_str());
+            SDL_DestroyWindow(window);
+            SDL_Quit();
+            return 1;
+        }
+        SDL_Log("Loaded scene.cfg: %u model instances, %u unique mesh resources",
+            static_cast<Uint32>(previewScene.models.size()), static_cast<Uint32>(meshes.size()));
+    } else {
+        ModelConfig modelConfig;
+        if (!LoadModelConfig(executableDirectory / "model.cfg", modelConfig, loadError)) {
+            SDL_Log("%s", loadError.c_str());
+            SDL_DestroyWindow(window);
+            SDL_Quit();
+            return 1;
+        }
+        const std::filesystem::path modelPath =
+            executableDirectory / "assets/models" / modelConfig.relativeObjPath;
+        MeshData model;
+        if (!LoadObjModel(modelPath, model, loadError)) {
+            SDL_Log("%s", loadError.c_str());
+            SDL_DestroyWindow(window);
+            SDL_Quit();
+            return 1;
+        }
+        const auto modelName = modelConfig.relativeObjPath.u8string();
+        SDL_Log("Loaded model %s: %u vertices, %u triangles",
+            reinterpret_cast<const char*>(modelName.c_str()),
+            static_cast<Uint32>(model.vertices.size()), static_cast<Uint32>(model.indices.size() / 3));
+        if (!TryConfigureModelPreview(model, previewScene)) {
+            SDL_Log("Could not calculate preview bounds for the selected model");
+            SDL_DestroyWindow(window);
+            SDL_Quit();
+            return 1;
+        }
+        meshes.push_back(std::move(model));
     }
     MeshRenderer renderer;
-    if (!renderer.Initialize(window, model)) {
+    if (!renderer.Initialize(window, std::span<const MeshData>(meshes))) {
         SDL_DestroyWindow(window);
         SDL_Quit();
         return 1;
@@ -114,7 +134,7 @@ int Application::Run(bool smokeTest) {
         }
 
         input.Update();
-        const GameInput gameInput = inputActions.Evaluate(input);
+        GameInput gameInput = inputActions.Evaluate(input);
 
         if (gameInput.quit.pressed) {
             isRunning = false;
@@ -125,6 +145,10 @@ int Application::Run(bool smokeTest) {
         }
 
         windowSettings.ApplyPending();
+        if (options.scenePreview) {
+            gameInput.moveX = 0.0f;
+            gameInput.moveY = 0.0f;
+        }
         game.Update(deltaTime, gameInput);
         bool frameRendered = false;
         if (!renderer.Render(game.GetScene(), windowSettings, &frameRendered)) {
@@ -132,9 +156,14 @@ int Application::Run(bool smokeTest) {
             isRunning = false;
             exitCode = 1;
         }
-        if (smokeTest) {
+        if (options.smokeTest) {
             if (frameRendered && ++renderedFrames >= 30) {
-                SDL_Log("PASS: BiggerFISTsSDL rendered 30 3D frames");
+                if (options.scenePreview) {
+                    SDL_Log("PASS: BiggerFISTsSDL scene preview rendered 30 3D frames with %u models",
+                        static_cast<Uint32>(game.GetScene().models.size()));
+                } else {
+                    SDL_Log("PASS: BiggerFISTsSDL rendered 30 3D frames");
+                }
                 isRunning = false;
             }
             else if (SDL_GetTicks() - smokeStarted > 10000) {

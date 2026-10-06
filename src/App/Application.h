@@ -1,6 +1,11 @@
 #pragma once
 
+struct ApplicationOptions {
+    bool smokeTest = false;
+    bool scenePreview = false;
+};
+
 class Application {
 public:
-    int Run(bool smokeTest = false);
+    int Run(const ApplicationOptions& options = {});
 };

@@ -67,6 +67,13 @@ set(SCENE_RENDERING_SOURCES
     src/Rendering/TextureLoader.h
 )
 
+set(SCENE_LOADING_SOURCES
+    src/Data/SceneConfig.cpp
+    src/Data/SceneConfig.h
+    src/Data/SceneLoader.cpp
+    src/Data/SceneLoader.h
+)
+
 add_executable(BiggerFISTsSDL
     src/App/main.cpp
     src/App/Application.cpp
@@ -91,6 +98,7 @@ add_executable(BiggerFISTsSDL
     src/Data/ModelConfig.h
     src/Game/Game.cpp
     src/Game/Game.h
+    ${SCENE_LOADING_SOURCES}
     ${SCENE_RENDERING_SOURCES}
 )
 target_include_directories(BiggerFISTsSDL PRIVATE src)
@@ -159,6 +167,26 @@ add_executable(ModelConfigTests EXCLUDE_FROM_ALL
 target_include_directories(ModelConfigTests PRIVATE src)
 add_test(NAME ModelConfigTests COMMAND ModelConfigTests)
 
+add_executable(SceneConfigTests EXCLUDE_FROM_ALL
+    tests/SceneConfigTests.cpp
+    src/Data/SceneConfig.cpp
+)
+target_include_directories(SceneConfigTests PRIVATE src)
+add_test(NAME SceneConfigTests COMMAND SceneConfigTests)
+
+add_executable(SceneLoaderTests EXCLUDE_FROM_ALL
+    tests/SceneLoaderTests.cpp
+    src/Data/SceneLoader.cpp
+    src/Data/ObjLoader.cpp
+    src/World/ModelScene.cpp
+    src/Math/MathTypes.cpp
+)
+target_include_directories(SceneLoaderTests PRIVATE src)
+target_compile_definitions(SceneLoaderTests PRIVATE
+    SCENE_TEST_MODEL_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/assets/models"
+)
+add_test(NAME SceneLoaderTests COMMAND SceneLoaderTests)
+
 if(MSVC)
     target_compile_options(BiggerFISTsSDL PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(InputActionsTests PRIVATE /W4 /utf-8 /EHsc)
@@ -167,6 +195,8 @@ if(MSVC)
     target_compile_options(GameTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(ObjLoaderTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(ModelConfigTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(SceneConfigTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(SceneLoaderTests PRIVATE /W4 /utf-8 /EHsc)
 endif()
 
 add_custom_command(TARGET BiggerFISTsSDL POST_BUILD
@@ -192,6 +222,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/config/input.cfg"
     "${CMAKE_CURRENT_SOURCE_DIR}/config/display.cfg"
     "${CMAKE_CURRENT_SOURCE_DIR}/config/model.cfg"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config/scene.cfg"
 )
 
 file(GENERATE
@@ -212,6 +243,11 @@ file(GENERATE
 file(GENERATE
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/model.cfg"
     INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/model.cfg"
+)
+
+file(GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/scene.cfg"
+    INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/scene.cfg"
 )
 
 find_program(GPU_DXC_EXECUTABLE
@@ -358,6 +394,7 @@ add_executable(MultiModelPreview
     src/Data/ObjLoader.cpp
     src/Data/ObjLoader.h
     src/Data/MeshData.h
+    ${SCENE_LOADING_SOURCES}
     ${SCENE_RENDERING_SOURCES}
 )
 target_include_directories(MultiModelPreview PRIVATE src)

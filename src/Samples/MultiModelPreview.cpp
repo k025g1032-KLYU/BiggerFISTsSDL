@@ -1,4 +1,5 @@
-#include "Data/ObjLoader.h"
+#include "Data/SceneConfig.h"
+#include "Data/SceneLoader.h"
 #include "Platform/FrameTimer.h"
 #include "Platform/WindowSettings.h"
 #include "Rendering/MeshRenderer.h"
@@ -7,53 +8,13 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
-#include <array>
 #include <cstring>
 #include <filesystem>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace {
-bool LoadPreviewModels(const std::filesystem::path& executableDirectory,
-    std::array<MeshData, 2>& meshes, ModelScene& scene) {
-    const std::array<std::filesystem::path, 2> paths{
-        executableDirectory / "assets/models/Target/Target.obj",
-        executableDirectory / "assets/models/LfistTEST/LfistTEST.obj"
-    };
-    std::string error;
-    for (std::size_t i = 0; i < meshes.size(); ++i) {
-        if (!LoadObjModel(paths[i], meshes[i], error)) {
-            SDL_Log("%s", error.c_str());
-            return false;
-        }
-        ModelBounds bounds;
-        if (!TryCalculateModelBounds(meshes[i], bounds)) {
-            SDL_Log("Could not calculate bounds for preview model %u", static_cast<Uint32>(i));
-            return false;
-        }
-        scene.models[i].meshIndex = i;
-        scene.models[i].modelCenter = bounds.center;
-        const auto name = paths[i].filename().u8string();
-        SDL_Log("Loaded preview model %s: %u vertices, %u triangles",
-            reinterpret_cast<const char*>(name.c_str()),
-            static_cast<Uint32>(meshes[i].vertices.size()),
-            static_cast<Uint32>(meshes[i].indices.size() / 3));
-    }
-
-    scene.models[0].position.x = -1.6f;
-    scene.models[0].initialXDegrees = 0.0f;
-    scene.models[0].initialYDegrees = 0.0f;
-    scene.models[0].rotationXDegreesPerSecond = 0.0f;
-    scene.models[0].rotationYDegreesPerSecond = 20.0f;
-    scene.models[1].position.x = 1.6f;
-    scene.models[1].initialXDegrees = 15.0f;
-    scene.models[1].initialYDegrees = 30.0f;
-    scene.models[1].rotationXDegreesPerSecond = 0.0f;
-    scene.models[1].rotationYDegreesPerSecond = -25.0f;
-    scene.cameraPosition = { 0.0f, 0.0f, -6.0f };
-    return true;
-}
-
 int RunPreview(MeshRenderer& renderer, WindowSettings& windowSettings,
     ModelScene& scene, bool smokeTest) {
     FrameTimer frameTimer(60);
@@ -85,7 +46,8 @@ int RunPreview(MeshRenderer& renderer, WindowSettings& windowSettings,
         }
         if (smokeTest) {
             if (frameRendered && ++renderedFrames >= 30) {
-                SDL_Log("PASS: MultiModelPreview rendered 30 frames with 2 models");
+                SDL_Log("PASS: MultiModelPreview rendered 30 frames with %u models",
+                    static_cast<Uint32>(scene.models.size()));
                 return 0;
             }
             if (SDL_GetTicks() - smokeStarted > 10000) {
@@ -127,15 +89,24 @@ int main(int argc, char** argv) {
     } else {
         const std::filesystem::path executableDirectory =
             std::filesystem::path(std::u8string(reinterpret_cast<const char8_t*>(basePath)));
-        std::array<MeshData, 2> meshes;
+        SceneConfig config;
+        std::string error;
+        std::vector<MeshData> meshes;
         ModelScene scene;
-        scene.models.resize(meshes.size());
-        if (LoadPreviewModels(executableDirectory, meshes, scene)) {
-            MeshRenderer renderer;
-            if (renderer.Initialize(window, std::span<const MeshData>(meshes))) {
-                exitCode = RunPreview(renderer, windowSettings, scene, smokeTest);
+        if (!LoadSceneConfig(executableDirectory / "scene.cfg", config, error)) {
+            SDL_Log("%s", error.c_str());
+        } else {
+            SDL_Log("Loaded scene.cfg: %u model instances", static_cast<Uint32>(config.models.size()));
+            if (LoadSceneAssets(executableDirectory / "assets/models", config, meshes, scene, error)) {
+                SDL_Log("Loaded %u unique mesh resources", static_cast<Uint32>(meshes.size()));
+                MeshRenderer renderer;
+                if (renderer.Initialize(window, std::span<const MeshData>(meshes))) {
+                    exitCode = RunPreview(renderer, windowSettings, scene, smokeTest);
+                }
+                renderer.Shutdown();
+            } else {
+                SDL_Log("%s", error.c_str());
             }
-            renderer.Shutdown();
         }
     }
     SDL_DestroyWindow(window);
