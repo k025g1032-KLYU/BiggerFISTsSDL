@@ -1,62 +1,19 @@
-#include "Rendering/CubeRenderer.h"
+#include "Rendering/MeshRenderer.h"
 
 #include "Platform/WindowSettings.h"
 #include "Rendering/DepthBuffer.h"
-#include "World/CubeScene.h"
+#include "Rendering/TextureLoader.h"
+#include "World/ModelScene.h"
 
 #include <cstddef>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <type_traits>
 
 namespace {
-struct Vertex {
-    float position[3];
-    float color[3];
-};
-
-static_assert(std::is_standard_layout_v<Vertex>);
-static_assert(sizeof(Vertex) == sizeof(float) * 6);
-
-constexpr Vertex kCubeVertices[] = {
-    { { -0.5f, 0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f } },
-    { { 0.5f, 0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f } },
-    { { 0.5f, -0.5f, -0.5f }, { 0.0f, 0.0f, 1.0f } },
-    { { -0.5f, -0.5f, -0.5f }, { 1.0f, 1.0f, 0.0f } },
-    { { -0.5f, 0.5f, 0.5f }, { 0.0f, 1.0f, 1.0f } },
-    { { 0.5f, 0.5f, 0.5f }, { 1.0f, 0.0f, 1.0f } },
-    { { 0.5f, -0.5f, 0.5f }, { 1.0f, 1.0f, 1.0f } },
-    { { -0.5f, -0.5f, 0.5f }, { 1.0f, 0.5f, 0.0f } }
-};
-
-constexpr Uint16 kCubeIndices[] = {
-    0, 1, 2, 0, 2, 3, // Front (-Z).
-    4, 6, 5, 4, 7, 6, // Back (+Z).
-    4, 0, 3, 4, 3, 7, // Left (-X).
-    1, 5, 6, 1, 6, 2, // Right (+X).
-    4, 5, 1, 4, 1, 0, // Top (+Y).
-    3, 2, 6, 3, 6, 7  // Bottom (-Y).
-};
-
-constexpr Uint32 kCubeVertexCount =
-    static_cast<Uint32>(sizeof(kCubeVertices) / sizeof(kCubeVertices[0]));
-constexpr Uint32 kCubeIndexCount =
-    static_cast<Uint32>(sizeof(kCubeIndices) / sizeof(kCubeIndices[0]));
-constexpr Uint32 kCubeVertexDataSize = static_cast<Uint32>(sizeof(kCubeVertices));
-constexpr Uint32 kCubeIndexDataSize = static_cast<Uint32>(sizeof(kCubeIndices));
-
-constexpr bool AreCubeIndicesValid() {
-    for (const Uint16 index : kCubeIndices) {
-        if (index >= kCubeVertexCount) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static_assert(AreCubeIndicesValid());
-static_assert(kCubeIndexCount == 36);
-static_assert(sizeof(Uint16) == 2);
+static_assert(std::is_standard_layout_v<MeshVertex>);
+static_assert(sizeof(MeshVertex) == sizeof(float) * 5);
 
 SDL_GPUBuffer* CreateUploadedBuffer(
     SDL_GPUDevice* device,
@@ -140,28 +97,32 @@ SDL_GPUBuffer* CreateUploadedBuffer(
     return buffer;
 }
 
-SDL_GPUBuffer* CreateCubeVertexBuffer(SDL_GPUDevice* device) {
+SDL_GPUBuffer* CreateVertexBuffer(SDL_GPUDevice* device, const MeshData& mesh) {
+    const Uint32 dataSize = static_cast<Uint32>(mesh.vertices.size() * sizeof(MeshVertex));
     SDL_GPUBuffer* vertexBuffer = CreateUploadedBuffer(
         device,
-        kCubeVertices,
-        kCubeVertexDataSize,
+        mesh.vertices.data(),
+        dataSize,
         SDL_GPU_BUFFERUSAGE_VERTEX
     );
     if (vertexBuffer != nullptr) {
-        SDL_Log("Vertex upload submitted: %u vertices, %u bytes", kCubeVertexCount, kCubeVertexDataSize);
+        SDL_Log("Vertex upload submitted: %u vertices, %u bytes",
+            static_cast<Uint32>(mesh.vertices.size()), dataSize);
     }
     return vertexBuffer;
 }
 
-SDL_GPUBuffer* CreateCubeIndexBuffer(SDL_GPUDevice* device) {
+SDL_GPUBuffer* CreateIndexBuffer(SDL_GPUDevice* device, const MeshData& mesh) {
+    const Uint32 dataSize = static_cast<Uint32>(mesh.indices.size() * sizeof(Uint32));
     SDL_GPUBuffer* indexBuffer = CreateUploadedBuffer(
         device,
-        kCubeIndices,
-        kCubeIndexDataSize,
+        mesh.indices.data(),
+        dataSize,
         SDL_GPU_BUFFERUSAGE_INDEX
     );
     if (indexBuffer != nullptr) {
-        SDL_Log("Index upload submitted: %u indices, %u bytes (16-bit)", kCubeIndexCount, kCubeIndexDataSize);
+        SDL_Log("Index upload submitted: %u indices, %u bytes (32-bit)",
+            static_cast<Uint32>(mesh.indices.size()), dataSize);
     }
     return indexBuffer;
 }
@@ -170,7 +131,8 @@ SDL_GPUShader* LoadShader(
     SDL_GPUDevice* device,
     const char* filename,
     SDL_GPUShaderStage stage,
-    Uint32 uniformBufferCount
+    Uint32 uniformBufferCount,
+    Uint32 samplerCount
 ) {
     const char* basePath = SDL_GetBasePath();
     if (basePath == nullptr) {
@@ -195,6 +157,7 @@ SDL_GPUShader* LoadShader(
     info.format = SDL_GPU_SHADERFORMAT_DXIL;
     info.stage = stage;
     info.num_uniform_buffers = uniformBufferCount;
+    info.num_samplers = samplerCount;
 
     SDL_GPUShader* shader = SDL_CreateGPUShader(device, &info);
     SDL_free(code);
@@ -219,7 +182,8 @@ SDL_GPUGraphicsPipeline* CreatePipeline(
         device,
         "triangle.vert.dxil",
         SDL_GPU_SHADERSTAGE_VERTEX,
-        1
+        1,
+        0
     );
 
     if (vertexShader == nullptr) {
@@ -230,7 +194,8 @@ SDL_GPUGraphicsPipeline* CreatePipeline(
         device,
         "triangle.frag.dxil",
         SDL_GPU_SHADERSTAGE_FRAGMENT,
-        0
+        0,
+        1
     );
 
     if (fragmentShader == nullptr) {
@@ -244,18 +209,18 @@ SDL_GPUGraphicsPipeline* CreatePipeline(
 
     SDL_GPUVertexBufferDescription vertexDescription{};
     vertexDescription.slot = 0;
-    vertexDescription.pitch = static_cast<Uint32>(sizeof(Vertex));
+    vertexDescription.pitch = static_cast<Uint32>(sizeof(MeshVertex));
     vertexDescription.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
 
     SDL_GPUVertexAttribute attributes[2]{};
     attributes[0].location = 0;
     attributes[0].buffer_slot = 0;
     attributes[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
-    attributes[0].offset = static_cast<Uint32>(offsetof(Vertex, position));
+    attributes[0].offset = static_cast<Uint32>(offsetof(MeshVertex, position));
     attributes[1].location = 1;
     attributes[1].buffer_slot = 0;
-    attributes[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
-    attributes[1].offset = static_cast<Uint32>(offsetof(Vertex, color));
+    attributes[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
+    attributes[1].offset = static_cast<Uint32>(offsetof(MeshVertex, uv));
 
     SDL_GPUGraphicsPipelineCreateInfo info{};
     info.vertex_shader = vertexShader;
@@ -295,13 +260,31 @@ SDL_GPUGraphicsPipeline* CreatePipeline(
 
 }
 
-CubeRenderer::~CubeRenderer() {
+MeshRenderer::~MeshRenderer() {
     Shutdown();
 }
 
-bool CubeRenderer::Initialize(SDL_Window* window) {
-    if (device_ != nullptr || window == nullptr) {
+bool MeshRenderer::Initialize(SDL_Window* window, const MeshData& mesh) {
+    return Initialize(window, std::span<const MeshData>(&mesh, 1));
+}
+
+bool MeshRenderer::Initialize(SDL_Window* window, std::span<const MeshData> meshes) {
+    if (device_ != nullptr || window == nullptr || meshes.empty()) {
         return false;
+    }
+    for (const MeshData& mesh : meshes) {
+        if (mesh.vertices.empty() || mesh.indices.empty() || mesh.texturePath.empty() ||
+            mesh.vertices.size() > std::numeric_limits<Uint32>::max() / sizeof(MeshVertex) ||
+            mesh.indices.size() > std::numeric_limits<Uint32>::max() / sizeof(Uint32)) {
+            SDL_Log("Mesh has no vertices, indices or texture, or is too large for GPU buffers");
+            return false;
+        }
+        for (const Uint32 index : mesh.indices) {
+            if (index >= mesh.vertices.size()) {
+                SDL_Log("Mesh index %u is outside the vertex buffer", index);
+                return false;
+            }
+        }
     }
 
     device_ = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_DXIL, true, "direct3d12");
@@ -326,27 +309,64 @@ bool CubeRenderer::Initialize(SDL_Window* window) {
         Shutdown();
         return false;
     }
-    vertexBuffer_ = CreateCubeVertexBuffer(device_);
-    if (vertexBuffer_ == nullptr) {
+    SDL_GPUSamplerCreateInfo samplerInfo{};
+    samplerInfo.min_filter = SDL_GPU_FILTER_LINEAR;
+    samplerInfo.mag_filter = SDL_GPU_FILTER_LINEAR;
+    samplerInfo.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+    samplerInfo.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+    samplerInfo.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+    samplerInfo.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+    sampler_ = SDL_CreateGPUSampler(device_, &samplerInfo);
+    if (sampler_ == nullptr) {
+        SDL_Log("SDL_CreateGPUSampler failed: %s", SDL_GetError());
         Shutdown();
         return false;
     }
-    indexBuffer_ = CreateCubeIndexBuffer(device_);
-    if (indexBuffer_ == nullptr) {
-        Shutdown();
-        return false;
+
+    for (const MeshData& mesh : meshes) {
+        meshes_.emplace_back();
+        GpuMesh& gpuMesh = meshes_.back();
+        gpuMesh.vertexBuffer = CreateVertexBuffer(device_, mesh);
+        if (gpuMesh.vertexBuffer == nullptr) {
+            Shutdown();
+            return false;
+        }
+        gpuMesh.indexBuffer = CreateIndexBuffer(device_, mesh);
+        if (gpuMesh.indexBuffer == nullptr) {
+            Shutdown();
+            return false;
+        }
+        gpuMesh.indexCount = static_cast<Uint32>(mesh.indices.size());
+        const auto utf8Path = mesh.texturePath.u8string();
+        const std::string texturePath(reinterpret_cast<const char*>(utf8Path.data()), utf8Path.size());
+        gpuMesh.texture = LoadPngTexture(device_, texturePath.c_str());
+        if (gpuMesh.texture == nullptr) {
+            Shutdown();
+            return false;
+        }
     }
     depthBuffer_ = std::make_unique<DepthBuffer>(device_, depthFormat);
+    SDL_Log("MeshRenderer initialized with %u mesh resources", static_cast<Uint32>(meshes_.size()));
     return true;
 }
 
-bool CubeRenderer::Render(const CubeScene& scene, WindowSettings& windowSettings, bool* frameRendered) {
+bool MeshRenderer::Render(const ModelScene& scene, WindowSettings& windowSettings, bool* frameRendered) {
     if (frameRendered != nullptr) {
         *frameRendered = false;
     }
     if (device_ == nullptr || window_ == nullptr || depthBuffer_ == nullptr) {
-        SDL_Log("CubeRenderer is not initialized");
+        SDL_Log("MeshRenderer is not initialized");
         return false;
+    }
+    if (scene.models.empty()) {
+        SDL_Log("Scene has no models to draw");
+        return false;
+    }
+    for (const ModelInstance& model : scene.models) {
+        if (model.meshIndex >= meshes_.size()) {
+            SDL_Log("Scene model index %u has no GPU mesh", static_cast<Uint32>(model.meshIndex));
+            return false;
+        }
     }
 
     SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(device_);
@@ -374,15 +394,21 @@ bool CubeRenderer::Render(const CubeScene& scene, WindowSettings& windowSettings
     }
 
     windowSettings.UpdateOutputSize(outputWidth, outputHeight);
-    Matrix4x4 transform{};
-    if (!depthBuffer_->Resize(outputWidth, outputHeight) ||
-        !TryBuildCubeTransform(scene, outputWidth, outputHeight, transform)) {
-        SDL_Log("Could not prepare the cube depth buffer or transform");
+    if (!depthBuffer_->Resize(outputWidth, outputHeight)) {
+        SDL_Log("Could not prepare the mesh depth buffer");
         // Acquired swapchain textures must be submitted, even on this error path.
         SDL_SubmitGPUCommandBuffer(commands);
         return false;
     }
-    SDL_PushGPUVertexUniformData(commands, 0, &transform, static_cast<Uint32>(sizeof(transform)));
+    transformScratch_.resize(scene.models.size());
+    for (std::size_t i = 0; i < scene.models.size(); ++i) {
+        if (!TryBuildModelTransform(scene, scene.models[i], outputWidth, outputHeight,
+                transformScratch_[i])) {
+            SDL_Log("Could not build transform for scene model %u", static_cast<Uint32>(i));
+            SDL_SubmitGPUCommandBuffer(commands);
+            return false;
+        }
+    }
 
     SDL_GPUColorTargetInfo colorTarget{};
     colorTarget.texture = backbuffer;
@@ -409,14 +435,23 @@ bool CubeRenderer::Render(const CubeScene& scene, WindowSettings& windowSettings
     }
 
     SDL_BindGPUGraphicsPipeline(pass, pipeline_);
-    SDL_GPUBufferBinding vertexBinding{};
-    vertexBinding.buffer = vertexBuffer_;
-    SDL_BindGPUVertexBuffers(pass, 0, &vertexBinding, 1);
+    for (std::size_t i = 0; i < scene.models.size(); ++i) {
+        const GpuMesh& mesh = meshes_[scene.models[i].meshIndex];
+        SDL_PushGPUVertexUniformData(commands, 0, &transformScratch_[i],
+            static_cast<Uint32>(sizeof(Matrix4x4)));
+        SDL_GPUBufferBinding vertexBinding{};
+        vertexBinding.buffer = mesh.vertexBuffer;
+        SDL_BindGPUVertexBuffers(pass, 0, &vertexBinding, 1);
 
-    SDL_GPUBufferBinding indexBinding{};
-    indexBinding.buffer = indexBuffer_;
-    SDL_BindGPUIndexBuffer(pass, &indexBinding, SDL_GPU_INDEXELEMENTSIZE_16BIT);
-    SDL_DrawGPUIndexedPrimitives(pass, kCubeIndexCount, 1, 0, 0, 0);
+        SDL_GPUBufferBinding indexBinding{};
+        indexBinding.buffer = mesh.indexBuffer;
+        SDL_BindGPUIndexBuffer(pass, &indexBinding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+        SDL_GPUTextureSamplerBinding textureBinding{};
+        textureBinding.texture = mesh.texture;
+        textureBinding.sampler = sampler_;
+        SDL_BindGPUFragmentSamplers(pass, 0, &textureBinding, 1);
+        SDL_DrawGPUIndexedPrimitives(pass, mesh.indexCount, 1, 0, 0, 0);
+    }
     SDL_EndGPURenderPass(pass);
 
     if (!SDL_SubmitGPUCommandBuffer(commands)) {
@@ -429,7 +464,7 @@ bool CubeRenderer::Render(const CubeScene& scene, WindowSettings& windowSettings
     return true;
 }
 
-void CubeRenderer::Shutdown() {
+void MeshRenderer::Shutdown() {
     if (device_ == nullptr) {
         return;
     }
@@ -437,14 +472,23 @@ void CubeRenderer::Shutdown() {
         SDL_Log("SDL_WaitForGPUIdle failed: %s", SDL_GetError());
     }
     depthBuffer_.reset();
-    if (indexBuffer_ != nullptr) {
-        SDL_ReleaseGPUBuffer(device_, indexBuffer_);
-        indexBuffer_ = nullptr;
+    if (sampler_ != nullptr) {
+        SDL_ReleaseGPUSampler(device_, sampler_);
+        sampler_ = nullptr;
     }
-    if (vertexBuffer_ != nullptr) {
-        SDL_ReleaseGPUBuffer(device_, vertexBuffer_);
-        vertexBuffer_ = nullptr;
+    for (GpuMesh& mesh : meshes_) {
+        if (mesh.texture != nullptr) {
+            SDL_ReleaseGPUTexture(device_, mesh.texture);
+        }
+        if (mesh.indexBuffer != nullptr) {
+            SDL_ReleaseGPUBuffer(device_, mesh.indexBuffer);
+        }
+        if (mesh.vertexBuffer != nullptr) {
+            SDL_ReleaseGPUBuffer(device_, mesh.vertexBuffer);
+        }
     }
+    meshes_.clear();
+    transformScratch_.clear();
     if (pipeline_ != nullptr) {
         SDL_ReleaseGPUGraphicsPipeline(device_, pipeline_);
         pipeline_ = nullptr;

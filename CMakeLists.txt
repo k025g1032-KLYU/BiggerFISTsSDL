@@ -54,15 +54,17 @@ if(NOT BIGGERFISTS_SDL_ACTUAL_VERSION STREQUAL BIGGERFISTS_SDL_REQUIRED_VERSION)
     )
 endif()
 
-set(CUBE_RENDERING_SOURCES
-    src/World/CubeScene.cpp
-    src/World/CubeScene.h
+set(SCENE_RENDERING_SOURCES
+    src/World/ModelScene.cpp
+    src/World/ModelScene.h
     src/Math/MathTypes.cpp
     src/Math/MathTypes.h
     src/Rendering/DepthBuffer.cpp
     src/Rendering/DepthBuffer.h
-    src/Rendering/CubeRenderer.cpp
-    src/Rendering/CubeRenderer.h
+    src/Rendering/MeshRenderer.cpp
+    src/Rendering/MeshRenderer.h
+    src/Rendering/TextureLoader.cpp
+    src/Rendering/TextureLoader.h
 )
 
 add_executable(BiggerFISTsSDL
@@ -82,9 +84,14 @@ add_executable(BiggerFISTsSDL
     src/Input/GameInput.h
     src/Data/GameConfig.cpp
     src/Data/GameConfig.h
+    src/Data/ObjLoader.cpp
+    src/Data/ObjLoader.h
+    src/Data/MeshData.h
+    src/Data/ModelConfig.cpp
+    src/Data/ModelConfig.h
     src/Game/Game.cpp
     src/Game/Game.h
-    ${CUBE_RENDERING_SOURCES}
+    ${SCENE_RENDERING_SOURCES}
 )
 target_include_directories(BiggerFISTsSDL PRIVATE src)
 target_link_libraries(BiggerFISTsSDL PRIVATE SDL3::SDL3-shared)
@@ -127,11 +134,30 @@ add_test(NAME MathTypesTests COMMAND MathTypesTests)
 add_executable(GameTests EXCLUDE_FROM_ALL
     tests/GameTests.cpp
     src/Game/Game.cpp
-    src/World/CubeScene.cpp
+    src/World/ModelScene.cpp
     src/Math/MathTypes.cpp
 )
 target_include_directories(GameTests PRIVATE src)
 add_test(NAME GameTests COMMAND GameTests)
+
+add_executable(ObjLoaderTests EXCLUDE_FROM_ALL
+    tests/ObjLoaderTests.cpp
+    src/Data/ObjLoader.cpp
+)
+target_include_directories(ObjLoaderTests PRIVATE src)
+target_compile_definitions(ObjLoaderTests PRIVATE
+    OBJ_TEST_MODEL_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/models/Target/Target.obj"
+    OBJ_TEST_FIST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LFist/Lfist.obj"
+    OBJ_TEST_GAME_FIST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LfistTEST/LfistTEST.obj"
+)
+add_test(NAME ObjLoaderTests COMMAND ObjLoaderTests)
+
+add_executable(ModelConfigTests EXCLUDE_FROM_ALL
+    tests/ModelConfigTests.cpp
+    src/Data/ModelConfig.cpp
+)
+target_include_directories(ModelConfigTests PRIVATE src)
+add_test(NAME ModelConfigTests COMMAND ModelConfigTests)
 
 if(MSVC)
     target_compile_options(BiggerFISTsSDL PRIVATE /W4 /utf-8 /EHsc)
@@ -139,6 +165,8 @@ if(MSVC)
     target_compile_options(WindowSettingsTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(MathTypesTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(GameTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(ObjLoaderTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(ModelConfigTests PRIVATE /W4 /utf-8 /EHsc)
 endif()
 
 add_custom_command(TARGET BiggerFISTsSDL POST_BUILD
@@ -163,6 +191,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/config/gameplay.cfg"
     "${CMAKE_CURRENT_SOURCE_DIR}/config/input.cfg"
     "${CMAKE_CURRENT_SOURCE_DIR}/config/display.cfg"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config/model.cfg"
 )
 
 file(GENERATE
@@ -180,6 +209,11 @@ file(GENERATE
     INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/display.cfg"
 )
 
+file(GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/model.cfg"
+    INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/model.cfg"
+)
+
 find_program(GPU_DXC_EXECUTABLE
     NAMES dxc
     HINTS "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64"
@@ -188,9 +222,11 @@ find_program(GPU_DXC_EXECUTABLE
 
 add_executable(GpuTriangle
     src/Samples/GpuTriangle.cpp
+    src/Samples/SampleCubeMesh.cpp
+    src/Samples/SampleCubeMesh.h
     src/Platform/WindowSettings.cpp
     src/Platform/WindowSettings.h
-    ${CUBE_RENDERING_SOURCES}
+    ${SCENE_RENDERING_SOURCES}
 )
 target_include_directories(GpuTriangle PRIVATE src)
 
@@ -251,6 +287,89 @@ add_dependencies(GpuTriangle
 
 add_dependencies(BiggerFISTsSDL
     CubeShaders
+)
+
+# Run even when only the PNG changed and no C++ relink is needed.
+add_custom_target(CubeAssets
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/textures"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/textures/cube.png"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/textures/cube.png"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/textures/cube.png"
+    VERBATIM
+)
+add_dependencies(GpuTriangle CubeAssets)
+
+add_custom_target(ModelAssets
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/Target"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/Target/Target.obj"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/Target/Target.obj"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/Target/Target.mtl"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/Target/Target.mtl"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/Target/target.png"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/Target/target.png"
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/LFist"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LFist/Lfist.obj"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/LFist/Lfist.obj"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LFist/Lfist.mtl"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/LFist/Lfist.mtl"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LFist/Lfist.png"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/LFist/Lfist.png"
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/LfistTEST"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LfistTEST/LfistTEST.obj"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/LfistTEST/LfistTEST.obj"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LfistTEST/LfistTEST.mtl"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/LfistTEST/LfistTEST.mtl"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LfistTEST/Lfist.png"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/LfistTEST/Lfist.png"
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/Target/Target.obj"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/Target/Target.mtl"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/Target/target.png"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LFist/Lfist.obj"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LFist/Lfist.mtl"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LFist/Lfist.png"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LfistTEST/LfistTEST.obj"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LfistTEST/LfistTEST.mtl"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LfistTEST/Lfist.png"
+    VERBATIM
+)
+add_dependencies(BiggerFISTsSDL ModelAssets)
+
+add_executable(MultiModelPreview
+    src/Samples/MultiModelPreview.cpp
+    src/Platform/WindowSettings.cpp
+    src/Platform/WindowSettings.h
+    src/Platform/FrameTimer.cpp
+    src/Platform/FrameTimer.h
+    src/Data/ObjLoader.cpp
+    src/Data/ObjLoader.h
+    src/Data/MeshData.h
+    ${SCENE_RENDERING_SOURCES}
+)
+target_include_directories(MultiModelPreview PRIVATE src)
+target_link_libraries(MultiModelPreview PRIVATE SDL3::SDL3-shared)
+if(MSVC)
+    target_compile_options(MultiModelPreview PRIVATE /W4 /utf-8 /EHsc)
+endif()
+add_dependencies(MultiModelPreview CubeShaders ModelAssets)
+add_custom_command(TARGET MultiModelPreview POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:SDL3-shared>
+        $<TARGET_FILE_DIR:MultiModelPreview>
 )
 
 add_custom_command(TARGET GpuTriangle POST_BUILD

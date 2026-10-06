@@ -1,16 +1,19 @@
 #include "Platform/WindowSettings.h"
-#include "Rendering/CubeRenderer.h"
-#include "World/CubeScene.h"
+#include "Rendering/MeshRenderer.h"
+#include "Samples/SampleCubeMesh.h"
+#include "World/ModelScene.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
 #include <cstring>
+#include <filesystem>
+#include <string>
 
 namespace {
-int RunLoop(CubeRenderer& renderer, SDL_Window* window, WindowSettings& windowSettings,
+int RunLoop(MeshRenderer& renderer, SDL_Window* window, WindowSettings& windowSettings,
     bool testDisplaySettings) {
-    CubeScene scene{};
+    ModelScene scene{};
     const Uint64 animationStartedNS = SDL_GetTicksNS();
     const SDL_Scancode testKeys[] = {
         SDL_SCANCODE_F2, SDL_SCANCODE_F11, SDL_SCANCODE_F11,
@@ -128,9 +131,15 @@ int main(int argc, char** argv) {
     }
     SDL_Log("Display shortcuts: F1=1280x720, F2=1600x900, F8=next display, F11=fullscreen, Escape=quit");
 
-    CubeRenderer renderer;
+    MeshRenderer renderer;
     int exitCode = 1;
-    if (renderer.Initialize(window)) {
+    const char* basePath = SDL_GetBasePath();
+    if (basePath == nullptr) {
+        SDL_Log("SDL_GetBasePath failed: %s", SDL_GetError());
+    } else if (renderer.Initialize(window,
+            MakeSampleCubeMesh(
+                std::filesystem::path(std::u8string(reinterpret_cast<const char8_t*>(basePath))) /
+                "assets/textures/cube.png"))) {
         exitCode = RunLoop(renderer, window, windowSettings, testDisplaySettings);
     }
     renderer.Shutdown();
