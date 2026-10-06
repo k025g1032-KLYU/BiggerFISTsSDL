@@ -12,7 +12,8 @@ timing for two actions:
 
 The original `CombatScene::PlayHitFeedback()` does not shake the camera when a
 Rocket Punch hits a dummy Target. The rocket impact is still reported as a
-separate gameplay event so that audio can be connected later.
+separate gameplay event. The [combat feedback step](combat-feedback-step.md)
+connects this event to its WAV sound.
 
 The original uses current sphere overlap for an ordinary Punch and a swept
 sphere for a flying rocket. `FirstPersonGame::ProcessTargetHits()` now follows
@@ -46,5 +47,6 @@ decay back to the followed anchor. `RocketPunchTests` checks launch shake and
 that a rocket hit does not restart it. The GPU smoke test verifies startup and
 30 rendered frames; it does not compare the visual effect against the original.
 
-Impact WAV sound, XInput vibration, and player damage reactions remain for
-later steps.
+Impact WAV sound and SDL gamepad vibration are implemented in the
+[combat feedback step](combat-feedback-step.md). Player damage reactions remain
+for later steps.

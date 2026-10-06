@@ -61,7 +61,8 @@ old engine into the new executable.
    Target visibility from gameplay state to `ModelScene`. It pitches the fists
    along the original forearm direction and turns them with body yaw.
 9. `MeshRenderer` renders the scene; `Application` consumes gameplay events for
-   logging. Audio and other feedback can use these events in later steps.
+   logging. The later [combat feedback step](combat-feedback-step.md) uses these
+   events for audio and gamepad vibration.
 
 ## Fixed simulation timing
 
@@ -162,8 +163,9 @@ first-person play each update receives `1/60` second, and scene elapsed time
 records simulation time.
 
 The original also has moving enemies, dodge, controller look, camera shake,
-impact sound, vibration and extra camera modes. Camera shake was added in the
-later [camera feedback step](camera-feedback-step.md). `gameplay.cfg` still
+extra camera modes. Camera shake was added in the later
+[camera feedback step](camera-feedback-step.md); impact sound and vibration
+were added in the [combat feedback step](combat-feedback-step.md). `gameplay.cfg` still
 controls the older model preview mode; first-person movement values are
 centralized in `FirstPersonTuning.h` for now. The Target position and mesh are
 editable through `config/first-person-scene.cfg`.

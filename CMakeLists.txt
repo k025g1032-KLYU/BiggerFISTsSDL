@@ -84,6 +84,8 @@ add_executable(BiggerFISTsSDL
     src/Platform/FrameTimer.h
     src/Platform/FixedStepClock.cpp
     src/Platform/FixedStepClock.h
+    src/Platform/CombatFeedback.cpp
+    src/Platform/CombatFeedback.h
     src/Input/Input.cpp
     src/Input/Input.h
     src/Input/FixedStepInputBuffer.cpp
@@ -95,6 +97,8 @@ add_executable(BiggerFISTsSDL
     src/Input/GameInput.h
     src/Data/GameConfig.cpp
     src/Data/GameConfig.h
+    src/Data/CombatFeedbackConfig.cpp
+    src/Data/CombatFeedbackConfig.h
     src/Data/ObjLoader.cpp
     src/Data/ObjLoader.h
     src/Data/MeshData.h
@@ -121,6 +125,22 @@ add_executable(BiggerFISTsSDL
 )
 target_include_directories(BiggerFISTsSDL PRIVATE src)
 target_link_libraries(BiggerFISTsSDL PRIVATE SDL3::SDL3-shared)
+
+add_custom_target(CombatSoundAssets
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/sound"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/enemy_is_hit.wav"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/sound/enemy_is_hit.wav"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/RocketShot.wav"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/sound/RocketShot.wav"
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/enemy_is_hit.wav"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/RocketShot.wav"
+    VERBATIM
+)
+add_dependencies(BiggerFISTsSDL CombatSoundAssets)
 
 add_executable(InputActionsTests EXCLUDE_FROM_ALL
     tests/InputActionsTests.cpp
@@ -179,6 +199,22 @@ add_executable(FirstPersonGameTests EXCLUDE_FROM_ALL
 )
 target_include_directories(FirstPersonGameTests PRIVATE src)
 add_test(NAME FirstPersonGameTests COMMAND FirstPersonGameTests)
+
+add_executable(CombatFeedbackTests EXCLUDE_FROM_ALL
+    tests/CombatFeedbackTests.cpp
+    src/Data/CombatFeedbackConfig.cpp
+    src/Data/CombatFeedbackConfig.h
+    src/Platform/CombatFeedback.cpp
+    src/Platform/CombatFeedback.h
+)
+target_include_directories(CombatFeedbackTests PRIVATE src)
+target_link_libraries(CombatFeedbackTests PRIVATE SDL3::SDL3-shared)
+add_test(NAME CombatFeedbackTests
+    COMMAND CombatFeedbackTests "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound"
+        "${CMAKE_CURRENT_SOURCE_DIR}/config/combat-feedback.cfg")
+set_tests_properties(CombatFeedbackTests PROPERTIES
+    ENVIRONMENT "SDL_AUDIODRIVER=dummy"
+)
 
 add_executable(RocketPunchTests EXCLUDE_FROM_ALL
     tests/RocketPunchTests.cpp
@@ -263,6 +299,7 @@ if(MSVC)
     target_compile_options(MathTypesTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(GameTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(FirstPersonGameTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(CombatFeedbackTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(RocketPunchTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(FixedStepTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(CollisionTests PRIVATE /W4 /utf-8 /EHsc)
@@ -290,6 +327,12 @@ add_custom_command(TARGET WindowSettingsTests POST_BUILD
         $<TARGET_FILE_DIR:WindowSettingsTests>
 )
 
+add_custom_command(TARGET CombatFeedbackTests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:SDL3-shared>
+        $<TARGET_FILE_DIR:CombatFeedbackTests>
+)
+
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/config/gameplay.cfg"
     "${CMAKE_CURRENT_SOURCE_DIR}/config/input.cfg"
@@ -297,6 +340,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/config/model.cfg"
     "${CMAKE_CURRENT_SOURCE_DIR}/config/scene.cfg"
     "${CMAKE_CURRENT_SOURCE_DIR}/config/first-person-scene.cfg"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config/combat-feedback.cfg"
 )
 
 file(GENERATE
@@ -327,6 +371,11 @@ file(GENERATE
 file(GENERATE
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/first-person-scene.cfg"
     INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/first-person-scene.cfg"
+)
+
+file(GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/combat-feedback.cfg"
+    INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/combat-feedback.cfg"
 )
 
 find_program(GPU_DXC_EXECUTABLE

@@ -75,6 +75,7 @@ two Targets, presentation removal and reset. The smoke test confirms scene
 loading and 30 rendered 3D frames. It cannot confirm visual parity by itself;
 play the preview beside the original for pose and timing comparison.
 
-The preview still has no rocket flame, impact audio or controller vibration.
-Rocket launch camera shake was added in the [camera feedback step](camera-feedback-step.md).
+The preview still has no rocket flame. Rocket launch camera shake was added in
+the [camera feedback step](camera-feedback-step.md), and audio plus gamepad
+vibration were added in the [combat feedback step](combat-feedback-step.md).
 The original's moving enemies and ultimate attack are also not ported yet.

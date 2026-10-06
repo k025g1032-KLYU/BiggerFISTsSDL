@@ -10,10 +10,12 @@
 #include "Input/InputBindings.h"
 #include "Input/FixedStepInputBuffer.h"
 #include "Platform/WindowSettings.h"
+#include "Platform/CombatFeedback.h"
 #include "Data/ObjLoader.h"
 #include "Data/ModelConfig.h"
 #include "Data/SceneConfig.h"
 #include "Data/SceneLoader.h"
+#include "Data/CombatFeedbackConfig.h"
 #include "Rendering/MeshRenderer.h"
 #include "Rendering/FirstPersonScenePresenter.h"
 
@@ -151,13 +153,28 @@ int Application::Run(const ApplicationOptions& options) {
     Game game(config, previewScene);
     std::optional<FirstPersonGame> firstPersonGame;
     std::optional<FirstPersonScenePresenter> firstPersonView;
+    std::optional<CombatFeedback> combatFeedback;
     if (options.firstPersonPreview) {
         const Vector3 initialEyePosition = previewScene.cameraPosition;
         firstPersonGame.emplace(config, initialEyePosition, std::move(firstPersonTargets));
         firstPersonView.emplace(std::move(previewScene));
         firstPersonView->Sync(*firstPersonGame);
+        combatFeedback.emplace();
+        CombatFeedbackConfig feedbackConfig;
+        if (!LoadCombatFeedbackConfig(executableDirectory / "combat-feedback.cfg",
+                feedbackConfig, loadError) ||
+            !combatFeedback->Initialize(executableDirectory / "assets/sound",
+                feedbackConfig, loadError)) {
+            SDL_Log("%s", loadError.c_str());
+            combatFeedback->Shutdown();
+            renderer.Shutdown();
+            SDL_DestroyWindow(window);
+            SDL_Quit();
+            return 1;
+        }
         if (!options.smokeTest && !SDL_SetWindowRelativeMouseMode(window, true)) {
             SDL_Log("Could not capture mouse for first-person view: %s", SDL_GetError());
+            combatFeedback->Shutdown();
             renderer.Shutdown();
             SDL_DestroyWindow(window);
             SDL_Quit();
@@ -184,6 +201,9 @@ int Application::Run(const ApplicationOptions& options) {
         while (SDL_PollEvent(&event)) {
             input.ProcessEvent(event);
             windowSettings.ProcessEvent(event);
+            if (combatFeedback) {
+                combatFeedback->ProcessEvent(event);
+            }
             if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
                 fixedStepInput.Reset();
             }
@@ -218,6 +238,18 @@ int Application::Run(const ApplicationOptions& options) {
                     fixedStepInput.ConsumeStep(simulationSteps - step);
                 firstPersonGame->Update(FixedStepClock::kStepSeconds, stepInput.game,
                     stepInput.mouseDeltaX, stepInput.mouseDeltaY);
+                if (firstPersonGame->GetEvents().punchHit) {
+                    combatFeedback->PlayPunchHit();
+                }
+                if (firstPersonGame->GetEvents().rocketHit) {
+                    combatFeedback->PlayRocketHit();
+                }
+                if (firstPersonGame->GetEvents().leftRocketLaunched) {
+                    combatFeedback->PlayRocketLaunch();
+                }
+                if (firstPersonGame->GetEvents().rightRocketLaunched) {
+                    combatFeedback->PlayRocketLaunch();
+                }
                 if (firstPersonGame->GetEvents().targetDestroyed) {
                     if (firstPersonGame->GetEvents().punchHit) {
                         SDL_Log("Target destroyed by Punch. Press R to reset the Targets.");
@@ -277,6 +309,9 @@ int Application::Run(const ApplicationOptions& options) {
 
     if (options.firstPersonPreview && !options.smokeTest) {
         SDL_SetWindowRelativeMouseMode(window, false);
+    }
+    if (combatFeedback) {
+        combatFeedback->Shutdown();
     }
     renderer.Shutdown();
     SDL_DestroyWindow(window);

@@ -6,6 +6,10 @@
 
 普通拳擊中 Target 時會短暫震動相機；Rocket Punch 在發射時觸發較輕的震動，穿透命中不會再次震動。觸發時機與原版對照見 [相機回饋移植](docs/camera-feedback-step.md)。
 
+第一人稱預覽也會播放原版的命中與 Rocket Punch 發射 WAV；若連接支援震動的手把，普通拳命中及 Rocket Punch 發射時會震動。音效裝置或手把不可用時，畫面與操作仍可繼續。詳見 [戰鬥音效與手把回饋](docs/combat-feedback-step.md)。
+
+音效檔名、音量和震動數值可在 `config/combat-feedback.cfg` 修改；重新建置後會同步到執行檔旁。缺少設定或 WAV 時，第一人稱模式會指出檔案和錯誤原因。
+
 ## SDL 版本鎖定
 
 本專案使用 Git submodule `vendor/SDL`，主專案固定記錄 SDL **3.4.16** 的 commit `fa2c02bb6e21974a89ea9824bc53c9932abe5f9c`。CMake 直接建置這份原始碼，不會在建置時抓取最新版；設定階段也會驗證 checkout commit 與 SDL 版本，不符就停止。
@@ -25,7 +29,7 @@ GitHub 的一般「Download ZIP」不會包含 submodule 內容，直接拿 ZIP 
 | `BiggerFISTsSDL` | 主程式：預設依 `model.cfg` 載入一個模型；`--scene-preview` 顯示多個模型；`--first-person-preview` 可用普通拳與 Rocket Punch 擊毀並重置 Target |
 | `MultiModelPreview` | 依 `config/scene.cfg` 在同一畫面顯示多個模型，各自帶 PNG 貼圖並旋轉 |
 | `GpuTriangle` | 貼圖立方體與顯示切換檢查；和主程式共用 `MeshRenderer` |
-| `InputActionsTests`、`WindowSettingsTests`、`MathTypesTests`、`GameTests`、`FirstPersonGameTests`、`RocketPunchTests`、`FixedStepTests`、`CollisionTests`、`ObjLoaderTests`、`ModelConfigTests`、`SceneConfigTests`、`SceneLoaderTests` | 回歸測試 |
+| `InputActionsTests`、`WindowSettingsTests`、`MathTypesTests`、`GameTests`、`FirstPersonGameTests`、`CombatFeedbackTests`、`RocketPunchTests`、`FixedStepTests`、`CollisionTests`、`ObjLoaderTests`、`ModelConfigTests`、`SceneConfigTests`、`SceneLoaderTests` | 回歸測試 |
 
 在 Visual Studio 開啟 `build/BiggerFISTsSDL.slnx`，將 `BiggerFISTsSDL` 設為啟始專案，選擇 Debug／x64，建置後按 F5，會進入原本的單模型模式。要看第一人稱場景，將啟動參數設為 `--first-person-preview`；也可以從 PowerShell 執行 `& '.\build\Debug\BiggerFISTsSDL.exe' --first-person-preview`。多模型模式使用 `--scene-preview`。若先前已開啟解決方案，CMake 重新產生檔案後請重新載入。操作與檔案關係見 [第一人稱移植教學](docs/first-person-port-step.md)與 [Rocket Punch 移植教學](docs/rocket-punch-step.md)；原有預覽模式見 [主程式場景預覽教學](docs/main-scene-preview-step.md)。
 
@@ -97,7 +101,7 @@ src/
 ```powershell
 $cmakeExe = 'C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
 & $cmakeExe -S . -B build -G 'Visual Studio 18 2026' -A x64
-& $cmakeExe --build build --config Debug --target BiggerFISTsSDL MultiModelPreview GpuTriangle InputActionsTests WindowSettingsTests MathTypesTests GameTests FirstPersonGameTests RocketPunchTests FixedStepTests CollisionTests ObjLoaderTests ModelConfigTests SceneConfigTests SceneLoaderTests
+& $cmakeExe --build build --config Debug --target BiggerFISTsSDL MultiModelPreview GpuTriangle InputActionsTests WindowSettingsTests MathTypesTests GameTests FirstPersonGameTests CombatFeedbackTests RocketPunchTests FixedStepTests CollisionTests ObjLoaderTests ModelConfigTests SceneConfigTests SceneLoaderTests
 & (Join-Path (Split-Path -Parent $cmakeExe) 'ctest.exe') --test-dir build -C Debug --output-on-failure
 & '.\build\Debug\BiggerFISTsSDL.exe' --smoke-test
 & '.\build\Debug\BiggerFISTsSDL.exe' --scene-preview --smoke-test
