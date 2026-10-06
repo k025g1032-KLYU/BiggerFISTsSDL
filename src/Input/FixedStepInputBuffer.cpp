@@ -7,6 +7,9 @@ void FixedStepInputBuffer::QueueFrame(const GameInput& input,
     backgroundReleased_ |= input.changeBackground.released;
     resetPressed_ |= input.resetTarget.pressed;
     resetReleased_ |= input.resetTarget.released;
+    projectileHitPressed_ |= input.testProjectileHit.pressed;
+    chargeHitPressed_ |= input.testChargeHit.pressed;
+    burstHitPressed_ |= input.testBurstHit.pressed;
     pendingMouseDeltaX_ += mouseDeltaX;
     pendingMouseDeltaY_ += mouseDeltaY;
 }
@@ -21,10 +24,16 @@ SimulationStepInput FixedStepInputBuffer::ConsumeStep(int remainingSteps) {
     result.game.changeBackground.released = backgroundReleased_;
     result.game.resetTarget.pressed = resetPressed_;
     result.game.resetTarget.released = resetReleased_;
+    result.game.testProjectileHit.pressed = projectileHitPressed_;
+    result.game.testChargeHit.pressed = chargeHitPressed_;
+    result.game.testBurstHit.pressed = burstHitPressed_;
     backgroundPressed_ = false;
     backgroundReleased_ = false;
     resetPressed_ = false;
     resetReleased_ = false;
+    projectileHitPressed_ = false;
+    chargeHitPressed_ = false;
+    burstHitPressed_ = false;
 
     result.mouseDeltaX = pendingMouseDeltaX_ / static_cast<float>(remainingSteps);
     result.mouseDeltaY = pendingMouseDeltaY_ / static_cast<float>(remainingSteps);

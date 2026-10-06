@@ -17,5 +17,8 @@ struct SweepHit {
 bool Intersects(const Sphere& first, const Sphere& second);
 SweepHit SweepSphereAgainstSphere(const Vector3& start, const Vector3& end,
     float movingRadius, const Sphere& target);
+SweepHit SweepSphereAgainstMovingSphere(const Vector3& movingStart,
+    const Vector3& movingEnd, float movingRadius,
+    const Vector3& targetStart, const Vector3& targetEnd, float targetRadius);
 
 }

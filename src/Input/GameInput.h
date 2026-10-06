@@ -13,6 +13,9 @@ struct GameInput {
     ActionState changeBackground{};
     ActionState quit{};
     ActionState resetTarget{};
+    ActionState testProjectileHit{};
+    ActionState testChargeHit{};
+    ActionState testBurstHit{};
     bool leftPunchKeyDown = false;
     bool rightPunchKeyDown = false;
     bool leftMouseDown = false;

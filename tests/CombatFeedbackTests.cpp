@@ -23,6 +23,11 @@ int main(int argc, char** argv) {
     feedback.PlayPunchHit();
     feedback.PlayRocketHit();
     feedback.PlayRocketLaunch();
+    feedback.PlayPunchSwing();
+    feedback.PlayRocketReconnect();
+    feedback.PlayPlayerHit(PlayerHitType::Projectile, false);
+    feedback.PlayPlayerHit(PlayerHitType::Projectile, true);
+    feedback.PlayPlayerHit(PlayerHitType::ChargeUnit, false);
     SDL_Delay(50);
     feedback.Shutdown();
 

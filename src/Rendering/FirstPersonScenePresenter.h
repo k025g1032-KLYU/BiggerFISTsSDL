@@ -14,6 +14,8 @@ public:
 private:
     void UpdateFistPose(const char* id, float sideSign,
         const FirstPersonGame& game, const PunchArm& arm);
+    void UpdateUpperArmPose(const char* id, float sideSign,
+        const FirstPersonGame& game, const PunchArm& arm);
 
     ModelScene scene_;
     std::vector<ModelInstance> initialModels_;

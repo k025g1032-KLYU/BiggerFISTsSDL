@@ -12,7 +12,13 @@ namespace {
 constexpr std::array requiredKeys{
     "impactWav", "rocketLaunchWav", "punchImpactGain", "rocketImpactGain",
     "rocketLaunchGain", "punchRumbleLow", "punchRumbleHigh", "punchRumbleMs",
-    "rocketLaunchRumbleLow", "rocketLaunchRumbleHigh", "rocketLaunchRumbleMs"};
+    "rocketLaunchRumbleLow", "rocketLaunchRumbleHigh", "rocketLaunchRumbleMs",
+    "punchSwingWav", "rocketReconnectWav", "chargeHitWav",
+    "punchSwingGain", "rocketReconnectGain", "chargeHitGain",
+    "projectileShieldRumbleLow", "projectileShieldRumbleHigh",
+    "projectileHitPointRumbleLow", "projectileHitPointRumbleHigh",
+    "projectileRumbleMs", "chargeHitRumbleLow", "chargeHitRumbleHigh",
+    "chargeHitRumbleMs"};
 
 std::string ToUtf8(const std::filesystem::path& path) {
     const std::u8string value = path.u8string();
@@ -69,18 +75,35 @@ bool LoadCombatFeedbackConfig(const std::filesystem::path& path,
             parsed.impactWav = value;
         } else if (key == "rocketLaunchWav" && ValidWavName(value)) {
             parsed.rocketLaunchWav = value;
+        } else if (key == "punchSwingWav" && ValidWavName(value)) {
+            parsed.punchSwingWav = value;
+        } else if (key == "rocketReconnectWav" && ValidWavName(value)) {
+            parsed.rocketReconnectWav = value;
+        } else if (key == "chargeHitWav" && ValidWavName(value)) {
+            parsed.chargeHitWav = value;
         } else if ((key == "punchImpactGain" || key == "rocketImpactGain" ||
-                key == "rocketLaunchGain") && ParseNumber(value, gain) &&
+                key == "rocketLaunchGain" || key == "punchSwingGain" ||
+                key == "rocketReconnectGain" || key == "chargeHitGain") &&
+            ParseNumber(value, gain) &&
             std::isfinite(gain) && gain >= 0.0f && gain <= 2.0f) {
             if (key == "punchImpactGain") {
                 parsed.punchImpactGain = gain;
             } else if (key == "rocketImpactGain") {
                 parsed.rocketImpactGain = gain;
-            } else {
+            } else if (key == "rocketLaunchGain") {
                 parsed.rocketLaunchGain = gain;
+            } else if (key == "punchSwingGain") {
+                parsed.punchSwingGain = gain;
+            } else if (key == "rocketReconnectGain") {
+                parsed.rocketReconnectGain = gain;
+            } else {
+                parsed.chargeHitGain = gain;
             }
         } else if ((key == "punchRumbleLow" || key == "punchRumbleHigh" ||
-                key == "rocketLaunchRumbleLow" || key == "rocketLaunchRumbleHigh") &&
+                key == "rocketLaunchRumbleLow" || key == "rocketLaunchRumbleHigh" ||
+                key == "projectileShieldRumbleLow" || key == "projectileShieldRumbleHigh" ||
+                key == "projectileHitPointRumbleLow" || key == "projectileHitPointRumbleHigh" ||
+                key == "chargeHitRumbleLow" || key == "chargeHitRumbleHigh") &&
             ParseNumber(value, whole) && whole <= 65535) {
             if (key == "punchRumbleLow") {
                 parsed.punchRumbleLow = static_cast<std::uint16_t>(whole);
@@ -88,15 +111,32 @@ bool LoadCombatFeedbackConfig(const std::filesystem::path& path,
                 parsed.punchRumbleHigh = static_cast<std::uint16_t>(whole);
             } else if (key == "rocketLaunchRumbleLow") {
                 parsed.rocketLaunchRumbleLow = static_cast<std::uint16_t>(whole);
-            } else {
+            } else if (key == "rocketLaunchRumbleHigh") {
                 parsed.rocketLaunchRumbleHigh = static_cast<std::uint16_t>(whole);
+            } else if (key == "projectileShieldRumbleLow") {
+                parsed.projectileShieldRumbleLow = static_cast<std::uint16_t>(whole);
+            } else if (key == "projectileShieldRumbleHigh") {
+                parsed.projectileShieldRumbleHigh = static_cast<std::uint16_t>(whole);
+            } else if (key == "projectileHitPointRumbleLow") {
+                parsed.projectileHitPointRumbleLow = static_cast<std::uint16_t>(whole);
+            } else if (key == "projectileHitPointRumbleHigh") {
+                parsed.projectileHitPointRumbleHigh = static_cast<std::uint16_t>(whole);
+            } else if (key == "chargeHitRumbleLow") {
+                parsed.chargeHitRumbleLow = static_cast<std::uint16_t>(whole);
+            } else {
+                parsed.chargeHitRumbleHigh = static_cast<std::uint16_t>(whole);
             }
-        } else if ((key == "punchRumbleMs" || key == "rocketLaunchRumbleMs") &&
+        } else if ((key == "punchRumbleMs" || key == "rocketLaunchRumbleMs" ||
+                key == "projectileRumbleMs" || key == "chargeHitRumbleMs") &&
             ParseNumber(value, whole) && whole >= 1 && whole <= 5000) {
             if (key == "punchRumbleMs") {
                 parsed.punchRumbleMs = whole;
-            } else {
+            } else if (key == "rocketLaunchRumbleMs") {
                 parsed.rocketLaunchRumbleMs = whole;
+            } else if (key == "projectileRumbleMs") {
+                parsed.projectileRumbleMs = whole;
+            } else {
+                parsed.chargeHitRumbleMs = whole;
             }
         } else {
             error = "Unknown key or invalid value in '" + ToUtf8(path) +

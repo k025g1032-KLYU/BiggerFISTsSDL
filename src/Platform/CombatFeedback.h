@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 
 #include "Data/CombatFeedbackConfig.h"
+#include "Gameplay/Player/PlayerVitality.h"
 
 #include <filesystem>
 #include <cstddef>
@@ -23,6 +24,9 @@ public:
     void PlayPunchHit();
     void PlayRocketHit();
     void PlayRocketLaunch();
+    void PlayPunchSwing();
+    void PlayRocketReconnect();
+    void PlayPlayerHit(PlayerHitType type, bool damagedHitPoints);
     void Shutdown();
     bool HasAudioDevice() const { return audioDevice_ != 0; }
     bool HasGamepad() const { return gamepad_ != nullptr; }
@@ -44,6 +48,9 @@ private:
 
     Clip impact_;
     Clip rocketLaunch_;
+    Clip punchSwing_;
+    Clip rocketReconnect_;
+    Clip chargeHit_;
     CombatFeedbackConfig config_{};
     SDL_AudioDeviceID audioDevice_ = 0;
     SDL_Gamepad* gamepad_ = nullptr;

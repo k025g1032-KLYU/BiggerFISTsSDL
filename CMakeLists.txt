@@ -74,6 +74,13 @@ set(SCENE_LOADING_SOURCES
     src/Data/SceneLoader.h
 )
 
+set(PLAYER_COMBAT_SOURCES
+    src/Gameplay/Player/PlayerVitality.cpp
+    src/Gameplay/Player/PlayerVitality.h
+    src/Gameplay/Combat/CombatHitResolver.cpp
+    src/Gameplay/Combat/CombatHitResolver.h
+)
+
 add_executable(BiggerFISTsSDL
     src/App/main.cpp
     src/App/Application.cpp
@@ -99,6 +106,8 @@ add_executable(BiggerFISTsSDL
     src/Data/GameConfig.h
     src/Data/CombatFeedbackConfig.cpp
     src/Data/CombatFeedbackConfig.h
+    src/Data/PlayerCombatConfig.cpp
+    src/Data/PlayerCombatConfig.h
     src/Data/ObjLoader.cpp
     src/Data/ObjLoader.h
     src/Data/MeshData.h
@@ -115,6 +124,7 @@ add_executable(BiggerFISTsSDL
     src/Gameplay/Player/PlayerMovement.h
     src/Gameplay/Player/PunchArm.cpp
     src/Gameplay/Player/PunchArm.h
+    ${PLAYER_COMBAT_SOURCES}
     src/Gameplay/SimulationTiming.h
     src/Rendering/FirstPersonScenePresenter.cpp
     src/Rendering/FirstPersonScenePresenter.h
@@ -135,9 +145,21 @@ add_custom_target(CombatSoundAssets
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/RocketShot.wav"
         "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/sound/RocketShot.wav"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/whoosh.wav"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/sound/whoosh.wav"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/mokugyo.wav"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/sound/mokugyo.wav"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/charge_hit.wav"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/sound/charge_hit.wav"
     DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/enemy_is_hit.wav"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/RocketShot.wav"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/whoosh.wav"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/mokugyo.wav"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/charge_hit.wav"
     VERBATIM
 )
 add_dependencies(BiggerFISTsSDL CombatSoundAssets)
@@ -196,6 +218,7 @@ add_executable(FirstPersonGameTests EXCLUDE_FROM_ALL
     src/World/FirstPersonCamera.cpp
     src/World/ModelScene.cpp
     src/Math/MathTypes.cpp
+    ${PLAYER_COMBAT_SOURCES}
 )
 target_include_directories(FirstPersonGameTests PRIVATE src)
 add_test(NAME FirstPersonGameTests COMMAND FirstPersonGameTests)
@@ -226,9 +249,27 @@ add_executable(RocketPunchTests EXCLUDE_FROM_ALL
     src/World/FirstPersonCamera.cpp
     src/World/ModelScene.cpp
     src/Math/MathTypes.cpp
+    ${PLAYER_COMBAT_SOURCES}
 )
 target_include_directories(RocketPunchTests PRIVATE src)
 add_test(NAME RocketPunchTests COMMAND RocketPunchTests)
+
+add_executable(PlayerCombatTests EXCLUDE_FROM_ALL
+    tests/PlayerCombatTests.cpp
+    src/Data/PlayerCombatConfig.cpp
+    src/Game/FirstPersonGame.cpp
+    src/Collision/Collision.cpp
+    src/Gameplay/Player/PlayerMovement.cpp
+    src/Gameplay/Player/PunchArm.cpp
+    src/Rendering/FirstPersonScenePresenter.cpp
+    src/World/FirstPersonCamera.cpp
+    src/World/ModelScene.cpp
+    src/Math/MathTypes.cpp
+    ${PLAYER_COMBAT_SOURCES}
+)
+target_include_directories(PlayerCombatTests PRIVATE src)
+add_test(NAME PlayerCombatTests COMMAND PlayerCombatTests
+    "${CMAKE_CURRENT_SOURCE_DIR}/config/player-combat.cfg")
 
 add_executable(FixedStepTests EXCLUDE_FROM_ALL
     tests/FixedStepTests.cpp
@@ -240,6 +281,7 @@ add_executable(FixedStepTests EXCLUDE_FROM_ALL
     src/Gameplay/Player/PunchArm.cpp
     src/World/FirstPersonCamera.cpp
     src/Math/MathTypes.cpp
+    ${PLAYER_COMBAT_SOURCES}
 )
 target_include_directories(FixedStepTests PRIVATE src)
 add_test(NAME FixedStepTests COMMAND FixedStepTests)
@@ -302,6 +344,7 @@ if(MSVC)
     target_compile_options(FirstPersonGameTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(CombatFeedbackTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(RocketPunchTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(PlayerCombatTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(FixedStepTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(CollisionTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(ObjLoaderTests PRIVATE /W4 /utf-8 /EHsc)
@@ -343,6 +386,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/config/first-person-scene.cfg"
     "${CMAKE_CURRENT_SOURCE_DIR}/config/missile-unit-scene.cfg"
     "${CMAKE_CURRENT_SOURCE_DIR}/config/combat-feedback.cfg"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config/player-combat.cfg"
 )
 
 file(GENERATE
@@ -383,6 +427,11 @@ file(GENERATE
 file(GENERATE
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/combat-feedback.cfg"
     INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/combat-feedback.cfg"
+)
+
+file(GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/player-combat.cfg"
+    INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/player-combat.cfg"
 )
 
 find_program(GPU_DXC_EXECUTABLE
@@ -474,6 +523,17 @@ add_dependencies(GpuTriangle CubeAssets)
 
 add_custom_target(ModelAssets
     COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/UpperArm"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/UpperArm/UpperArm.obj"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/UpperArm/UpperArm.obj"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/UpperArm/arm.mtl"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/UpperArm/arm.mtl"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/UpperArm/ARM.png"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/UpperArm/ARM.png"
+    COMMAND ${CMAKE_COMMAND} -E make_directory
         "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/Target"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/Target/Target.obj"
@@ -532,6 +592,9 @@ add_custom_target(ModelAssets
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RocketLaunch/Launcherv2.png"
         "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/RocketLaunch/Launcherv2.png"
     DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/UpperArm/UpperArm.obj"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/UpperArm/arm.mtl"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/UpperArm/ARM.png"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/Target/Target.obj"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/Target/Target.mtl"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/Target/target.png"

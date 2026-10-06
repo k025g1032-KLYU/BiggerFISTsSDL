@@ -16,6 +16,7 @@
 #include "Data/SceneConfig.h"
 #include "Data/SceneLoader.h"
 #include "Data/CombatFeedbackConfig.h"
+#include "Data/PlayerCombatConfig.h"
 #include "Rendering/MeshRenderer.h"
 #include "Rendering/FirstPersonScenePresenter.h"
 
@@ -40,9 +41,10 @@ int Application::Run(const ApplicationOptions& options) {
     const DisplaySettings displaySettings = LoadDisplaySettings();
 
     SDL_Window* window = SDL_CreateWindow(
-        options.firstPersonPreview ? "BiggerFISTs SDL3 First Person" :
+        options.playerCombatPreview ? "BiggerFISTs SDL3 Player Combat Test" :
+        (options.firstPersonPreview ? "BiggerFISTs SDL3 First Person" :
         (options.missileUnitModelPreview ? "BiggerFISTs SDL3 Missile Unit Model" :
-        (options.scenePreview ? "BiggerFISTs SDL3 Scene Preview" : "BiggerFISTs SDL3 Model Viewer")),
+        (options.scenePreview ? "BiggerFISTs SDL3 Scene Preview" : "BiggerFISTs SDL3 Model Viewer"))),
         displaySettings.windowWidth,
         displaySettings.windowHeight,
         SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY
@@ -87,9 +89,13 @@ int Application::Run(const ApplicationOptions& options) {
         if (options.firstPersonPreview) {
             ModelInstance* leftFist = FindModelById(previewScene, "left_fist");
             ModelInstance* rightFist = FindModelById(previewScene, "right_fist");
+            ModelInstance* leftUpperArm = FindModelById(previewScene, "left_upper_arm");
+            ModelInstance* rightUpperArm = FindModelById(previewScene, "right_upper_arm");
             bool validTargets = FindModelById(previewScene, "target") != nullptr;
             for (ModelInstance& model : previewScene.models) {
-                if (model.id == "left_fist" || model.id == "right_fist") {
+                if (model.id == "left_fist" || model.id == "right_fist" ||
+                    model.id == "left_upper_arm" || model.id == "right_upper_arm") {
+                    model.modelCenter = {};
                     continue;
                 }
                 if ((model.id != "target" && !model.id.starts_with("target_")) ||
@@ -101,13 +107,18 @@ int Application::Run(const ApplicationOptions& options) {
                 model.modelCenter = {};
                 firstPersonTargets.push_back({model.id, model.position, 1});
             }
-            if (previewScene.models.size() != firstPersonTargets.size() + 2 ||
+            if (previewScene.models.size() != firstPersonTargets.size() + 4 ||
                 !validTargets || leftFist == nullptr || rightFist == nullptr ||
+                leftUpperArm == nullptr || rightUpperArm == nullptr ||
                 leftFist->rotationXDegreesPerSecond != 0.0f ||
                 leftFist->rotationYDegreesPerSecond != 0.0f ||
                 rightFist->rotationXDegreesPerSecond != 0.0f ||
-                rightFist->rotationYDegreesPerSecond != 0.0f) {
-                SDL_Log("First-person scene requires static target IDs, left_fist and right_fist");
+                rightFist->rotationYDegreesPerSecond != 0.0f ||
+                leftUpperArm->rotationXDegreesPerSecond != 0.0f ||
+                leftUpperArm->rotationYDegreesPerSecond != 0.0f ||
+                rightUpperArm->rotationXDegreesPerSecond != 0.0f ||
+                rightUpperArm->rotationYDegreesPerSecond != 0.0f) {
+                SDL_Log("First-person scene requires Targets, fists and upper arms");
                 SDL_DestroyWindow(window);
                 SDL_Quit();
                 return 1;
@@ -158,8 +169,18 @@ int Application::Run(const ApplicationOptions& options) {
     std::optional<FirstPersonScenePresenter> firstPersonView;
     std::optional<CombatFeedback> combatFeedback;
     if (options.firstPersonPreview) {
+        PlayerCombatConfig playerCombatConfig;
+        if (!LoadPlayerCombatConfig(executableDirectory / "player-combat.cfg",
+                playerCombatConfig, loadError)) {
+            SDL_Log("%s", loadError.c_str());
+            renderer.Shutdown();
+            SDL_DestroyWindow(window);
+            SDL_Quit();
+            return 1;
+        }
         const Vector3 initialEyePosition = previewScene.cameraPosition;
-        firstPersonGame.emplace(config, initialEyePosition, std::move(firstPersonTargets));
+        firstPersonGame.emplace(config, initialEyePosition, std::move(firstPersonTargets),
+            playerCombatConfig);
         firstPersonView.emplace(std::move(previewScene));
         firstPersonView->Sync(*firstPersonGame);
         combatFeedback.emplace();
@@ -189,6 +210,9 @@ int Application::Run(const ApplicationOptions& options) {
     FixedStepInputBuffer fixedStepInput;
     Input input;
     InputActions inputActions(bindings);
+    if (options.playerCombatPreview) {
+        SDL_Log("Player combat test: H projectile, J charge impact, K spread burst, R reset");
+    }
 
     bool isRunning = true;
     int exitCode = 0;
@@ -218,6 +242,11 @@ int Application::Run(const ApplicationOptions& options) {
 
         input.Update();
         GameInput gameInput = inputActions.Evaluate(input);
+        if (!options.playerCombatPreview) {
+            gameInput.testProjectileHit = {};
+            gameInput.testChargeHit = {};
+            gameInput.testBurstHit = {};
+        }
 
         if (gameInput.quit.pressed) {
             isRunning = false;
@@ -247,6 +276,23 @@ int Application::Run(const ApplicationOptions& options) {
                 if (firstPersonGame->GetEvents().rocketHit) {
                     combatFeedback->PlayRocketHit();
                 }
+                if (firstPersonGame->GetEvents().leftPunchBegan ||
+                    firstPersonGame->GetEvents().rightPunchBegan) {
+                    combatFeedback->PlayPunchSwing();
+                }
+                if (firstPersonGame->GetEvents().leftRocketReconnected ||
+                    firstPersonGame->GetEvents().rightRocketReconnected) {
+                    combatFeedback->PlayRocketReconnect();
+                }
+                if (firstPersonGame->GetEvents().playerHit) {
+                    combatFeedback->PlayPlayerHit(firstPersonGame->GetEvents().playerHitType,
+                        firstPersonGame->GetEvents().playerHitResult.didDamageHitPoints);
+                    SDL_Log("Player hit: HP=%d, shields=%d, lost=%d%s",
+                        firstPersonGame->GetVitality().GetHitPoints(),
+                        firstPersonGame->GetVitality().GetShieldLayers(),
+                        firstPersonGame->GetEvents().playerHitResult.shieldLayersLost,
+                        firstPersonGame->GetEvents().playerDefeated ? ", defeated" : "");
+                }
                 if (firstPersonGame->GetEvents().leftRocketLaunched) {
                     combatFeedback->PlayRocketLaunch();
                 }
@@ -262,7 +308,9 @@ int Application::Run(const ApplicationOptions& options) {
                     }
                 }
                 if (firstPersonGame->GetEvents().targetReset) {
-                    SDL_Log("Targets and punch states reset.");
+                    SDL_Log("Player, arms and Targets reset: HP=%d, shields=%d.",
+                        firstPersonGame->GetVitality().GetHitPoints(),
+                        firstPersonGame->GetVitality().GetShieldLayers());
                 }
                 if (firstPersonGame->GetEvents().leftRocketLaunched) {
                     SDL_Log("Left Rocket Punch launched");
@@ -305,7 +353,7 @@ int Application::Run(const ApplicationOptions& options) {
             const bool shouldExist = renderedFrames >= 5 && renderedFrames < 25;
             const float expectedX = 0.05f * static_cast<float>(renderedFrames - 5);
             if ((dynamicTarget != nullptr) != shouldExist ||
-                scene.models.size() != (shouldExist ? 5u : 4u) ||
+                scene.models.size() != (shouldExist ? 7u : 6u) ||
                 (shouldExist && std::abs(dynamicTarget->position.x - expectedX) > 0.0001f)) {
                 SDL_Log("Dynamic Target smoke test scene state mismatch at frame %d",
                     renderedFrames);
@@ -324,7 +372,8 @@ int Application::Run(const ApplicationOptions& options) {
                 if (options.dynamicTargetSmokeTest) {
                     SDL_Log("PASS: Dynamic Target spawned, moved, removed and rendered across 30 GPU frames");
                 } else if (options.firstPersonPreview) {
-                    SDL_Log("PASS: BiggerFISTsSDL first-person preview rendered 30 3D frames with static Targets and two player fists");
+                    SDL_Log("PASS: BiggerFISTsSDL %s rendered 30 3D frames with Targets, fists and upper arms",
+                        options.playerCombatPreview ? "player combat preview" : "first-person preview");
                 } else if (options.missileUnitModelPreview) {
                     SDL_Log("PASS: Original MissileUnit model rendered 30 3D frames with two PNG materials");
                 } else if (options.scenePreview) {

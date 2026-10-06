@@ -20,6 +20,10 @@ int main(int argc, char** argv) {
         } else if (std::strcmp(argv[i], "--first-person-preview") == 0 &&
             !options.firstPersonPreview && !options.scenePreview) {
             options.firstPersonPreview = true;
+        } else if (std::strcmp(argv[i], "--player-combat-preview") == 0 &&
+            !options.firstPersonPreview && !options.scenePreview) {
+            options.firstPersonPreview = true;
+            options.playerCombatPreview = true;
         } else if (std::strcmp(argv[i], "--dynamic-target-smoke-test") == 0 &&
             !options.dynamicTargetSmokeTest && !options.firstPersonPreview &&
             !options.scenePreview && !options.smokeTest) {
@@ -28,7 +32,7 @@ int main(int argc, char** argv) {
             options.smokeTest = true;
         } else {
             std::fprintf(stderr,
-                "Unknown, duplicate or conflicting option: %s\nUsage: BiggerFISTsSDL [--scene-preview | --missile-unit-model-preview | --first-person-preview] [--smoke-test]\n       BiggerFISTsSDL --dynamic-target-smoke-test\n",
+                "Unknown, duplicate or conflicting option: %s\nUsage: BiggerFISTsSDL [--scene-preview | --missile-unit-model-preview | --first-person-preview | --player-combat-preview] [--smoke-test]\n       BiggerFISTsSDL --dynamic-target-smoke-test\n",
                 argv[i]);
             return 1;
         }

@@ -20,6 +20,7 @@ struct Result {
     PunchArmState armState = PunchArmState::Ready;
     double elapsedSeconds = 0.0;
     int simulationSteps = 0;
+    int shieldLayers = 0;
 };
 
 Result SimulateOneSecond(int renderedFrames) {
@@ -30,8 +31,10 @@ Result SimulateOneSecond(int renderedFrames) {
     GameInput input{};
     input.moveY = -1.0f;
     input.leftPunchKeyDown = true;
+    input.testProjectileHit.pressed = true;
 
     for (int frame = 0; frame < renderedFrames; ++frame) {
+        input.testProjectileHit.pressed = frame == 0;
         inputBuffer.QueueFrame(input, 60.0f / renderedFrames, 0.0f);
         const int steps = clock.Advance(1.0 / renderedFrames);
         for (int step = 0; step < steps; ++step) {
@@ -45,6 +48,7 @@ Result SimulateOneSecond(int renderedFrames) {
     result.cameraYaw = game.GetCamera().GetYaw();
     result.armState = game.GetLeftArm().GetState();
     result.elapsedSeconds = game.GetElapsedSeconds();
+    result.shieldLayers = game.GetVitality().GetShieldLayers();
     return result;
 }
 }
@@ -62,6 +66,8 @@ int main() {
         std::abs(thirtyFps.playerPosition.z - oneHundredTwentyFps.playerPosition.z) < 0.0001f &&
         std::abs(thirtyFps.cameraYaw - oneHundredTwentyFps.cameraYaw) < 0.0001f &&
         thirtyFps.armState == oneHundredTwentyFps.armState &&
+        thirtyFps.shieldLayers == 2 && sixtyFps.shieldLayers == 2 &&
+        oneHundredTwentyFps.shieldLayers == 2 &&
         std::abs(thirtyFps.elapsedSeconds - 1.0) < 0.0001,
         "Movement, look and charge state agree across render frame rates");
 
@@ -77,12 +83,15 @@ int main() {
     FixedStepInputBuffer inputBuffer;
     GameInput press{};
     press.resetTarget.pressed = true;
+    press.testChargeHit.pressed = true;
     inputBuffer.QueueFrame(press, 12.0f, -6.0f);
     inputBuffer.QueueFrame({}, 0.0f, 0.0f);
     const SimulationStepInput first = inputBuffer.ConsumeStep(2);
     const SimulationStepInput second = inputBuffer.ConsumeStep(1);
     success &= Expect(first.game.resetTarget.pressed &&
+        first.game.testChargeHit.pressed &&
         !second.game.resetTarget.pressed &&
+        !second.game.testChargeHit.pressed &&
         std::abs(first.mouseDeltaX - 6.0f) < 0.0001f &&
         std::abs(second.mouseDeltaX - 6.0f) < 0.0001f &&
         std::abs(first.mouseDeltaY + 3.0f) < 0.0001f &&
@@ -93,6 +102,7 @@ int main() {
     inputBuffer.Reset();
     const SimulationStepInput afterFocusLoss = inputBuffer.ConsumeStep(1);
     success &= Expect(!afterFocusLoss.game.resetTarget.pressed &&
+        !afterFocusLoss.game.testChargeHit.pressed &&
         afterFocusLoss.mouseDeltaX == 0.0f && afterFocusLoss.mouseDeltaY == 0.0f,
         "Focus loss clears pending actions and mouse motion");
 

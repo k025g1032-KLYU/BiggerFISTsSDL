@@ -53,7 +53,10 @@ bool CombatFeedback::Initialize(const std::filesystem::path& soundDirectory,
     error.clear();
     config_ = config;
     if (!LoadClip(soundDirectory / config_.impactWav, impact_, error) ||
-        !LoadClip(soundDirectory / config_.rocketLaunchWav, rocketLaunch_, error)) {
+        !LoadClip(soundDirectory / config_.rocketLaunchWav, rocketLaunch_, error) ||
+        !LoadClip(soundDirectory / config_.punchSwingWav, punchSwing_, error) ||
+        !LoadClip(soundDirectory / config_.rocketReconnectWav, rocketReconnect_, error) ||
+        !LoadClip(soundDirectory / config_.chargeHitWav, chargeHit_, error)) {
         Shutdown();
         return false;
     }
@@ -62,7 +65,8 @@ bool CombatFeedback::Initialize(const std::filesystem::path& soundDirectory,
         audioInitialized_ = true;
         audioDevice_ = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, nullptr);
         if (audioDevice_ == 0 || !CreateVoices(impact_, 4) ||
-            !CreateVoices(rocketLaunch_, 2)) {
+            !CreateVoices(rocketLaunch_, 2) || !CreateVoices(punchSwing_, 2) ||
+            !CreateVoices(rocketReconnect_, 2) || !CreateVoices(chargeHit_, 2)) {
             SDL_Log("Audio playback unavailable: %s", SDL_GetError());
             for (SDL_AudioStream* stream : impact_.voices) {
                 SDL_DestroyAudioStream(stream);
@@ -70,8 +74,20 @@ bool CombatFeedback::Initialize(const std::filesystem::path& soundDirectory,
             for (SDL_AudioStream* stream : rocketLaunch_.voices) {
                 SDL_DestroyAudioStream(stream);
             }
+            for (SDL_AudioStream* stream : punchSwing_.voices) {
+                SDL_DestroyAudioStream(stream);
+            }
+            for (SDL_AudioStream* stream : rocketReconnect_.voices) {
+                SDL_DestroyAudioStream(stream);
+            }
+            for (SDL_AudioStream* stream : chargeHit_.voices) {
+                SDL_DestroyAudioStream(stream);
+            }
             impact_.voices.clear();
             rocketLaunch_.voices.clear();
+            punchSwing_.voices.clear();
+            rocketReconnect_.voices.clear();
+            chargeHit_.voices.clear();
             if (audioDevice_ != 0) {
                 SDL_CloseAudioDevice(audioDevice_);
                 audioDevice_ = 0;
@@ -186,6 +202,28 @@ void CombatFeedback::PlayRocketLaunch() {
         config_.rocketLaunchRumbleMs, 2);
 }
 
+void CombatFeedback::PlayPunchSwing() {
+    PlayClip(punchSwing_, config_.punchSwingGain);
+}
+
+void CombatFeedback::PlayRocketReconnect() {
+    PlayClip(rocketReconnect_, config_.rocketReconnectGain);
+}
+
+void CombatFeedback::PlayPlayerHit(PlayerHitType type, bool damagedHitPoints) {
+    if (type == PlayerHitType::ChargeUnit || type == PlayerHitType::BossSpreadBurst) {
+        PlayClip(chargeHit_, config_.chargeHitGain);
+        Rumble(config_.chargeHitRumbleLow, config_.chargeHitRumbleHigh,
+            config_.chargeHitRumbleMs, 3);
+    } else {
+        Rumble(damagedHitPoints ? config_.projectileHitPointRumbleLow
+                : config_.projectileShieldRumbleLow,
+            damagedHitPoints ? config_.projectileHitPointRumbleHigh
+                : config_.projectileShieldRumbleHigh,
+            config_.projectileRumbleMs, 3);
+    }
+}
+
 void CombatFeedback::Shutdown() {
     if (gamepad_ != nullptr) {
         if (SDL_GamepadConnected(gamepad_)) {
@@ -204,10 +242,25 @@ void CombatFeedback::Shutdown() {
     for (SDL_AudioStream* stream : rocketLaunch_.voices) {
         SDL_DestroyAudioStream(stream);
     }
+    for (SDL_AudioStream* stream : punchSwing_.voices) {
+        SDL_DestroyAudioStream(stream);
+    }
+    for (SDL_AudioStream* stream : rocketReconnect_.voices) {
+        SDL_DestroyAudioStream(stream);
+    }
+    for (SDL_AudioStream* stream : chargeHit_.voices) {
+        SDL_DestroyAudioStream(stream);
+    }
     impact_.voices.clear();
     rocketLaunch_.voices.clear();
+    punchSwing_.voices.clear();
+    rocketReconnect_.voices.clear();
+    chargeHit_.voices.clear();
     impact_.samples.clear();
     rocketLaunch_.samples.clear();
+    punchSwing_.samples.clear();
+    rocketReconnect_.samples.clear();
+    chargeHit_.samples.clear();
     if (audioDevice_ != 0) {
         SDL_CloseAudioDevice(audioDevice_);
         audioDevice_ = 0;

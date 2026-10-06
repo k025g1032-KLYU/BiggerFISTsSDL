@@ -65,4 +65,15 @@ SweepHit SweepSphereAgainstSphere(const Vector3& start, const Vector3& end,
     }
     return {true, std::clamp(time, 0.0f, 1.0f)};
 }
+
+SweepHit SweepSphereAgainstMovingSphere(const Vector3& movingStart,
+    const Vector3& movingEnd, float movingRadius,
+    const Vector3& targetStart, const Vector3& targetEnd, float targetRadius) {
+    const Vector3 relativeStart{movingStart.x - targetStart.x,
+        movingStart.y - targetStart.y, movingStart.z - targetStart.z};
+    const Vector3 relativeEnd{movingEnd.x - targetEnd.x,
+        movingEnd.y - targetEnd.y, movingEnd.z - targetEnd.z};
+    return SweepSphereAgainstSphere(relativeStart, relativeEnd,
+        movingRadius, {{}, targetRadius});
+}
 }

@@ -5,6 +5,7 @@ struct ApplicationOptions {
     bool scenePreview = false;
     bool missileUnitModelPreview = false;
     bool firstPersonPreview = false;
+    bool playerCombatPreview = false;
     bool dynamicTargetSmokeTest = false;
 };
 

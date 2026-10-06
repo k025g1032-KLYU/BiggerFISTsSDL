@@ -64,14 +64,15 @@ float FlightPitch(const Vector3& direction) {
 }
 }
 
-PunchArm::PunchArm(PunchArmSide side)
-    : side_(side) {
+PunchArm::PunchArm(PunchArmSide side, PlayerCombatConfig config)
+    : side_(side), config_(config) {
 }
 
 void PunchArm::Reset(const Vector3& playerPosition, float bodyYaw) {
     state_ = PunchArmState::Ready;
     attackType_ = PunchArmAttackType::None;
     chargeTimer_ = 0.0f;
+    chargedVisualShakeTimer_ = 0.0f;
     stateTimer_ = 0.0f;
     punchDirection_ = { std::sin(bodyYaw), 0.0f, std::cos(bodyYaw) };
     fistPosition_ = CalculateHomePosition(playerPosition, bodyYaw);
@@ -79,9 +80,10 @@ void PunchArm::Reset(const Vector3& playerPosition, float bodyYaw) {
     punchDamageActiveThisFrame_ = false;
     rocketDamageActiveThisFrame_ = false;
     didLaunchRocketThisFrame_ = false;
+    didBeginPunchThisFrame_ = false;
     didReconnectThisFrame_ = false;
     rocketTravelDistance_ = 0.0f;
-    rocketMaximumRange_ = FirstPersonTuning::kRocketMaximumRange;
+    rocketMaximumRange_ = config_.rocketMaximumRange;
     rocketBaseAvoidanceDistance_ = std::numeric_limits<float>::infinity();
     rocketPosePitch_ = 0.0f;
     rocketPoseYaw_ = bodyYaw;
@@ -93,7 +95,20 @@ void PunchArm::Reset(const Vector3& playerPosition, float bodyYaw) {
 }
 
 float PunchArm::GetChargeRatio() const {
-    return std::clamp(chargeTimer_ / FirstPersonTuning::kPunchChargeTime, 0.0f, 1.0f);
+    return std::clamp(chargeTimer_ / config_.chargeTime, 0.0f, 1.0f);
+}
+
+Vector3 PunchArm::GetChargedVisualOffset() const {
+    if (state_ != PunchArmState::Charged) {
+        return {};
+    }
+    const float sidePhase = side_ == PunchArmSide::Left ? 0.0f :
+        std::numbers::pi_v<float>;
+    const float phase = chargedVisualShakeTimer_ * config_.chargedFistShakeFrequency;
+    const float amplitude = config_.chargedFistShakeAmplitude;
+    return {std::sin(phase + sidePhase) * amplitude,
+        std::sin(phase * 1.71f + sidePhase + 0.8f) * amplitude * 0.65f,
+        std::sin(phase * 1.29f + sidePhase + 1.6f) * amplitude * 0.8f};
 }
 
 Vector3 PunchArm::CalculateHomePosition(const Vector3& playerPosition, float bodyYaw) const {
@@ -131,7 +146,7 @@ Vector3 PunchArm::CalculateChargePosition(const Vector3& playerPosition,
 Vector3 PunchArm::CalculateReturnEntryPosition(const Vector3& playerPosition,
     float bodyYaw) const {
     return Add(CalculateHomePosition(playerPosition, bodyYaw),
-        {0.0f, FirstPersonTuning::kRocketReturnEntryHeightAboveShoulder, 0.0f});
+        {0.0f, config_.rocketReturnEntryHeightAboveShoulder, 0.0f});
 }
 
 float PunchArm::CalculateRocketMaximumRange(const Vector3& start,
@@ -158,10 +173,10 @@ float PunchArm::CalculateRocketMaximumRange(const Vector3& start,
         !clipAxis(start.z, direction.z,
             FirstPersonTuning::kBattlefieldMinimumZ,
             FirstPersonTuning::kBattlefieldMaximumZ)) {
-        return FirstPersonTuning::kRocketBattlefieldExitMargin;
+        return config_.rocketBattlefieldExitMargin;
     }
-    return std::clamp(exitDistance + FirstPersonTuning::kRocketBattlefieldExitMargin,
-        0.0f, FirstPersonTuning::kRocketMaximumRange);
+    return std::clamp(exitDistance + config_.rocketBattlefieldExitMargin,
+        0.0f, config_.rocketMaximumRange);
 }
 
 float PunchArm::CalculateRocketBaseAvoidanceDistance(const Vector3& start,
@@ -169,7 +184,7 @@ float PunchArm::CalculateRocketBaseAvoidanceDistance(const Vector3& start,
     const Vector3 baseCenter{0.0f, 0.0f, FirstPersonTuning::kBattlefieldMinimumZ};
     const Vector3 fromBase = Subtract(start, baseCenter);
     const float radius = FirstPersonTuning::kResearchInstituteColliderRadius +
-        FirstPersonTuning::kFistRadius + FirstPersonTuning::kRocketBaseAvoidanceMargin;
+        FirstPersonTuning::kFistRadius + config_.rocketBaseAvoidanceMargin;
     const float projection = DotVectors(fromBase, direction);
     const float perpendicularDistanceSquared = DotVectors(fromBase, fromBase) -
         projection * projection;
@@ -186,6 +201,7 @@ float PunchArm::CalculateRocketBaseAvoidanceDistance(const Vector3& start,
 }
 
 void PunchArm::BeginPunch(const Vector3& playerPosition, float bodyYaw) {
+    didBeginPunchThisFrame_ = true;
     const Vector3 home = CalculateHomePosition(playerPosition, bodyYaw);
     const float sine = std::sin(bodyYaw);
     const float cosine = std::cos(bodyYaw);
@@ -220,8 +236,8 @@ void PunchArm::BeginRocket(const Vector3& playerPosition, float bodyYaw) {
 
 void PunchArm::BeginRocketReturn(bool avoidBase) {
     state_ = avoidBase ? PunchArmState::RocketEvacuating : PunchArmState::Returning;
-    returnAscentDistance_ = avoidBase ? FirstPersonTuning::kRocketBaseEvacuationDistance :
-        FirstPersonTuning::kRocketReturnAscentDistance;
+    returnAscentDistance_ = avoidBase ? config_.rocketBaseEvacuationDistance :
+        config_.rocketReturnAscentDistance;
     rocketReturnPhase_ = RocketReturnPhase::TurnUp;
     stateTimer_ = 0.0f;
     returnPhaseStartPosition_ = fistPosition_;
@@ -246,13 +262,13 @@ void PunchArm::UpdateRocketReturn(float deltaTime,
     case RocketReturnPhase::TurnUp: {
         stateTimer_ += deltaTime;
         const float progress = SmoothStep(stateTimer_ /
-            FirstPersonTuning::kRocketReturnTurnUpDuration);
+            config_.rocketReturnTurnUpDuration);
         rocketPosePitch_ = returnPhaseStartPitch_ +
             (-std::numbers::pi_v<float> * 0.5f - returnPhaseStartPitch_) * progress;
         const float ascent = std::min(returnAscentDistance_,
-            FirstPersonTuning::kRocketReturnTurnUpAscentDistance);
+            config_.rocketReturnTurnUpAscentDistance);
         fistPosition_.y = returnPhaseStartPosition_.y + ascent * progress;
-        if (stateTimer_ >= FirstPersonTuning::kRocketReturnTurnUpDuration) {
+        if (stateTimer_ >= config_.rocketReturnTurnUpDuration) {
             AdvanceRocketReturnPhase(RocketReturnPhase::Ascend);
         }
         break;
@@ -260,10 +276,10 @@ void PunchArm::UpdateRocketReturn(float deltaTime,
     case RocketReturnPhase::Ascend: {
         const float alreadyAscended = fistPosition_.y - returnPhaseStartPosition_.y;
         const float turnAscent = std::min(returnAscentDistance_,
-            FirstPersonTuning::kRocketReturnTurnUpAscentDistance);
+            config_.rocketReturnTurnUpAscentDistance);
         const float remaining = std::max(0.0f,
             returnAscentDistance_ - turnAscent - alreadyAscended);
-        const float step = std::min(FirstPersonTuning::kRocketReturnAscentSpeed * deltaTime,
+        const float step = std::min(config_.rocketReturnAscentSpeed * deltaTime,
             remaining);
         fistPosition_.y += step;
         if (step >= remaining - kEpsilon) {
@@ -274,7 +290,7 @@ void PunchArm::UpdateRocketReturn(float deltaTime,
     case RocketReturnPhase::TurnHome: {
         stateTimer_ += deltaTime;
         const float progress = SmoothStep(stateTimer_ /
-            FirstPersonTuning::kRocketReturnTurnHomeDuration);
+            config_.rocketReturnTurnHomeDuration);
         const Vector3 toEntry = Subtract(
             CalculateReturnEntryPosition(playerPosition, bodyYaw), fistPosition_);
         const float distance = Length(toEntry);
@@ -286,7 +302,7 @@ void PunchArm::UpdateRocketReturn(float deltaTime,
             rocketPosePitch_ = returnPhaseStartPitch_ +
                 (FlightPitch(direction) - returnPhaseStartPitch_) * progress;
         }
-        if (stateTimer_ >= FirstPersonTuning::kRocketReturnTurnHomeDuration) {
+        if (stateTimer_ >= config_.rocketReturnTurnHomeDuration) {
             AdvanceRocketReturnPhase(RocketReturnPhase::FlyHome);
         }
         break;
@@ -300,10 +316,10 @@ void PunchArm::UpdateRocketReturn(float deltaTime,
             break;
         }
         const Vector3 direction = Multiply(toEntry, 1.0f / distance);
-        const float step = std::min(FirstPersonTuning::kRocketReturnFlightSpeed * deltaTime,
+        const float step = std::min(config_.rocketReturnFlightSpeed * deltaTime,
             distance);
         fistPosition_ = Add(fistPosition_, Multiply(direction, step));
-        const float maximumTurn = FirstPersonTuning::kRocketReturnTrackingTurnSpeed * deltaTime;
+        const float maximumTurn = config_.rocketReturnTrackingTurnSpeed * deltaTime;
         rocketPoseYaw_ = MoveTowardsAngle(rocketPoseYaw_,
             FlightYaw(direction, rocketPoseYaw_), maximumTurn);
         rocketPosePitch_ = MoveTowards(rocketPosePitch_, FlightPitch(direction), maximumTurn);
@@ -315,11 +331,11 @@ void PunchArm::UpdateRocketReturn(float deltaTime,
     case RocketReturnPhase::Align: {
         stateTimer_ += deltaTime;
         const float progress = SmoothStep(stateTimer_ /
-            FirstPersonTuning::kRocketReturnAlignDuration);
+            config_.rocketReturnAlignDuration);
         fistPosition_ = returnPhaseStartPosition_;
         rocketPosePitch_ = returnPhaseStartPitch_ +
             (-std::numbers::pi_v<float> * 0.5f - returnPhaseStartPitch_) * progress;
-        if (stateTimer_ >= FirstPersonTuning::kRocketReturnAlignDuration) {
+        if (stateTimer_ >= config_.rocketReturnAlignDuration) {
             rocketPosePitch_ = -std::numbers::pi_v<float> * 0.5f;
             AdvanceRocketReturnPhase(RocketReturnPhase::Dock);
         }
@@ -328,11 +344,11 @@ void PunchArm::UpdateRocketReturn(float deltaTime,
     case RocketReturnPhase::Dock: {
         stateTimer_ += deltaTime;
         const float progress = SmoothStep(stateTimer_ /
-            FirstPersonTuning::kRocketReturnDockDuration);
+            config_.rocketReturnDockDuration);
         const Vector3 home = CalculateHomePosition(playerPosition, bodyYaw);
         fistPosition_ = Lerp(returnPhaseStartPosition_, home, progress);
         rocketPosePitch_ = -std::numbers::pi_v<float> * 0.5f;
-        if (stateTimer_ >= FirstPersonTuning::kRocketReturnDockDuration) {
+        if (stateTimer_ >= config_.rocketReturnDockDuration) {
             fistPosition_ = home;
             didReconnectThisFrame_ = true;
             attackType_ = PunchArmAttackType::None;
@@ -345,11 +361,12 @@ void PunchArm::UpdateRocketReturn(float deltaTime,
 }
 
 void PunchArm::Update(float deltaTime, const Vector3& playerPosition, float bodyYaw,
-    const PunchArmInput& input) {
+    const PunchArmInput& input, bool allowNewCharge) {
     previousFistPosition_ = fistPosition_;
     punchDamageActiveThisFrame_ = false;
     rocketDamageActiveThisFrame_ = false;
     didLaunchRocketThisFrame_ = false;
+    didBeginPunchThisFrame_ = false;
     didReconnectThisFrame_ = false;
     if (!std::isfinite(deltaTime) || deltaTime < 0.0f ||
         !std::isfinite(bodyYaw) || !std::isfinite(playerPosition.x) ||
@@ -361,7 +378,7 @@ void PunchArm::Update(float deltaTime, const Vector3& playerPosition, float body
     switch (state_) {
     case PunchArmState::Ready:
         fistPosition_ = home;
-        if (input.punchHeld || input.rocketHeld) {
+        if (allowNewCharge && (input.punchHeld || input.rocketHeld)) {
             state_ = PunchArmState::Charging;
             attackType_ = input.punchHeld ? PunchArmAttackType::Punch :
                 PunchArmAttackType::RocketPunch;
@@ -380,9 +397,9 @@ void PunchArm::Update(float deltaTime, const Vector3& playerPosition, float body
             fistPosition_ = home;
             break;
         }
-        chargeTimer_ = std::min(chargeTimer_ + deltaTime, FirstPersonTuning::kPunchChargeTime);
+        chargeTimer_ = std::min(chargeTimer_ + deltaTime, config_.chargeTime);
         fistPosition_ = CalculateChargePosition(playerPosition, bodyYaw);
-        if (chargeTimer_ >= FirstPersonTuning::kPunchChargeTime) {
+        if (chargeTimer_ >= config_.chargeTime) {
             state_ = PunchArmState::Charged;
         }
         break;
@@ -391,7 +408,7 @@ void PunchArm::Update(float deltaTime, const Vector3& playerPosition, float body
     case PunchArmState::Charged: {
         const bool held = attackType_ == PunchArmAttackType::Punch ?
             input.punchHeld : input.rocketHeld;
-        chargeTimer_ = FirstPersonTuning::kPunchChargeTime;
+        chargeTimer_ = config_.chargeTime;
         fistPosition_ = CalculateChargePosition(playerPosition, bodyYaw);
         if (!held) {
             if (attackType_ == PunchArmAttackType::Punch) {
@@ -407,15 +424,15 @@ void PunchArm::Update(float deltaTime, const Vector3& playerPosition, float body
         punchDamageActiveThisFrame_ = true;
         stateTimer_ += deltaTime;
         const float progress = std::clamp(
-            stateTimer_ / FirstPersonTuning::kPunchDuration, 0.0f, 1.0f);
+            stateTimer_ / config_.punchDuration, 0.0f, 1.0f);
         const float extension = std::sin(progress * std::numbers::pi_v<float>) *
-            FirstPersonTuning::kPunchDistance;
+            config_.punchDistance;
         fistPosition_ = {
             home.x + punchDirection_.x * extension,
             home.y,
             home.z + punchDirection_.z * extension
         };
-        if (stateTimer_ >= FirstPersonTuning::kPunchDuration) {
+        if (stateTimer_ >= config_.punchDuration) {
             state_ = PunchArmState::Recovery;
             stateTimer_ = 0.0f;
         }
@@ -428,7 +445,7 @@ void PunchArm::Update(float deltaTime, const Vector3& playerPosition, float body
             rocketMaximumRange_ - rocketTravelDistance_);
         const float remainingBaseDistance = std::max(0.0f,
             rocketBaseAvoidanceDistance_ - rocketTravelDistance_);
-        const float travel = std::min(FirstPersonTuning::kRocketSpeed * deltaTime,
+        const float travel = std::min(config_.rocketSpeed * deltaTime,
             std::min(remainingDistance, remainingBaseDistance));
         fistPosition_ = Add(fistPosition_, Multiply(punchDirection_, travel));
         rocketTravelDistance_ += travel;
@@ -449,11 +466,13 @@ void PunchArm::Update(float deltaTime, const Vector3& playerPosition, float body
     case PunchArmState::Recovery:
         stateTimer_ += deltaTime;
         fistPosition_ = home;
-        if (stateTimer_ >= FirstPersonTuning::kPunchRecoveryDuration) {
+        if (stateTimer_ >= config_.recoveryDuration) {
             state_ = PunchArmState::Ready;
             attackType_ = PunchArmAttackType::None;
             chargeTimer_ = 0.0f;
         }
         break;
     }
+    chargedVisualShakeTimer_ = state_ == PunchArmState::Charged
+        ? chargedVisualShakeTimer_ + deltaTime : 0.0f;
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Math/MathTypes.h"
+#include "Data/PlayerCombatConfig.h"
 
 enum class PunchArmSide {
     Left,
@@ -31,11 +32,11 @@ struct PunchArmInput {
 
 class PunchArm {
 public:
-    explicit PunchArm(PunchArmSide side);
+    explicit PunchArm(PunchArmSide side, PlayerCombatConfig config = {});
 
     void Reset(const Vector3& playerPosition, float bodyYaw);
     void Update(float deltaTime, const Vector3& playerPosition, float bodyYaw,
-        const PunchArmInput& input);
+        const PunchArmInput& input, bool allowNewCharge = true);
 
     PunchArmState GetState() const { return state_; }
     PunchArmAttackType GetAttackType() const { return attackType_; }
@@ -50,9 +51,11 @@ public:
     float GetChargeRatio() const;
     const Vector3& GetFistPosition() const { return fistPosition_; }
     const Vector3& GetPreviousFistPosition() const { return previousFistPosition_; }
+    Vector3 GetChargedVisualOffset() const;
     bool IsPunchDamageActiveThisFrame() const { return punchDamageActiveThisFrame_; }
     bool IsRocketDamageActiveThisFrame() const { return rocketDamageActiveThisFrame_; }
     bool DidLaunchRocketThisFrame() const { return didLaunchRocketThisFrame_; }
+    bool DidBeginPunchThisFrame() const { return didBeginPunchThisFrame_; }
     bool DidReconnectThisFrame() const { return didReconnectThisFrame_; }
     float GetRocketPosePitch() const { return rocketPosePitch_; }
     float GetRocketPoseYaw() const { return rocketPoseYaw_; }
@@ -82,6 +85,7 @@ private:
     void UpdateRocketReturn(float deltaTime, const Vector3& playerPosition, float bodyYaw);
 
     PunchArmSide side_;
+    PlayerCombatConfig config_;
     PunchArmState state_ = PunchArmState::Ready;
     PunchArmAttackType attackType_ = PunchArmAttackType::None;
     Vector3 fistPosition_{};
@@ -90,8 +94,10 @@ private:
     bool punchDamageActiveThisFrame_ = false;
     bool rocketDamageActiveThisFrame_ = false;
     bool didLaunchRocketThisFrame_ = false;
+    bool didBeginPunchThisFrame_ = false;
     bool didReconnectThisFrame_ = false;
     float chargeTimer_ = 0.0f;
+    float chargedVisualShakeTimer_ = 0.0f;
     float stateTimer_ = 0.0f;
     float rocketTravelDistance_ = 0.0f;
     float rocketMaximumRange_ = 0.0f;
