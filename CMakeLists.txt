@@ -262,6 +262,7 @@ target_compile_definitions(ObjLoaderTests PRIVATE
     OBJ_TEST_FIST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LFist/Lfist.obj"
     OBJ_TEST_GAME_FIST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LfistTEST/LfistTEST.obj"
     OBJ_TEST_RIGHT_FIST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RFist/Rfist.obj"
+    OBJ_TEST_MISSILE_UNIT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RocketLaunch/RocketLaunch.obj"
 )
 add_test(NAME ObjLoaderTests COMMAND ObjLoaderTests)
 
@@ -340,6 +341,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/config/model.cfg"
     "${CMAKE_CURRENT_SOURCE_DIR}/config/scene.cfg"
     "${CMAKE_CURRENT_SOURCE_DIR}/config/first-person-scene.cfg"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config/missile-unit-scene.cfg"
     "${CMAKE_CURRENT_SOURCE_DIR}/config/combat-feedback.cfg"
 )
 
@@ -371,6 +373,11 @@ file(GENERATE
 file(GENERATE
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/first-person-scene.cfg"
     INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/first-person-scene.cfg"
+)
+
+file(GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/missile-unit-scene.cfg"
+    INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/missile-unit-scene.cfg"
 )
 
 file(GENERATE
@@ -510,6 +517,20 @@ add_custom_target(ModelAssets
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RFist/Lfist.png"
         "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/RFist/Lfist.png"
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/RocketLaunch"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RocketLaunch/RocketLaunch.obj"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/RocketLaunch/RocketLaunch.obj"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RocketLaunch/RocketLaunch.mtl"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/RocketLaunch/RocketLaunch.mtl"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RocketLaunch/Launcher.png"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/RocketLaunch/Launcher.png"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RocketLaunch/Launcherv2.png"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/models/RocketLaunch/Launcherv2.png"
     DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/Target/Target.obj"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/Target/Target.mtl"
@@ -523,6 +544,10 @@ add_custom_target(ModelAssets
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RFist/Rfist.obj"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RFist/Rfist.mtl"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RFist/Lfist.png"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RocketLaunch/RocketLaunch.obj"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RocketLaunch/RocketLaunch.mtl"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RocketLaunch/Launcher.png"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RocketLaunch/Launcherv2.png"
     VERBATIM
 )
 add_dependencies(BiggerFISTsSDL ModelAssets)

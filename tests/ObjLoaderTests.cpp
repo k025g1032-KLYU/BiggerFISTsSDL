@@ -66,6 +66,28 @@ int main() {
         std::cerr << error << '\n';
     }
 
+    const bool loadedMissileUnit = LoadObjModel(OBJ_TEST_MISSILE_UNIT_PATH, model, error);
+    passed &= Expect(loadedMissileUnit, "load original MissileUnit OBJ");
+    if (loadedMissileUnit) {
+        passed &= Expect(model.texturePath.empty() && model.submeshes.size() == 2,
+            "MissileUnit keeps its two distinct material groups");
+        passed &= Expect(model.submeshes.size() == 2 &&
+            model.submeshes[0].texturePath.filename() == "Launcherv2.png" &&
+            model.submeshes[1].texturePath.filename() == "Launcher.png" &&
+            std::filesystem::exists(model.submeshes[0].texturePath) &&
+            std::filesystem::exists(model.submeshes[1].texturePath),
+            "MissileUnit resolves both original PNG files");
+        passed &= Expect(model.submeshes.size() == 2 &&
+            model.submeshes[0].firstIndex == 0 &&
+            model.submeshes[0].indexCount > 0 &&
+            model.submeshes[1].firstIndex == model.submeshes[0].indexCount &&
+            model.submeshes[0].indexCount + model.submeshes[1].indexCount ==
+                model.indices.size(),
+            "MissileUnit material ranges cover its complete index buffer");
+    } else {
+        std::cerr << error << '\n';
+    }
+
     // Use a tiny quad to check winding and the OBJ bottom-left UV convention.
     const auto directory = std::filesystem::current_path() / "obj-loader-test-data";
     std::filesystem::create_directories(directory);
@@ -94,7 +116,7 @@ int main() {
             "OBJ top-left becomes GPU UV (0,0)");
     }
 
-    // Multiple material names are valid only while they all use one texture.
+    // Each material group keeps its own texture and index range.
     {
         std::ofstream mtl(mtlPath);
         mtl << "newmtl First\nmap_Kd texture.png\n"
@@ -107,18 +129,29 @@ int main() {
             << "usemtl First\nf 1/1/1 2/2/1 3/3/1\n"
             << "usemtl Second\nf 3/3/1 2/2/1 1/1/1\n";
     }
-    passed &= Expect(LoadObjModel(objPath, model, error) && model.indices.size() == 6,
+    passed &= Expect(LoadObjModel(objPath, model, error) && model.indices.size() == 6 &&
+        model.submeshes.size() == 2 && !model.texturePath.empty(),
         "two named materials may share one PNG");
     {
         std::ofstream mtl(mtlPath);
         mtl << "newmtl First\nmap_Kd texture.png\n"
             << "newmtl Second\nmap_Kd different.png\n";
     }
+    passed &= Expect(LoadObjModel(objPath, model, error) &&
+        model.texturePath.empty() && model.submeshes.size() == 2 &&
+        model.submeshes[0].firstIndex == 0 && model.submeshes[0].indexCount == 3 &&
+        model.submeshes[1].firstIndex == 3 && model.submeshes[1].indexCount == 3 &&
+        model.submeshes[1].texturePath.filename() == "different.png",
+        "different material textures produce separate draw ranges");
+    {
+        std::ofstream mtl(mtlPath);
+        mtl << "newmtl First\nmap_Kd texture.png\nnewmtl Second\n";
+    }
     passed &= Expect(!LoadObjModel(objPath, model, error) &&
-        error.find("different PNG textures") != std::string::npos,
-        "different material textures fail explicitly");
-    passed &= Expect(model.vertices.empty() && model.indices.empty(),
-        "unsupported materials return no partial mesh");
+        error.find("has no map_Kd texture") != std::string::npos,
+        "missing material texture fails explicitly");
+    passed &= Expect(model.vertices.empty() && model.indices.empty() &&
+        model.submeshes.empty(), "missing texture returns no partial mesh");
 
     // A bad face must fail with its line number instead of accessing past a vector.
     {
@@ -134,7 +167,7 @@ int main() {
     std::filesystem::remove(mtlPath);
     std::filesystem::remove(directory);
     if (passed) {
-        std::cout << "PASS: original Target and fist OBJ files, shared materials and OBJ error cases\n";
+        std::cout << "PASS: original Target, fist and MissileUnit OBJ files, material ranges and errors\n";
     }
     return passed ? 0 : 1;
 }

@@ -3,6 +3,7 @@
 struct ApplicationOptions {
     bool smokeTest = false;
     bool scenePreview = false;
+    bool missileUnitModelPreview = false;
     bool firstPersonPreview = false;
     bool dynamicTargetSmokeTest = false;
 };

@@ -27,11 +27,16 @@ public:
     void Shutdown();
 
 private:
+    struct GpuDrawRange {
+        Uint32 firstIndex = 0;
+        Uint32 indexCount = 0;
+        std::size_t textureIndex = 0;
+    };
     struct GpuMesh {
         SDL_GPUBuffer* vertexBuffer = nullptr;
         SDL_GPUBuffer* indexBuffer = nullptr;
-        Uint32 indexCount = 0;
-        SDL_GPUTexture* texture = nullptr;
+        std::vector<GpuDrawRange> drawRanges;
+        std::vector<SDL_GPUTexture*> textures;
     };
 
     SDL_GPUDevice* device_ = nullptr;

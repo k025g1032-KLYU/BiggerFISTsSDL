@@ -5,8 +5,10 @@
 #include "Rendering/TextureLoader.h"
 #include "World/ModelScene.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstring>
+#include <filesystem>
 #include <limits>
 #include <string>
 #include <type_traits>
@@ -273,11 +275,32 @@ bool MeshRenderer::Initialize(SDL_Window* window, std::span<const MeshData> mesh
         return false;
     }
     for (const MeshData& mesh : meshes) {
-        if (mesh.vertices.empty() || mesh.indices.empty() || mesh.texturePath.empty() ||
+        if (mesh.vertices.empty() || mesh.indices.empty() ||
             mesh.vertices.size() > std::numeric_limits<Uint32>::max() / sizeof(MeshVertex) ||
             mesh.indices.size() > std::numeric_limits<Uint32>::max() / sizeof(Uint32)) {
-            SDL_Log("Mesh has no vertices, indices or texture, or is too large for GPU buffers");
+            SDL_Log("Mesh has no vertices or indices, or is too large for GPU buffers");
             return false;
+        }
+        if (mesh.submeshes.empty()) {
+            if (mesh.texturePath.empty() || mesh.indices.size() % 3 != 0) {
+                SDL_Log("Mesh needs a texture and complete triangles");
+                return false;
+            }
+        } else {
+            std::size_t nextIndex = 0;
+            for (const MeshSubmesh& group : mesh.submeshes) {
+                if (group.firstIndex != nextIndex || group.indexCount == 0 ||
+                    group.indexCount % 3 != 0 || group.texturePath.empty() ||
+                    group.indexCount > mesh.indices.size() - nextIndex) {
+                    SDL_Log("Mesh has an invalid material index range");
+                    return false;
+                }
+                nextIndex += group.indexCount;
+            }
+            if (nextIndex != mesh.indices.size()) {
+                SDL_Log("Mesh material ranges do not cover every index");
+                return false;
+            }
         }
         for (const Uint32 index : mesh.indices) {
             if (index >= mesh.vertices.size()) {
@@ -336,13 +359,26 @@ bool MeshRenderer::Initialize(SDL_Window* window, std::span<const MeshData> mesh
             Shutdown();
             return false;
         }
-        gpuMesh.indexCount = static_cast<Uint32>(mesh.indices.size());
-        const auto utf8Path = mesh.texturePath.u8string();
-        const std::string texturePath(reinterpret_cast<const char*>(utf8Path.data()), utf8Path.size());
-        gpuMesh.texture = LoadPngTexture(device_, texturePath.c_str());
-        if (gpuMesh.texture == nullptr) {
-            Shutdown();
-            return false;
+        std::vector<MeshSubmesh> drawGroups = mesh.submeshes;
+        if (drawGroups.empty()) {
+            drawGroups.push_back({0, static_cast<Uint32>(mesh.indices.size()), mesh.texturePath});
+        }
+        std::vector<std::filesystem::path> loadedPaths;
+        for (const MeshSubmesh& group : drawGroups) {
+            const auto found = std::find(loadedPaths.begin(), loadedPaths.end(), group.texturePath);
+            std::size_t textureIndex = static_cast<std::size_t>(found - loadedPaths.begin());
+            if (found == loadedPaths.end()) {
+                const auto utf8Path = group.texturePath.u8string();
+                const std::string texturePath(reinterpret_cast<const char*>(utf8Path.data()), utf8Path.size());
+                SDL_GPUTexture* texture = LoadPngTexture(device_, texturePath.c_str());
+                if (texture == nullptr) {
+                    Shutdown();
+                    return false;
+                }
+                loadedPaths.push_back(group.texturePath);
+                gpuMesh.textures.push_back(texture);
+            }
+            gpuMesh.drawRanges.push_back({group.firstIndex, group.indexCount, textureIndex});
         }
     }
     depthBuffer_ = std::make_unique<DepthBuffer>(device_, depthFormat);
@@ -446,11 +482,13 @@ bool MeshRenderer::Render(const ModelScene& scene, WindowSettings& windowSetting
         SDL_GPUBufferBinding indexBinding{};
         indexBinding.buffer = mesh.indexBuffer;
         SDL_BindGPUIndexBuffer(pass, &indexBinding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
-        SDL_GPUTextureSamplerBinding textureBinding{};
-        textureBinding.texture = mesh.texture;
-        textureBinding.sampler = sampler_;
-        SDL_BindGPUFragmentSamplers(pass, 0, &textureBinding, 1);
-        SDL_DrawGPUIndexedPrimitives(pass, mesh.indexCount, 1, 0, 0, 0);
+        for (const GpuDrawRange& draw : mesh.drawRanges) {
+            SDL_GPUTextureSamplerBinding textureBinding{};
+            textureBinding.texture = mesh.textures[draw.textureIndex];
+            textureBinding.sampler = sampler_;
+            SDL_BindGPUFragmentSamplers(pass, 0, &textureBinding, 1);
+            SDL_DrawGPUIndexedPrimitives(pass, draw.indexCount, 1, draw.firstIndex, 0, 0);
+        }
     }
     SDL_EndGPURenderPass(pass);
 
@@ -477,8 +515,8 @@ void MeshRenderer::Shutdown() {
         sampler_ = nullptr;
     }
     for (GpuMesh& mesh : meshes_) {
-        if (mesh.texture != nullptr) {
-            SDL_ReleaseGPUTexture(device_, mesh.texture);
+        for (SDL_GPUTexture* texture : mesh.textures) {
+            SDL_ReleaseGPUTexture(device_, texture);
         }
         if (mesh.indexBuffer != nullptr) {
             SDL_ReleaseGPUBuffer(device_, mesh.indexBuffer);

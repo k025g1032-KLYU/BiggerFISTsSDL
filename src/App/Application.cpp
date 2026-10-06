@@ -41,7 +41,8 @@ int Application::Run(const ApplicationOptions& options) {
 
     SDL_Window* window = SDL_CreateWindow(
         options.firstPersonPreview ? "BiggerFISTs SDL3 First Person" :
-        (options.scenePreview ? "BiggerFISTs SDL3 Scene Preview" : "BiggerFISTs SDL3 Model Viewer"),
+        (options.missileUnitModelPreview ? "BiggerFISTs SDL3 Missile Unit Model" :
+        (options.scenePreview ? "BiggerFISTs SDL3 Scene Preview" : "BiggerFISTs SDL3 Model Viewer")),
         displaySettings.windowWidth,
         displaySettings.windowHeight,
         SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY
@@ -72,7 +73,8 @@ int Application::Run(const ApplicationOptions& options) {
     std::vector<FirstPersonTarget> firstPersonTargets;
     std::string loadError;
     if (options.scenePreview || options.firstPersonPreview) {
-        const char* sceneName = options.firstPersonPreview ? "first-person-scene.cfg" : "scene.cfg";
+        const char* sceneName = options.firstPersonPreview ? "first-person-scene.cfg" :
+            (options.missileUnitModelPreview ? "missile-unit-scene.cfg" : "scene.cfg");
         SceneConfig sceneConfig;
         if (!LoadSceneConfig(executableDirectory / sceneName, sceneConfig, loadError) ||
             !LoadSceneAssets(executableDirectory / "assets/models", sceneConfig,
@@ -323,6 +325,8 @@ int Application::Run(const ApplicationOptions& options) {
                     SDL_Log("PASS: Dynamic Target spawned, moved, removed and rendered across 30 GPU frames");
                 } else if (options.firstPersonPreview) {
                     SDL_Log("PASS: BiggerFISTsSDL first-person preview rendered 30 3D frames with static Targets and two player fists");
+                } else if (options.missileUnitModelPreview) {
+                    SDL_Log("PASS: Original MissileUnit model rendered 30 3D frames with two PNG materials");
                 } else if (options.scenePreview) {
                     SDL_Log("PASS: BiggerFISTsSDL scene preview rendered 30 3D frames with %u models",
                         static_cast<Uint32>(scene.models.size()));

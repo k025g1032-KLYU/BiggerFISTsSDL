@@ -1,5 +1,6 @@
 #include "Data/ObjLoader.h"
 
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <cmath>
@@ -74,9 +75,10 @@ std::string PathToUtf8(const std::filesystem::path& path) {
     return { reinterpret_cast<const char*>(bytes.data()), bytes.size() };
 }
 
-bool LoadMaterialTexture(const std::filesystem::path& mtlPath,
+bool LoadMaterialTextures(const std::filesystem::path& mtlPath,
     const std::unordered_set<std::string>& materialNames,
-    std::filesystem::path& texturePath, std::string& error) {
+    std::unordered_map<std::string, std::filesystem::path>& texturePaths,
+    std::string& error) {
     std::ifstream file(mtlPath);
     if (!file) {
         error = "Could not open material file: " + PathToUtf8(mtlPath);
@@ -119,13 +121,7 @@ bool LoadMaterialTexture(const std::filesystem::path& mtlPath,
             error = "Material '" + name + "' has no map_Kd texture in " + PathToUtf8(mtlPath);
             return false;
         }
-        if (texturePath.empty()) {
-            texturePath = found->second;
-        } else if (texturePath != found->second) {
-            error = "Materials use different PNG textures; multiple textures are not supported: " +
-                PathToUtf8(mtlPath);
-            return false;
-        }
+        texturePaths.emplace(name, found->second);
     }
     return true;
 }
@@ -148,6 +144,7 @@ bool LoadObjModel(const std::filesystem::path& objPath, MeshData& result, std::s
     std::string mtlFilename;
     std::string materialName;
     std::unordered_set<std::string> usedMaterials;
+    std::vector<std::string> materialGroups;
     std::string line;
     size_t lineNumber = 0;
     while (std::getline(file, line)) {
@@ -238,9 +235,20 @@ bool LoadObjModel(const std::filesystem::path& objPath, MeshData& result, std::s
                 error = "Face has fewer than three corners";
                 break;
             }
+            const size_t newIndexCount = (corners - 2) * 3;
+            if (mesh.indices.size() >
+                std::numeric_limits<std::uint32_t>::max() - newIndexCount) {
+                error = "Too many OBJ indices";
+                break;
+            }
+            if (materialGroups.empty() || materialGroups.back() != materialName) {
+                materialGroups.push_back(materialName);
+                mesh.submeshes.push_back({static_cast<std::uint32_t>(mesh.indices.size()), 0, {}});
+            }
             // Fan triangulation preserves the OBJ face order for triangles and quads.
             for (size_t i = 1; i + 1 < corners; ++i) {
                 mesh.indices.insert(mesh.indices.end(), { face[0], face[i], face[i + 1] });
+                mesh.submeshes.back().indexCount += 3;
             }
         }
     }
@@ -256,9 +264,18 @@ bool LoadObjModel(const std::filesystem::path& objPath, MeshData& result, std::s
         error = "OBJ needs faces, mtllib and usemtl: " + PathToUtf8(objPath);
         return false;
     }
-    if (!LoadMaterialTexture(objPath.parent_path() / PathFromUtf8(mtlFilename),
-            usedMaterials, mesh.texturePath, error)) {
+    std::unordered_map<std::string, std::filesystem::path> texturePaths;
+    if (!LoadMaterialTextures(objPath.parent_path() / PathFromUtf8(mtlFilename),
+            usedMaterials, texturePaths, error)) {
         return false;
+    }
+    for (size_t i = 0; i < mesh.submeshes.size(); ++i) {
+        mesh.submeshes[i].texturePath = texturePaths.at(materialGroups[i]);
+    }
+    const auto& firstTexture = mesh.submeshes.front().texturePath;
+    if (std::all_of(mesh.submeshes.begin(), mesh.submeshes.end(),
+            [&](const MeshSubmesh& group) { return group.texturePath == firstTexture; })) {
+        mesh.texturePath = firstTexture;
     }
     result = std::move(mesh);
     return true;
