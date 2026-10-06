@@ -1,18 +1,21 @@
 #include "App/Application.h"
 
 #include "Platform/FrameTimer.h"
+#include "Platform/FixedStepClock.h"
 #include "Game/Game.h"
 #include "Game/FirstPersonGame.h"
 #include "Data/GameConfig.h"
 #include "Input/Input.h"
 #include "Input/InputActions.h"
 #include "Input/InputBindings.h"
+#include "Input/FixedStepInputBuffer.h"
 #include "Platform/WindowSettings.h"
 #include "Data/ObjLoader.h"
 #include "Data/ModelConfig.h"
 #include "Data/SceneConfig.h"
 #include "Data/SceneLoader.h"
 #include "Rendering/MeshRenderer.h"
+#include "Rendering/FirstPersonScenePresenter.h"
 
 #include <SDL3/SDL.h>
 
@@ -136,8 +139,13 @@ int Application::Run(const ApplicationOptions& options) {
     }
     Game game(config, previewScene);
     std::optional<FirstPersonGame> firstPersonGame;
+    std::optional<FirstPersonScenePresenter> firstPersonView;
     if (options.firstPersonPreview) {
-        firstPersonGame.emplace(config, std::move(previewScene));
+        const Vector3 initialEyePosition = previewScene.cameraPosition;
+        const Vector3 targetPosition = FindModelById(previewScene, "target")->position;
+        firstPersonGame.emplace(config, initialEyePosition, targetPosition);
+        firstPersonView.emplace(std::move(previewScene));
+        firstPersonView->Sync(*firstPersonGame);
         if (!options.smokeTest && !SDL_SetWindowRelativeMouseMode(window, true)) {
             SDL_Log("Could not capture mouse for first-person view: %s", SDL_GetError());
             renderer.Shutdown();
@@ -147,6 +155,8 @@ int Application::Run(const ApplicationOptions& options) {
         }
     }
     FrameTimer frameTimer(config.targetFps);
+    FixedStepClock fixedStepClock;
+    FixedStepInputBuffer fixedStepInput;
     Input input;
     InputActions inputActions(bindings);
 
@@ -164,6 +174,9 @@ int Application::Run(const ApplicationOptions& options) {
         while (SDL_PollEvent(&event)) {
             input.ProcessEvent(event);
             windowSettings.ProcessEvent(event);
+            if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
+                fixedStepInput.Reset();
+            }
 
             if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
                 isRunning = false;
@@ -187,18 +200,26 @@ int Application::Run(const ApplicationOptions& options) {
             gameInput.moveY = 0.0f;
         }
         if (firstPersonGame) {
-            firstPersonGame->Update(deltaTime, gameInput,
+            fixedStepInput.QueueFrame(gameInput,
                 input.GetMouseDeltaX(), input.GetMouseDeltaY());
-            if (firstPersonGame->DidDestroyTargetThisFrame()) {
-                SDL_Log("Target destroyed by Punch. Press R to reset the Target.");
+            const int simulationSteps = fixedStepClock.Advance(deltaTime);
+            for (int step = 0; step < simulationSteps; ++step) {
+                const SimulationStepInput stepInput =
+                    fixedStepInput.ConsumeStep(simulationSteps - step);
+                firstPersonGame->Update(FixedStepClock::kStepSeconds, stepInput.game,
+                    stepInput.mouseDeltaX, stepInput.mouseDeltaY);
+                if (firstPersonGame->GetEvents().targetDestroyed) {
+                    SDL_Log("Target destroyed by Punch. Press R to reset the Target.");
+                }
+                if (firstPersonGame->GetEvents().targetReset) {
+                    SDL_Log("Target and punch states reset.");
+                }
             }
-            if (gameInput.resetTarget.pressed) {
-                SDL_Log("Target and punch states reset.");
-            }
+            firstPersonView->Sync(*firstPersonGame);
         } else {
             game.Update(deltaTime, gameInput);
         }
-        const ModelScene& scene = firstPersonGame ? firstPersonGame->GetScene() : game.GetScene();
+        const ModelScene& scene = firstPersonView ? firstPersonView->GetScene() : game.GetScene();
         bool frameRendered = false;
         if (!renderer.Render(scene, windowSettings, &frameRendered)) {
             SDL_Log("3D rendering failed");

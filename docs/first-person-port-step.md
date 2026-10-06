@@ -40,8 +40,10 @@ old engine into the new executable.
    LfistTEST and RFist OBJ/MTL/PNG files. It asks SDL to capture relative mouse motion.
 3. `Input/Input.cpp` sums mouse `xrel`/`yrel` events for one frame and tracks
    both mouse buttons. `InputActions` maps W/A/S/D and the configurable Q/E
-   punch keys to `GameInput`.
-4. `Game/FirstPersonGame.cpp` sends mouse deltas to `FirstPersonCamera`, then
+   punch keys to `GameInput`. `FixedStepInputBuffer` keeps one-shot actions and
+   mouse motion until a simulation step consumes them.
+4. `FixedStepClock` turns elapsed wall time into 1/60-second simulation steps.
+   `Game/FirstPersonGame.cpp` sends mouse deltas to `FirstPersonCamera`, then
    sends the current camera yaw and movement input to `PlayerMovement`.
 5. `PlayerMovement` accelerates or decelerates on the X/Z plane, clips the
    player to the original battlefield bounds, and turns the body yaw toward
@@ -49,13 +51,29 @@ old engine into the new executable.
 6. `FirstPersonCamera` follows the player's eye anchor with the original
    exponential smoothing and aims according to yaw and pitch.
 7. `PunchArm` updates the two independent charge and punch states.
-   `FirstPersonGame::UpdateFistPoses()` positions the fist meshes, pitches them
-   along the original forearm direction and turns them with body yaw. The camera
-   turns directly, so both fists follow with the body's turning lag.
-8. `MeshRenderer` renders the same static Target and two moving fists from
-   the updated camera.
-9. `FirstPersonGame` checks fist movement against the Target. A hit removes
-   the Target instance from the scene; R inserts its original instance again.
+   `FirstPersonGame` checks hits against the Target position and reports a
+   destruction or reset event. It does not own a rendering scene.
+8. `FirstPersonScenePresenter` copies the camera, background, fist poses and
+   Target visibility from gameplay state to `ModelScene`. It pitches the fists
+   along the original forearm direction and turns them with body yaw.
+9. `MeshRenderer` renders the scene; `Application` consumes gameplay events for
+   logging. Audio and other feedback can use these events in later steps.
+
+## Fixed simulation timing
+
+The first-person mode now advances gameplay in 1/60-second steps even when
+rendered frames take different amounts of time. `targetFps` still controls the
+frame pacing target; it does not change the simulation rate. At 30 rendered
+frames per second, a frame usually runs two simulation steps. At 120 rendered
+frames per second, some frames run no step and the next runs one.
+
+`FixedStepInputBuffer` holds R/Space presses through a frame with no simulation
+step. Mouse movement is accumulated and divided across all steps in the next
+rendered frame. A long stall runs at most five catch-up steps and discards the
+remaining backlog, preventing the game from freezing while it tries to replay
+many old frames. This means simulation time may fall behind wall time after a
+large stall. There is no render interpolation yet, so motion can still look
+less smooth on displays with refresh rates far above 60 Hz.
 
 ## Punch state and timing
 
@@ -67,8 +85,8 @@ in `FirstPersonTuning.h`: charge `0.55` seconds, punch `0.22` seconds, recovery
 `0.30` seconds, charge retraction `0.30` world units, and punch extension `3.0`
 world units. `PunchArm.cpp` follows the original sine-shaped extension, which
 extends the fist during the first half of the punch and returns it during the
-second half. Frame time is capped at the same `maxMovementDeltaTime` used for
-player movement.
+second half. Ordinary updates receive one fixed simulation step; the existing
+`maxMovementDeltaTime` cap remains as a safety guard.
 
 In the original game, Q/E charge ordinary punches. Holding Shift while pressing
 the left/right mouse button selects ordinary punches too. Releasing Shift while
@@ -86,9 +104,10 @@ hits when the fist moves farther in one frame than its collision radius.
 The collision code uses only sphere overlap and a moving-sphere-versus-static-
 sphere sweep; it is not a general physics system.
 
-On destruction, `FirstPersonGame` removes the Target's `ModelInstance` from
-`ModelScene.models`. Its GPU mesh remains loaded so R can restore the original
-instance without reading the OBJ or PNG again. R also returns both arms to
+On destruction, `FirstPersonGame` sets Target HP to zero, and
+`FirstPersonScenePresenter` removes its `ModelInstance` from `ModelScene.models`.
+Its GPU mesh remains loaded so R can restore the original instance without
+reading the OBJ or PNG again. R also returns both arms to
 `Ready`. The player and camera remain where they are, making repeated tests
 easy. The original Target starts at Z `8`; walk forward before punching because
 it begins outside ordinary punch range.
@@ -133,9 +152,10 @@ acceleration `6`, deceleration `7`, top speed `4.8` world units/second,
 body turn speed `1.8` radians/second, player root Y `1.7`, eye offset `4.15`,
 mouse sensitivity `0.0025` radians/pixel, maximum pitch `1.15` radians,
 camera follow responsiveness `20`, and snap distance `3`. Battlefield bounds
-and player radius are also copied. `GameConfig.maxMovementDeltaTime` caps
-movement during a long frame at `0.05` seconds; rendered animation time still
-uses the real elapsed time.
+and player radius are also copied. `GameConfig.maxMovementDeltaTime` defaults
+to `0.05` seconds and remains a guard inside player and arm updates. In normal
+first-person play each update receives `1/60` second, and scene elapsed time
+records simulation time.
 
 The original also has Rocket Punch, moving enemies, dodge, controller look,
 camera shake, impact sound, vibration and extra camera modes. Those systems
@@ -148,6 +168,7 @@ editable through `config/first-person-scene.cfg`.
 
 ```powershell
 & '.\build\Debug\FirstPersonGameTests.exe'
+& '.\build\Debug\FixedStepTests.exe'
 & '.\build\Debug\CollisionTests.exe'
 & '.\build\Debug\BiggerFISTsSDL.exe' --first-person-preview --smoke-test
 ```

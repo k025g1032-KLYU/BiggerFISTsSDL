@@ -2,6 +2,8 @@
 
 這是將原本 PC 遊戲逐步移出 KamataEngine 的獨立 SDL3 專案。`BiggerFISTsSDL` 預設依照 `config/model.cfg` 載入一個原版 OBJ 模型及其 PNG，可用 WASD 移動並旋轉預覽；加上 `--scene-preview` 時，則依 `config/scene.cfg` 顯示多個模型；加上 `--first-person-preview` 時，則可用原版移動規則與第一人稱相機接近 Target，操作左右拳蓄力、出拳並擊毀它。`MultiModelPreview` 保留為獨立多模型範例。專案已複製 Target、LFist、原版戰鬥場景使用的 LfistTEST 與 RFist。`GpuTriangle` 保留貼圖立方體範例。原版專案與 `vendor/SDL` 沒有被修改。
 
+第一人稱戰鬥預覽以固定每秒 60 次更新玩法，渲染仍依實際幀率執行；目前尚未加入畫面插值。起始提交、功能清單與驗收紀錄見 [移植基準](docs/migration-baseline.md)。
+
 ## SDL 版本鎖定
 
 本專案使用 Git submodule `vendor/SDL`，主專案固定記錄 SDL **3.4.16** 的 commit `fa2c02bb6e21974a89ea9824bc53c9932abe5f9c`。CMake 直接建置這份原始碼，不會在建置時抓取最新版；設定階段也會驗證 checkout commit 與 SDL 版本，不符就停止。
@@ -21,7 +23,7 @@ GitHub 的一般「Download ZIP」不會包含 submodule 內容，直接拿 ZIP 
 | `BiggerFISTsSDL` | 主程式：預設依 `model.cfg` 載入一個模型；`--scene-preview` 顯示多個模型；`--first-person-preview` 可用左右拳擊毀並重置 Target |
 | `MultiModelPreview` | 依 `config/scene.cfg` 在同一畫面顯示多個模型，各自帶 PNG 貼圖並旋轉 |
 | `GpuTriangle` | 貼圖立方體與顯示切換檢查；和主程式共用 `MeshRenderer` |
-| `InputActionsTests`、`WindowSettingsTests`、`MathTypesTests`、`GameTests`、`FirstPersonGameTests`、`CollisionTests`、`ObjLoaderTests`、`ModelConfigTests`、`SceneConfigTests`、`SceneLoaderTests` | 回歸測試 |
+| `InputActionsTests`、`WindowSettingsTests`、`MathTypesTests`、`GameTests`、`FirstPersonGameTests`、`FixedStepTests`、`CollisionTests`、`ObjLoaderTests`、`ModelConfigTests`、`SceneConfigTests`、`SceneLoaderTests` | 回歸測試 |
 
 在 Visual Studio 開啟 `build/BiggerFISTsSDL.slnx`，將 `BiggerFISTsSDL` 設為啟始專案，選擇 Debug／x64，建置後按 F5，會進入原本的單模型模式。要看第一人稱場景，將啟動參數設為 `--first-person-preview`；也可以從 PowerShell 執行 `& '.\build\Debug\BiggerFISTsSDL.exe' --first-person-preview`。多模型模式使用 `--scene-preview`。若先前已開啟解決方案，CMake 重新產生檔案後請重新載入。操作與檔案關係見 [第一人稱移植教學](docs/first-person-port-step.md)；原有預覽模式見 [主程式場景預覽教學](docs/main-scene-preview-step.md)。
 
@@ -59,7 +61,7 @@ src/
 └─ World/       模型場景與第一人稱相機狀態
 ```
 
-`App/Application.cpp` 預設使用 `ModelConfig` 選擇一個原版模型；場景預覽模式使用 `SceneConfig` 與共用的 `SceneLoader` 建立多模型場景；第一人稱模式載入靜態 Target 與左右拳，交由 `FirstPersonGame` 更新玩家、相機、拳頭狀態與 Target 命中。各模式最後都呼叫 `MeshRenderer::Render()`。`ModelScene` 保存多個 `ModelInstance`；每個 instance 指向一份 mesh，並有自己的位置、中心與旋轉。`MeshRenderer` 上傳各 mesh 的頂點、索引和貼圖，在同一個 render pass 中逐一繪製，並共用深度貼圖。`GpuTriangle` 將內建的立方體 mesh 傳給同一個 renderer。尚未有功能的 `Core` 等目錄，等實際程式加入時再建立。
+`App/Application.cpp` 預設使用 `ModelConfig` 選擇一個原版模型；場景預覽模式使用 `SceneConfig` 與共用的 `SceneLoader` 建立多模型場景；第一人稱模式載入靜態 Target 與左右拳，交由 `FirstPersonGame` 更新玩法狀態，再由 `FirstPersonScenePresenter` 同步至 `ModelScene`。各模式最後都呼叫 `MeshRenderer::Render()`。`ModelScene` 保存多個 `ModelInstance`；每個 instance 指向一份 mesh，並有自己的位置、中心與旋轉。`MeshRenderer` 上傳各 mesh 的頂點、索引和貼圖，在同一個 render pass 中逐一繪製，並共用深度貼圖。`GpuTriangle` 將內建的立方體 mesh 傳給同一個 renderer。尚未有功能的 `Core` 等目錄，等實際程式加入時再建立。
 
 主程式的預設模式一次選擇一個模型，場景預覽模式則從 `scene.cfg` 顯示多個模型；每個場景物件有唯一 `id`，多模型預覽中 WASD 暫不移動任何模型。預覽會依模型頂點範圍調整旋轉中心，不修改 OBJ 頂點。光照和原作戰鬥內容尚未接入。這個專案目前使用 Windows Direct3D 12 與 DXIL shader。`scene.cfg` 的設定格式見 [同畫面多模型教學](docs/multi-model-step.md)，ID 的用途見 [場景物件 ID 教學](docs/scene-object-id-step.md)。
 
@@ -92,7 +94,7 @@ src/
 ```powershell
 $cmakeExe = 'C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
 & $cmakeExe -S . -B build -G 'Visual Studio 18 2026' -A x64
-& $cmakeExe --build build --config Debug --target BiggerFISTsSDL MultiModelPreview GpuTriangle InputActionsTests WindowSettingsTests MathTypesTests GameTests FirstPersonGameTests ObjLoaderTests ModelConfigTests SceneConfigTests SceneLoaderTests
+& $cmakeExe --build build --config Debug --target BiggerFISTsSDL MultiModelPreview GpuTriangle InputActionsTests WindowSettingsTests MathTypesTests GameTests FirstPersonGameTests FixedStepTests CollisionTests ObjLoaderTests ModelConfigTests SceneConfigTests SceneLoaderTests
 & (Join-Path (Split-Path -Parent $cmakeExe) 'ctest.exe') --test-dir build -C Debug --output-on-failure
 & '.\build\Debug\BiggerFISTsSDL.exe' --smoke-test
 & '.\build\Debug\BiggerFISTsSDL.exe' --scene-preview --smoke-test

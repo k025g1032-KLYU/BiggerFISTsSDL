@@ -1,5 +1,6 @@
 #include "Game/FirstPersonGame.h"
 #include "Gameplay/Player/FirstPersonTuning.h"
+#include "Rendering/FirstPersonScenePresenter.h"
 
 #include <cmath>
 #include <cstdio>
@@ -16,6 +17,33 @@ bool Expect(bool condition, const char* description) {
 bool Near(float a, float b, float tolerance = 0.0001f) {
     return std::abs(a - b) < tolerance;
 }
+
+class FirstPersonHarness {
+public:
+    FirstPersonHarness(const GameConfig& config, const ModelScene& scene)
+        : game_(config, scene.cameraPosition,
+            FindModelById(scene, "target")->position), view_(scene) {
+        view_.Sync(game_);
+    }
+
+    void Update(double deltaSeconds, const GameInput& input,
+        float mouseDeltaX, float mouseDeltaY) {
+        game_.Update(deltaSeconds, input, mouseDeltaX, mouseDeltaY);
+        view_.Sync(game_);
+    }
+
+    const ModelScene& GetScene() const { return view_.GetScene(); }
+    const PlayerMovement& GetPlayer() const { return game_.GetPlayer(); }
+    const FirstPersonCamera& GetCamera() const { return game_.GetCamera(); }
+    const PunchArm& GetLeftArm() const { return game_.GetLeftArm(); }
+    const PunchArm& GetRightArm() const { return game_.GetRightArm(); }
+    int GetTargetHitPoints() const { return game_.GetTargetHitPoints(); }
+    bool DidDestroyTargetThisFrame() const { return game_.GetEvents().targetDestroyed; }
+
+private:
+    FirstPersonGame game_;
+    FirstPersonScenePresenter view_;
+};
 }
 
 int main() {
@@ -46,7 +74,7 @@ int main() {
     scene.models.back().rotationYDegreesPerSecond = 0.0f;
     scene.cameraPosition = { 0.0f, 5.85f, 0.0f };
 
-    FirstPersonGame game(GameConfig{}, scene);
+    FirstPersonHarness game(GameConfig{}, scene);
     const float halfHorizontalDistance = FirstPersonTuning::kReadyFistForwardOffset * 0.5f;
     const float expectedElbowDrop = std::sqrt(
         FirstPersonTuning::kUpperArmFixedLength * FirstPersonTuning::kUpperArmFixedLength -
@@ -163,7 +191,7 @@ int main() {
     success &= Expect(TryBuildModelTransform(game.GetScene(), 1280, 720, transform),
         "First-person camera and Target produce a valid render transform");
 
-    FirstPersonGame punchGame(GameConfig{}, scene);
+    FirstPersonHarness punchGame(GameConfig{}, scene);
     GameInput leftPunch{};
     leftPunch.leftPunchKeyDown = true;
     punchGame.Update(0.01, leftPunch, 0.0f, 0.0f);
@@ -233,7 +261,7 @@ int main() {
         Near(punchGame.GetScene().models.front().position.z, 8.0f),
         "The right arm can punch later and the Target remains static");
 
-    FirstPersonGame mousePunchGame(GameConfig{}, scene);
+    FirstPersonHarness mousePunchGame(GameConfig{}, scene);
     GameInput mousePunch{};
     mousePunch.leftMouseDown = true;
     mousePunchGame.Update(0.01, mousePunch, 0.0f, 0.0f);
@@ -254,7 +282,7 @@ int main() {
 
     ModelScene hitScene = scene;
     hitScene.models.front().position = {0.0f, 4.55f, 5.8f};
-    FirstPersonGame hitGame(GameConfig{}, hitScene);
+    FirstPersonHarness hitGame(GameConfig{}, hitScene);
     GameInput heldLeft{};
     heldLeft.leftPunchKeyDown = true;
     hitGame.Update(0.01, heldLeft, 0.0f, 0.0f);
@@ -309,7 +337,7 @@ int main() {
 
     ModelScene missScene = scene;
     missScene.models.front().position = {8.0f, 4.55f, 5.8f};
-    FirstPersonGame missGame(GameConfig{}, missScene);
+    FirstPersonHarness missGame(GameConfig{}, missScene);
     missGame.Update(0.01, heldLeft, 0.0f, 0.0f);
     for (int frame = 0; frame < 12; ++frame) {
         missGame.Update(0.05, heldLeft, 0.0f, 0.0f);

@@ -82,8 +82,12 @@ add_executable(BiggerFISTsSDL
     src/Platform/WindowSettings.h
     src/Platform/FrameTimer.cpp
     src/Platform/FrameTimer.h
+    src/Platform/FixedStepClock.cpp
+    src/Platform/FixedStepClock.h
     src/Input/Input.cpp
     src/Input/Input.h
+    src/Input/FixedStepInputBuffer.cpp
+    src/Input/FixedStepInputBuffer.h
     src/Input/InputActions.cpp
     src/Input/InputActions.h
     src/Input/InputBindings.cpp
@@ -107,6 +111,9 @@ add_executable(BiggerFISTsSDL
     src/Gameplay/Player/PlayerMovement.h
     src/Gameplay/Player/PunchArm.cpp
     src/Gameplay/Player/PunchArm.h
+    src/Gameplay/SimulationTiming.h
+    src/Rendering/FirstPersonScenePresenter.cpp
+    src/Rendering/FirstPersonScenePresenter.h
     src/World/FirstPersonCamera.cpp
     src/World/FirstPersonCamera.h
     ${SCENE_LOADING_SOURCES}
@@ -165,12 +172,27 @@ add_executable(FirstPersonGameTests EXCLUDE_FROM_ALL
     src/Collision/Collision.cpp
     src/Gameplay/Player/PlayerMovement.cpp
     src/Gameplay/Player/PunchArm.cpp
+    src/Rendering/FirstPersonScenePresenter.cpp
     src/World/FirstPersonCamera.cpp
     src/World/ModelScene.cpp
     src/Math/MathTypes.cpp
 )
 target_include_directories(FirstPersonGameTests PRIVATE src)
 add_test(NAME FirstPersonGameTests COMMAND FirstPersonGameTests)
+
+add_executable(FixedStepTests EXCLUDE_FROM_ALL
+    tests/FixedStepTests.cpp
+    src/Platform/FixedStepClock.cpp
+    src/Input/FixedStepInputBuffer.cpp
+    src/Game/FirstPersonGame.cpp
+    src/Collision/Collision.cpp
+    src/Gameplay/Player/PlayerMovement.cpp
+    src/Gameplay/Player/PunchArm.cpp
+    src/World/FirstPersonCamera.cpp
+    src/Math/MathTypes.cpp
+)
+target_include_directories(FixedStepTests PRIVATE src)
+add_test(NAME FixedStepTests COMMAND FixedStepTests)
 
 add_executable(CollisionTests EXCLUDE_FROM_ALL
     tests/CollisionTests.cpp
@@ -227,6 +249,7 @@ if(MSVC)
     target_compile_options(MathTypesTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(GameTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(FirstPersonGameTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(FixedStepTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(CollisionTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(ObjLoaderTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(ModelConfigTests PRIVATE /W4 /utf-8 /EHsc)
