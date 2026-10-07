@@ -1,13 +1,14 @@
-# Stage 4 battle port status
+# Stage 4: playable battle previews
 
-The original KamataEngine project is a read-only behavior reference. All models,
-textures, sound files, and gameplay code used by this preview live in the SDL
-project. The Stage 3 checkpoint is Git commit `4c069fd`.
+The SDL project is based on checkpoint `c068249`. The KamataEngine project was
+read only during this work. Day1, Day2, and Boss can each progress from Ready
+through Countdown and Playing to Clear using the normal input, attack, and
+collision paths. GameOver can be reset with R and restarted with Enter. These
+are battle previews, not the Title/Story/Tutorial/Ending flow or final HUD.
 
 ## Run
 
-Build `BiggerFISTsSDL` with the `Debug` or `Release` CMake configuration, then
-run one of these commands from the SDL project directory:
+Build `BiggerFISTsSDL` in Debug or Release and run from the SDL project:
 
 ```powershell
 & '.\build\Debug\BiggerFISTsSDL.exe' --battle-preview=missile-unit
@@ -18,74 +19,73 @@ run one of these commands from the SDL project directory:
 & '.\build\Debug\BiggerFISTsSDL.exe' --battle-preview=boss
 ```
 
-Press Enter to start the three-second countdown, R to reset, WASD to move, and
-Space to Dodge Boost. Move the mouse to look. Q/E charge an ordinary Punch for
-each arm; the left/right mouse buttons charge Rocket Punch. Hold both mouse
-buttons through the additional Ultimate charge and release both to fire it.
-The window title reports player HP, base HP, wave, and Boss HP. Phase changes,
-hits, and base damage are logged in the terminal. The ordinary
-`--first-person-preview` keeps its earlier controls.
+Enter starts the countdown; R resets after Clear or GameOver. WASD moves,
+Space dodges, Q/E charge ordinary punches, and the left/right mouse buttons
+charge independent Rocket Punches. Hold both mouse buttons to form Ultimate,
+then release to fire. The window title reports phase, HP, base HP, wave, and
+Boss HP. `--first-person-preview` retains its original controls.
 
-## Implementation boundary
+## Gameplay and presentation boundary
 
-- `CombatSession` owns the fixed-step battle phase, player/base health, dynamic
-  enemies, projectiles, unique IDs, hit resolution, reset, and clear conditions.
-- `EncounterDirector` reads the Day1/Day2 wave definitions and enforces counts,
-  capacity, delayed replacement, and wave advancement.
-- `BattleBoss` owns a simplified Boss state machine, the 20 HP core, Idle
-  movement/crystal shots, distance-weighted attack choice, a takeoff/flight/
-  landing Cruise relocation, charged-Rocket aim and incoming-Rocket sidesteps,
-  proximity-triggered Spread Counter, attacks, and the mandatory one-HP Full
-  Barrage damage lock.
-- `FirstPersonGame` owns Dodge, Ultimate, and the player. Battle target hits are
-  resolved after enemy/projectile movement so sweeps compare the same fixed
-  step. Ultimate and arm interceptions resolve before projectile impacts.
-- `FirstPersonScenePresenter`, `MeshRenderer`, and `CombatFeedback` read battle
-  state/events and own models, tint, nonuniform scale, WAV playback, and gamepad
-  vibration. Gameplay code does not include SDL, KamataEngine, or GPU types.
-- `battle-assets.cfg`, `battlefield-scene.cfg`, the encounter files, and the
-  combat config files define asset paths, initial arena, wave data, and tuning.
-  Invalid keys, missing values, and invalid ranges stop loading with a file
-  and reason; encounter errors also report line numbers.
+- `CombatSession` owns the 1/60 second battle update, dynamic targets,
+  continuous collision, damage, phases, reset, and Clear conditions. It emits
+  feedback events and never calls SDL or GPU APIs.
+- `EncounterDirector` reads the three waves in each Day config, respecting
+  capacity, spawn delay, replacement, and completion conditions.
+- `BattleBoss` uses the original action weights, cooldowns, Cruise quadrant
+  dead zones and retargeting, Boxer entry dash/orbit and strike timing, Needle
+  Combo dash/strike windows, crystal slots, Full Barrage lock, and death timing.
+  Boxer and Needle attack events carry the previous/current tip positions,
+  radius, and per-attack ID. `CombatSession` sweeps these against the moving
+  player and suppresses duplicate hits from the same attack. Missing the first
+  Needle strike cancels the combo into Boxer. A hit stuns the player; the
+  finishing impact damages HP through the shield, knocks the player back, and
+  triggers the original delayed control shutdown.
+- Six Spike and four Cube crystal slots rotate behind the Boss. Each slot
+  launches, fires, reloads, or is consumed by Full Barrage. Crystal projectiles
+  spawn at the matching slot and fly in 3D toward the player.
+- `FirstPersonScenePresenter` draws slot models, charge cues, carried Bomber
+  bombs, and simplified defeat colors. `CombatFeedback` plays copied original
+  Boss/battle WAV files and rumble from battle events; player feedback uses
+  player events. The original project is not referenced at runtime.
+- New timing, geometry, and feedback values are loaded from
+  `boss-combat.cfg` and `combat-feedback.cfg`. Invalid values report file and
+  line or key. CMake copies all required WAV files into each build output.
 
-## Verified behavior
+## Verification performed
 
-The tests cover the 30/60/120 rendered-FPS fixed-step comparison, wave limits
-and progression, battle reset/countdown, Day1/Day2 Clear, Boss core damage and
-Full Barrage lock, Idle crystal fire and proximity pressure, Ultimate collision
-against Boss, delayed charged-Rocket dodge and its battle input path, Charge
-impact, Missile windup and turn toward the base, and Bomber lateral bomb motion. Debug and
-Release CTest passed 19/19. All three single-enemy previews and Day1, Day2,
-Boss previews completed 30-frame GPU startup smoke tests. Smoke tests prove
-asset loading and frame rendering; they do not prove a complete playthrough.
-On this machine, switching the supported SDL GPU swapchain to MAILBOX reduced
-the Day1 preview's measured average render time from about 164 ms/frame to
-2.5 ms/frame. VSYNC remains the fallback when MAILBOX is unavailable.
+- Debug and Release builds succeeded; CTest passed 20/20 in both.
+- `BattleReplayTests` drives Enter, mouse look, Rocket Punch, Ultimate,
+  movement, and Dodge through normal `GameInput`. Day1, Day2, and Boss reached
+  Clear at 30, 60, and 120 rendered FPS with identical fixed-step counts:
+  Day1 5077, Day2 9582, Boss 4111. No direct damage call is used for these
+  playthroughs. Existing direct-damage tests remain as unit tests.
+- The replay also checks GameOver -> R -> Ready -> Enter -> Playing, plus
+  rendered model presence during combat and appropriate model cleanup at
+  Clear. Boss tests cover Boxer entry movement and finite swept windows,
+  Needle dash, first-strike miss, finishing impact and three unique attack IDs,
+  crystal launch/reload and all ten Full Barrage slots. Player tests cover
+  Needle stun, shield-bypassing HP damage, knockback and delayed shutdown.
+- All six battle previews rendered 30 GPU frames in Debug and Release. A
+  1200-frame Release Boss run measured 0.12 ms update and 0.99 ms render per
+  frame; a 600-frame Day2 run measured 0.10 ms update and 0.90 ms render per
+  frame on the test machine. Use `--smoke-test --smoke-frames=1200` to repeat;
+  the default smoke test is 30 frames. The Boss Playing window was also
+  visually inspected with the copied arena, Boss, halo, and player models.
+- The original `Boss.cpp` and `CombatTuning.h` were compared for the principal
+  action intervals, hit radii, Cruise selection, and crystal slot values.
+  The Generated/Outputs Release executable opened its Title screen when run
+  with the original project as its working directory. Automated DirectInput
+  key presses did not advance it to combat, so an executable side-by-side
+  comparison of battle timing, positions, and sound remains unverified. This
+  limitation does not replace the input-driven SDL tests.
 
-## Differences still requiring work or manual comparison
+## Deferred presentation differences
 
-- Boss action weights and cooldowns now follow the original values, but Cruise
-  target selection omits the original dead-zone hysteresis and in-flight
-  retargeting. Charged-Rocket and incoming-Rocket sidesteps are present, but
-  Boxer uses one simplified dodge phase rather than the original orbit-phase
-  restrictions. Exact Boxer/Needle hit shapes and crystal halo/reload logic
-  are not yet reproduced. Idle movement, proximity Spread Counter, crystal
-  shots, mandatory Full Barrage lock, and core damage are present.
-- ChargeUnit has battlefield/base-safe movement and separate impact/miss
-  braking, but its visual turn/reacquire pose and exact obstacle timing are
-  simplified. Bomber movement speed and bomb oscillation match the original
-  ranges; its loaded-bomb and ring visuals are still absent.
-- Ultimate damage, recoil, return timing, system offline, and basic feedback
-  are present. Its staged return pose and the original cockpit/emergency
-  visuals are not reproduced. Complex fire and explosion effects are simple
-  model/tint cues.
-- Direct side-by-side checks of enemy timing, positions, model orientation,
-  attack feedback, and full Day1/Day2/Boss playthrough have not been done.
-- The previous 3-6 FPS GPU startup regression came from swapchain waiting in
-  VSYNC mode. MAILBOX removes that measured bottleneck on this machine, but a
-  full-length interactive playthrough and sustained frame-time check remain
-  necessary to establish real-time playability.
-
-Stage 4 therefore has working battle previews and automated gameplay checks,
-but original parity and performance acceptance remain open. Do not treat this
-preview as a completed production battle port.
+The Boss needle/root pose, Boxer dash animation, elaborate halo light,
+Rocket fire, explosions, ChargeUnit turn/reacquire pose, Ultimate staged
+return pose, and cockpit/emergency visuals use simpler model and tint cues.
+The game flow and final HUD belong to Stage 5. These differences do not alter
+the tested health, attack, wave, or Clear rules, but exact visual and audio
+matching should be checked against a current runnable original build before
+release.

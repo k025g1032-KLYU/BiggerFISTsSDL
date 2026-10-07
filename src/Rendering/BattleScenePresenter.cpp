@@ -53,6 +53,14 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
                     enemy.position.z - enemy.chargeDirection.z * 1.2f},
                 1.0f, {1.0f, 0.7f, 0.3f});
         }
+        if (enemy.type == BattleEnemyType::Bomber && !enemy.defeated &&
+            enemy.deployed) {
+            add(enemy.id + "_carried_bomb", "floating_bomb",
+                {enemy.position.x, enemy.position.y - 1.25f,
+                    enemy.position.z}, 0.58f,
+                enemy.attackTimer < 1.0f ? Vector3{1.0f, 0.55f, 0.25f}
+                    : Vector3{1.0f, 1.0f, 1.0f});
+        }
     }
     for (const BattleProjectile& projectile : battle.GetProjectiles()) {
         const std::string_view key = projectile.type == BattleProjectileType::Missile
@@ -79,12 +87,27 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
             {position.x + 2.7f, position.y, position.z}, 1.0f, tint);
         add("boss_lower_cone", "boss_cone_lower",
             {position.x, position.y - 2.5f, position.z}, 1.0f, tint);
-        if (boss->GetMode() == BossMode::FullBarrage) {
-            const float angle = boss->GetModeTime() * 0.85f;
-            add("boss_halo_spike", "boss_crystal_spike",
-                {position.x + std::cos(angle) * 4.35f, position.y,
-                    position.z + std::sin(angle) * 4.35f}, 0.8f,
-                {0.65f, 0.85f, 1.0f});
+        const bool showHalo = boss->GetMode() != BossMode::Defeating &&
+            boss->GetMode() != BossMode::Defeated;
+        for (std::size_t index = 0;
+                showHalo && index < boss->GetSpikeSlots().size(); ++index) {
+            const BossCrystalSlot& slot = boss->GetSpikeSlots()[index];
+            if (!slot.consumed && slot.reloadTime <= 0.0f) {
+                add("boss_spike_slot_" + std::to_string(index),
+                    "boss_crystal_spike", slot.position, 0.8f,
+                    slot.launchTime > 0.0f ? Vector3{1.0f, 0.8f, 0.5f}
+                        : Vector3{0.65f, 0.85f, 1.0f});
+            }
+        }
+        for (std::size_t index = 0;
+                showHalo && index < boss->GetCubeSlots().size(); ++index) {
+            const BossCrystalSlot& slot = boss->GetCubeSlots()[index];
+            if (!slot.consumed && slot.reloadTime <= 0.0f) {
+                add("boss_cube_slot_" + std::to_string(index),
+                    "boss_crystal_cube", slot.position, 0.7f,
+                    slot.launchTime > 0.0f ? Vector3{1.0f, 0.8f, 0.5f}
+                        : Vector3{0.65f, 0.85f, 1.0f});
+            }
         }
     }
     const FirstPersonGame& player = battle.GetPlayerGame();

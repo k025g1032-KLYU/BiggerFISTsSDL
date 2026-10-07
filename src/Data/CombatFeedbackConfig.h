@@ -11,6 +11,10 @@ struct CombatFeedbackConfig {
     std::string rocketReconnectWav;
     std::string chargeHitWav;
     std::string dodgeWav;
+    std::string bossChangeModeWav;
+    std::string bossSharpHitWav;
+    std::string bossRiserWav;
+    std::string battleExplosionWav;
     float punchImpactGain = 0.0f;
     float rocketImpactGain = 0.0f;
     float rocketLaunchGain = 0.0f;
@@ -19,6 +23,7 @@ struct CombatFeedbackConfig {
     float chargeHitGain = 0.0f;
     float dodgeGain = 0.0f;
     float ultimateLaunchGain = 0.0f;
+    float battleCueGain = 0.5f;
     std::uint16_t punchRumbleLow = 0;
     std::uint16_t punchRumbleHigh = 0;
     std::uint32_t punchRumbleMs = 0;

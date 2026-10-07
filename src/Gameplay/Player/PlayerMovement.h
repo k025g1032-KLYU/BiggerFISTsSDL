@@ -3,7 +3,7 @@
 #include "Math/MathTypes.h"
 #include "Data/PlayerCombatConfig.h"
 
-enum class PlayerImpactState { None, Holding, Knockback };
+enum class PlayerImpactState { None, Holding, Knockback, NeedleStun };
 enum class PlayerDodgeState { Ready, Boosting, Sliding, Recovery };
 
 class PlayerMovement {
@@ -14,6 +14,9 @@ public:
     void Update(double deltaSeconds, float moveRight, float moveForward, float cameraYaw);
     void StartChargeImpact(const Vector3& direction, bool wasShielded);
     void StartBurstImpact(const Vector3& direction);
+    void StartNeedleStun();
+    void StartNeedleFinisher(const Vector3& direction);
+    void ClearNeedleStun();
     void StartUltimateRecoil();
     void ClearImpact();
     bool TryStartDodge(float moveRight, float moveForward);

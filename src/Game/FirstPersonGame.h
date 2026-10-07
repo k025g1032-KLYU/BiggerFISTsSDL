@@ -65,6 +65,8 @@ public:
     bool RemoveTarget(std::string_view id);
     PlayerHitResult ReceivePlayerHit(PlayerHitType type,
         const Vector3& pushDirection = {0.0f, 0.0f, 1.0f});
+    void StartNeedleStun();
+    void EndNeedleStun();
     const PlayerMovement& GetPlayer() const { return player_; }
     const FirstPersonCamera& GetCamera() const { return camera_; }
     const PunchArm& GetLeftArm() const { return leftArm_; }
@@ -123,4 +125,6 @@ private:
     float ultimateTravel_ = 0.0f;
     float ultimateReturnTimer_ = 0.0f;
     float ultimateOfflineTimer_ = 0.0f;
+    float needleShutdownDelay_ = 0.0f;
+    float needleOfflineTimer_ = 0.0f;
 };

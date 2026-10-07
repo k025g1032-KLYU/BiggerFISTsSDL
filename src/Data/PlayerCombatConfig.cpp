@@ -13,7 +13,7 @@ namespace {
 using FloatField = float PlayerCombatConfig::*;
 using IntField = int PlayerCombatConfig::*;
 
-constexpr std::array<std::pair<std::string_view, FloatField>, 57> floatFields{{
+constexpr std::array<std::pair<std::string_view, FloatField>, 61> floatFields{{
     std::pair<std::string_view, FloatField>{"chargeTime", &PlayerCombatConfig::chargeTime},
     {"punchDuration", &PlayerCombatConfig::punchDuration},
     {"punchDistance", &PlayerCombatConfig::punchDistance},
@@ -47,6 +47,10 @@ constexpr std::array<std::pair<std::string_view, FloatField>, 57> floatFields{{
     {"unshieldedChargeDuration", &PlayerCombatConfig::unshieldedChargeDuration},
     {"burstKnockbackSpeed", &PlayerCombatConfig::burstKnockbackSpeed},
     {"burstKnockbackDuration", &PlayerCombatConfig::burstKnockbackDuration},
+    {"needleFinisherKnockbackSpeed", &PlayerCombatConfig::needleFinisherKnockbackSpeed},
+    {"needleFinisherKnockbackDuration", &PlayerCombatConfig::needleFinisherKnockbackDuration},
+    {"needleFinisherShutdownDelay", &PlayerCombatConfig::needleFinisherShutdownDelay},
+    {"needleFinisherOfflineDuration", &PlayerCombatConfig::needleFinisherOfflineDuration},
     {"projectileShieldShakeStrength", &PlayerCombatConfig::projectileShieldShakeStrength},
     {"projectileShieldShakeDuration", &PlayerCombatConfig::projectileShieldShakeDuration},
     {"projectileHitPointShakeStrength", &PlayerCombatConfig::projectileHitPointShakeStrength},

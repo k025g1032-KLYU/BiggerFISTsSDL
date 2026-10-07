@@ -170,6 +170,18 @@ add_custom_target(CombatSoundAssets
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/step.wav"
         "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/sound/step.wav"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/boss_change_mode.wav"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/sound/boss_change_mode.wav"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/boss_sharp_hit.wav"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/sound/boss_sharp_hit.wav"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/boss_riser.wav"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/sound/boss_riser.wav"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/battle_explosion.wav"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/sound/battle_explosion.wav"
     DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/enemy_is_hit.wav"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/RocketShot.wav"
@@ -177,6 +189,10 @@ add_custom_target(CombatSoundAssets
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/mokugyo.wav"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/charge_hit.wav"
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/step.wav"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/boss_change_mode.wav"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/boss_sharp_hit.wav"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/boss_riser.wav"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/battle_explosion.wav"
     VERBATIM
 )
 add_dependencies(BiggerFISTsSDL CombatSoundAssets)
@@ -421,6 +437,33 @@ target_include_directories(CombatSessionTests PRIVATE src)
 add_test(NAME CombatSessionTests COMMAND CombatSessionTests
     "${CMAKE_CURRENT_SOURCE_DIR}/config")
 
+add_executable(BattleReplayTests EXCLUDE_FROM_ALL
+    tests/BattleReplayTests.cpp
+    src/Data/BattleCombatConfig.cpp
+    src/Gameplay/Combat/BattleBoss.cpp
+    src/Gameplay/Combat/CombatSession.cpp
+    src/Gameplay/Combat/EncounterConfig.cpp
+    src/Gameplay/Combat/EncounterDirector.cpp
+    src/Game/FirstPersonGame.cpp
+    src/Gameplay/Player/PlayerMovement.cpp
+    src/Gameplay/Player/PlayerVitality.cpp
+    src/Gameplay/Player/PunchArm.cpp
+    src/Gameplay/Combat/CombatHitResolver.cpp
+    src/Collision/Collision.cpp
+    src/World/FirstPersonCamera.cpp
+    src/Math/MathTypes.cpp
+    src/Input/FixedStepInputBuffer.cpp
+    src/Platform/FixedStepClock.cpp
+    src/Data/BattleAssetCatalog.cpp
+    src/Data/ObjLoader.cpp
+    src/World/ModelScene.cpp
+    src/Rendering/FirstPersonScenePresenter.cpp
+    src/Rendering/BattleScenePresenter.cpp
+)
+target_include_directories(BattleReplayTests PRIVATE src)
+add_test(NAME BattleReplayTests COMMAND BattleReplayTests
+    "${CMAKE_CURRENT_SOURCE_DIR}/config")
+
 if(MSVC)
     target_compile_options(BiggerFISTsSDL PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(InputActionsTests PRIVATE /W4 /utf-8 /EHsc)
@@ -442,6 +485,7 @@ if(MSVC)
     target_compile_options(EncounterDirectorTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(BattleBossTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(CombatSessionTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(BattleReplayTests PRIVATE /W4 /utf-8 /EHsc)
 endif()
 
 add_custom_command(TARGET BiggerFISTsSDL POST_BUILD

@@ -1,5 +1,7 @@
 #include "Data/BattleCombatConfig.h"
 #include "Gameplay/Combat/BattleBoss.h"
+#include "Collision/Collision.h"
+#include "Gameplay/Player/FirstPersonTuning.h"
 
 #include <algorithm>
 #include <cmath>
@@ -173,15 +175,101 @@ int main(int argc, char** argv) {
     boss.Reset({0.0f, config.boss.hoverHeight, 20.0f});
     boss.BeginBehavior(BossMode::Boxer);
     bool boxerHit = false;
+    std::uint64_t boxerAttackId = 0;
+    int boxerWindowSteps = 0;
+    bool sweptMovingPlayer = false;
     for (int step = 0; step < 180; ++step) {
-        boxerHit |= HasAttack(boss.Update(kStep, player),
-            BossAttackType::BoxerStrike);
+        for (const BossAttackEvent& event : boss.Update(kStep, player)) {
+            if (event.type != BossAttackType::BoxerStrike) {
+                continue;
+            }
+            boxerHit = true;
+            if (boxerAttackId == 0) {
+                boxerAttackId = event.attackId;
+            }
+            if (event.attackId == boxerAttackId) {
+                ++boxerWindowSteps;
+            }
+            sweptMovingPlayer |= Collision::SweepSphereAgainstMovingSphere(
+                event.previousPosition, event.position, event.radius,
+                {0.0f, 3.5f, 18.0f}, {0.0f, 3.5f, 17.5f},
+                FirstPersonTuning::kPlayerColliderRadius).didHit;
+        }
     }
+    if (!boxerHit || boxerAttackId == 0 || boxerWindowSteps < 2 ||
+        boxerWindowSteps > 7 || !sweptMovingPlayer) {
+        std::puts("FAIL: Boxer attack lacked a finite swept collision window");
+        return 1;
+    }
+    BattleBoss entryBoss(config.boss);
+    entryBoss.Reset({0.0f, config.boss.hoverHeight, 34.5f});
+    entryBoss.BeginBehavior(BossMode::Boxer);
+    bool boxerPulledBack = false;
+    bool boxerDashed = false;
+    for (int step = 0; step < 120; ++step) {
+        const float previousZ = entryBoss.GetPosition().z;
+        entryBoss.Update(kStep, player);
+        boxerPulledBack |= entryBoss.GetPosition().z - previousZ > 0.01f;
+        boxerDashed |= previousZ - entryBoss.GetPosition().z > 0.30f;
+    }
+    if (!boxerPulledBack || !boxerDashed) {
+        std::puts("FAIL: Boxer entry lacked pullback or dash");
+        return 1;
+    }
+    boss.Reset({0.0f, config.boss.hoverHeight, 34.5f});
     boss.BeginBehavior(BossMode::NeedleCombo);
     bool needleHit = false;
+    std::uint64_t needleIds[3]{};
+    int needleIdCount = 0;
+    bool needleReachedPlayer = false;
+    bool needleImpact = false;
     for (int step = 0; step < 180; ++step) {
-        needleHit |= HasAttack(boss.Update(kStep, player),
-            BossAttackType::NeedleStrike);
+        for (const BossAttackEvent& event : boss.Update(kStep, player)) {
+            needleImpact |= event.type == BossAttackType::NeedleImpact;
+            if (event.type == BossAttackType::NeedleStrike) {
+                needleHit = true;
+                if (Collision::SweepSphereAgainstMovingSphere(
+                        event.previousPosition, event.position, event.radius,
+                        {player.x, 3.5f, player.z},
+                        {player.x, 3.5f, player.z},
+                        FirstPersonTuning::kPlayerColliderRadius).didHit) {
+                    boss.RegisterNeedleStrikeHit(event.attackId);
+                }
+                needleReachedPlayer |= std::hypot(boss.GetPosition().x -
+                    player.x, boss.GetPosition().z - player.z) < 5.1f;
+                if (needleIdCount == 0 ||
+                    event.attackId != needleIds[needleIdCount - 1]) {
+                    if (needleIdCount < 3) {
+                        needleIds[needleIdCount++] = event.attackId;
+                    }
+                }
+            }
+        }
+    }
+    if (!needleHit || !needleReachedPlayer || !needleImpact ||
+        needleIdCount != 3 ||
+        needleIds[0] == needleIds[1] || needleIds[1] == needleIds[2]) {
+        std::puts("FAIL: Needle Combo did not create three distinct attack windows");
+        return 1;
+    }
+    BattleBoss missedNeedle(config.boss);
+    missedNeedle.Reset({0.0f, config.boss.hoverHeight, 34.5f});
+    missedNeedle.BeginBehavior(BossMode::NeedleCombo);
+    int missedNeedleStrikes = 0;
+    for (int step = 0; step < 180; ++step) {
+        for (const BossAttackEvent& event : missedNeedle.Update(kStep,
+                player)) {
+            missedNeedleStrikes += event.type ==
+                BossAttackType::NeedleStrike;
+        }
+        if (missedNeedle.GetMode() == BossMode::Boxer) {
+            break;
+        }
+    }
+    if (missedNeedle.GetMode() != BossMode::Boxer ||
+        missedNeedleStrikes == 0) {
+        std::puts("FAIL: missed first Needle strike did not switch to Boxer");
+        return 1;
     }
     boss.BeginBehavior(BossMode::FullBarrage);
     int crystalShots = 0;
@@ -190,6 +278,46 @@ int main(int argc, char** argv) {
             crystalShots += event.type == BossAttackType::CrystalSpike ||
                 event.type == BossAttackType::CrystalCube;
         }
+    }
+    const int consumedSlots = static_cast<int>(std::count_if(
+        boss.GetSpikeSlots().begin(), boss.GetSpikeSlots().end(),
+        [](const BossCrystalSlot& slot) { return slot.consumed; })) +
+        static_cast<int>(std::count_if(boss.GetCubeSlots().begin(),
+            boss.GetCubeSlots().end(),
+            [](const BossCrystalSlot& slot) { return slot.consumed; }));
+    if (crystalShots != 10 || consumedSlots != 10) {
+        std::puts("FAIL: final barrage did not consume all ten crystal slots");
+        return 1;
+    }
+    BossCombatConfig slotConfig = config.boss;
+    slotConfig.idleDecisionInterval = 100.0f;
+    slotConfig.crystalSpikeInitialDelay = 0.05f;
+    slotConfig.crystalSpikeInterval = 100.0f;
+    slotConfig.crystalCubeInitialDelay = 100.0f;
+    BattleBoss slotBoss(slotConfig);
+    slotBoss.Reset({0.0f, slotConfig.hoverHeight, 20.0f});
+    slotBoss.BeginBehavior(BossMode::Idle);
+    bool slotLaunched = false;
+    bool slotFired = false;
+    bool slotReloaded = false;
+    for (int step = 0; step < 240; ++step) {
+        const auto events = slotBoss.Update(kStep, {0.0f, 1.7f, 0.0f});
+        slotLaunched |= std::any_of(slotBoss.GetSpikeSlots().begin(),
+            slotBoss.GetSpikeSlots().end(), [](const BossCrystalSlot& slot) {
+                return slot.launchTime > 0.0f;
+            });
+        slotFired |= HasAttack(events, BossAttackType::CrystalSpike);
+        if (slotFired) {
+            slotReloaded |= std::any_of(slotBoss.GetSpikeSlots().begin(),
+                slotBoss.GetSpikeSlots().end(),
+                [](const BossCrystalSlot& slot) {
+                    return slot.reloadTime > 0.0f;
+                });
+        }
+    }
+    if (!slotLaunched || !slotFired || !slotReloaded) {
+        std::puts("FAIL: crystal slot did not launch, fire and reload");
+        return 1;
     }
     boss.Reset({0.0f, config.boss.hoverHeight, 20.0f});
     boss.BeginBehavior(BossMode::SpreadCounter);

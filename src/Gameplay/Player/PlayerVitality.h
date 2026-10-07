@@ -5,7 +5,8 @@
 enum class PlayerHitType {
     Projectile,
     ChargeUnit,
-    BossSpreadBurst
+    BossSpreadBurst,
+    NeedleFinisher
 };
 
 struct PlayerHitResult {

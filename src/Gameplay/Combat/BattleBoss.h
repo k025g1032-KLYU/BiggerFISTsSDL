@@ -13,13 +13,23 @@ enum class BossMode {
 };
 
 enum class BossAttackType {
-    ChargeImpact, BoxerStrike, NeedleStrike, SpreadBurst,
+    ChargeImpact, BoxerStrike, NeedleStrike, NeedleImpact, SpreadBurst,
     CrystalSpike, CrystalCube
 };
 
 struct BossAttackEvent {
     BossAttackType type = BossAttackType::ChargeImpact;
     Vector3 position{};
+    Vector3 previousPosition{};
+    float radius = 0.0f;
+    std::uint64_t attackId = 0;
+};
+
+struct BossCrystalSlot {
+    Vector3 position{};
+    float launchTime = 0.0f;
+    float reloadTime = 0.0f;
+    bool consumed = false;
 };
 
 struct BossPlayerThreat {
@@ -35,6 +45,7 @@ public:
     std::vector<BossAttackEvent> Update(float seconds,
         const Vector3& playerPosition, const BossPlayerThreat& threat = {});
     bool ReceiveHit(int damage);
+    bool RegisterNeedleStrikeHit(std::uint64_t attackId);
     void BeginBehavior(BossMode mode);
 
     BossMode GetMode() const { return mode_; }
@@ -46,13 +57,22 @@ public:
     float GetModeTime() const { return modeTime_; }
     bool IsRocketDodging() const { return rocketDodgeTimer_ > 0.0f; }
     bool DidBeginRocketDodgeThisStep() const { return beganRocketDodgeThisStep_; }
+    const std::array<BossCrystalSlot, 6>& GetSpikeSlots() const { return spikeSlots_; }
+    const std::array<BossCrystalSlot, 4>& GetCubeSlots() const { return cubeSlots_; }
 
 private:
     enum class CruisePhase { TakingOff, Flying, Landing };
+    enum class BoxerPhase { Approaching, EntryWindup, EntryDashing,
+        Orbiting, WindingUp, Holding, Striking, Recovering };
     float NextBehaviorRandom();
     void ChooseIdleAction(const Vector3& playerPosition, float playerDistance);
     void BeginCruise(const Vector3& playerPosition);
-    void UpdateCruise(float seconds);
+    void UpdateCruise(float seconds, const Vector3& playerPosition);
+    int ResolvePlayerQuadrant(const Vector3& playerPosition);
+    bool SelectCruiseTarget(const Vector3& playerPosition, int quadrant,
+        int excludedCandidate = -1);
+    void UpdateCrystals(float seconds, std::vector<BossAttackEvent>& attacks);
+    bool BeginCrystalLaunch(bool spike);
     bool UpdateRocketDodge(float seconds, const Vector3& playerPosition,
         const BossPlayerThreat& threat);
 
@@ -73,6 +93,32 @@ private:
     Vector3 cruiseTarget_{};
     float cruiseFlightTime_ = 0.0f;
     int lastCruiseCandidate_ = -1;
+    int cruiseTargetCandidate_ = -1;
+    int cruiseTargetQuadrant_ = 0;
+    int lastPlayerQuadrant_ = -1;
+    int cruiseRetargetCount_ = 0;
+    std::uint64_t nextAttackId_ = 1;
+    Vector3 strikeStart_{};
+    Vector3 strikeEnd_{};
+    Vector3 strikePrevious_{};
+    int strikeIndex_ = 0;
+    float strikeTime_ = 0.0f;
+    BoxerPhase boxerPhase_ = BoxerPhase::Approaching;
+    float boxerPhaseTime_ = 0.0f;
+    float boxerEntryDashDistance_ = 0.0f;
+    bool usedBoxerEntryDash_ = false;
+    Vector3 boxerEntryDirection_{};
+    bool needleDashComplete_ = false;
+    bool needleFirstHit_ = false;
+    std::uint64_t needleFirstAttackId_ = 0;
+    float needleImpactTime_ = 0.0f;
+    std::uint64_t needleImpactAttackId_ = 0;
+    std::uint64_t activeAttackId_ = 0;
+    std::array<BossCrystalSlot, 6> spikeSlots_{};
+    std::array<BossCrystalSlot, 4> cubeSlots_{};
+    std::size_t nextSpikeSlot_ = 0;
+    std::size_t nextCubeSlot_ = 0;
+    float crystalAngle_ = 0.0f;
     int attackCount_ = 0;
     bool attackRegistered_ = false;
     bool needleComboPending_ = false;

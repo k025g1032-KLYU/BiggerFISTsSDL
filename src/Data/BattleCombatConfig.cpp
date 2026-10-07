@@ -157,7 +157,7 @@ constexpr std::array<std::pair<std::string_view, float ProjectileCombatConfig::*
         {"crystalCubeOscillationAmplitude", &ProjectileCombatConfig::crystalCubeOscillationAmplitude},
         {"crystalCubeOscillationFrequency", &ProjectileCombatConfig::crystalCubeOscillationFrequency},
     }};
-constexpr std::array<std::pair<std::string_view, float BossCombatConfig::*>, 65>
+constexpr std::array<std::pair<std::string_view, float BossCombatConfig::*>, 96>
     kBossFields{{
         {"coreRadius", &BossCombatConfig::coreRadius},
         {"hoverHeight", &BossCombatConfig::hoverHeight},
@@ -193,6 +193,11 @@ constexpr std::array<std::pair<std::string_view, float BossCombatConfig::*>, 65>
         {"cruiseHoverOrbitRadius", &BossCombatConfig::cruiseHoverOrbitRadius},
         {"cruiseHoverOrbitAngularSpeed", &BossCombatConfig::cruiseHoverOrbitAngularSpeed},
         {"cruiseMinimumLandingPlayerDistance", &BossCombatConfig::cruiseMinimumLandingPlayerDistance},
+        {"cruiseQuadrantDeadZoneX", &BossCombatConfig::cruiseQuadrantDeadZoneX},
+        {"cruiseQuadrantDeadZoneZ", &BossCombatConfig::cruiseQuadrantDeadZoneZ},
+        {"cruiseCandidateWallMargin", &BossCombatConfig::cruiseCandidateWallMargin},
+        {"cruiseCandidateBaseMargin", &BossCombatConfig::cruiseCandidateBaseMargin},
+        {"cruiseMinimumRelocationDistance", &BossCombatConfig::cruiseMinimumRelocationDistance},
         {"chargedRocketAimDodgeDelay", &BossCombatConfig::chargedRocketAimDodgeDelay},
         {"rocketDodgeWarningDistance", &BossCombatConfig::rocketDodgeWarningDistance},
         {"rocketDodgeDirectionDotThreshold", &BossCombatConfig::rocketDodgeDirectionDotThreshold},
@@ -212,11 +217,37 @@ constexpr std::array<std::pair<std::string_view, float BossCombatConfig::*>, 65>
         {"crystalSpikeInterval", &BossCombatConfig::crystalSpikeInterval},
         {"crystalCubeInitialDelay", &BossCombatConfig::crystalCubeInitialDelay},
         {"crystalCubeInterval", &BossCombatConfig::crystalCubeInterval},
+        {"crystalLaunchDuration", &BossCombatConfig::crystalLaunchDuration},
+        {"crystalReloadDuration", &BossCombatConfig::crystalReloadDuration},
+        {"crystalHaloRadius", &BossCombatConfig::crystalHaloRadius},
+        {"crystalHaloBackOffset", &BossCombatConfig::crystalHaloBackOffset},
+        {"crystalHaloRotationSpeed", &BossCombatConfig::crystalHaloRotationSpeed},
+        {"crystalLaunchHeight", &BossCombatConfig::crystalLaunchHeight},
         {"chargePrepareDuration", &BossCombatConfig::chargePrepareDuration},
         {"chargeSpeed", &BossCombatConfig::chargeSpeed},
         {"boxerApproachSpeed", &BossCombatConfig::boxerApproachSpeed},
+        {"boxerOrbitSpeed", &BossCombatConfig::boxerOrbitSpeed},
+        {"boxerDesiredDistance", &BossCombatConfig::boxerDesiredDistance},
+        {"boxerStrikeStartDistance", &BossCombatConfig::boxerStrikeStartDistance},
+        {"boxerEntryMaximumDistance", &BossCombatConfig::boxerEntryMaximumDistance},
+        {"boxerEntryWindupDuration", &BossCombatConfig::boxerEntryWindupDuration},
+        {"boxerEntryPullbackDistance", &BossCombatConfig::boxerEntryPullbackDistance},
+        {"boxerEntryDashSpeed", &BossCombatConfig::boxerEntryDashSpeed},
+        {"boxerEntryDashMaximumDistance", &BossCombatConfig::boxerEntryDashMaximumDistance},
+        {"boxerEntryDashMaximumDuration", &BossCombatConfig::boxerEntryDashMaximumDuration},
+        {"boxerClosingStepSpeed", &BossCombatConfig::boxerClosingStepSpeed},
         {"boxerStrikeInterval", &BossCombatConfig::boxerStrikeInterval},
+        {"boxerWindupDuration", &BossCombatConfig::boxerWindupDuration},
+        {"boxerWindupHoldDuration", &BossCombatConfig::boxerWindupHoldDuration},
+        {"boxerRecoveryDuration", &BossCombatConfig::boxerRecoveryDuration},
+        {"boxerStrikeDuration", &BossCombatConfig::boxerStrikeDuration},
+        {"boxerStrikeRadius", &BossCombatConfig::boxerStrikeRadius},
+        {"boxerStrikeOffset", &BossCombatConfig::boxerStrikeOffset},
+        {"needleTipOffset", &BossCombatConfig::needleTipOffset},
+        {"needleStrikeRadius", &BossCombatConfig::needleStrikeRadius},
         {"needleWindupDuration", &BossCombatConfig::needleWindupDuration},
+        {"needleDashSpeed", &BossCombatConfig::needleDashSpeed},
+        {"needleFrontDistance", &BossCombatConfig::needleFrontDistance},
         {"needleStrikeDuration", &BossCombatConfig::needleStrikeDuration},
         {"needleStrikePauseDuration", &BossCombatConfig::needleStrikePauseDuration},
         {"barrageShotInterval", &BossCombatConfig::barrageShotInterval},
@@ -230,10 +261,11 @@ constexpr std::array<std::pair<std::string_view, int EnemyCombatConfig::*>, 2>
         {"baseHitPoints", &EnemyCombatConfig::baseHitPoints},
         {"day2BaseHitPoints", &EnemyCombatConfig::day2BaseHitPoints},
     }};
-constexpr std::array<std::pair<std::string_view, int BossCombatConfig::*>, 2>
+constexpr std::array<std::pair<std::string_view, int BossCombatConfig::*>, 3>
     kBossIntegers{{
         {"coreHitPoints", &BossCombatConfig::coreHitPoints},
         {"ultimateDamage", &BossCombatConfig::ultimateDamage},
+        {"cruiseMaximumRetargetCount", &BossCombatConfig::cruiseMaximumRetargetCount},
     }};
 }
 

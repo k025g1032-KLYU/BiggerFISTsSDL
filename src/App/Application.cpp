@@ -380,6 +380,12 @@ int Application::Run(const ApplicationOptions& options) {
                     firstPersonGame->Update(FixedStepClock::kStepSeconds, stepInput.game,
                         stepInput.mouseDeltaX, stepInput.mouseDeltaY);
                 }
+                if (combatSession) {
+                    for (const BattleFeedbackEvent feedbackEvent :
+                            combatSession->GetFeedbackEvents()) {
+                        combatFeedback->PlayBattleEvent(feedbackEvent);
+                    }
+                }
                 if (firstPersonGame->GetEvents().punchHit) {
                     combatFeedback->PlayPunchHit();
                 }
@@ -523,14 +529,15 @@ int Application::Run(const ApplicationOptions& options) {
             smokeRenderNanoseconds += SDL_GetTicksNS() - renderStarted;
         }
         if (options.smokeTest) {
-            if (frameRendered && ++renderedFrames >= 30) {
+            if (frameRendered && ++renderedFrames >= options.smokeFrames) {
                 SDL_Log("Smoke timing: update %.2f ms/frame, render %.2f ms/frame",
-                    smokeUpdateNanoseconds / 30000000.0,
-                    smokeRenderNanoseconds / 30000000.0);
+                    smokeUpdateNanoseconds / (static_cast<double>(options.smokeFrames) * 1000000.0),
+                    smokeRenderNanoseconds / (static_cast<double>(options.smokeFrames) * 1000000.0));
                 if (options.dynamicTargetSmokeTest) {
                     SDL_Log("PASS: Dynamic Target spawned, moved, removed and rendered across 30 GPU frames");
                 } else if (battlePreview) {
-                    SDL_Log("PASS: Battle preview rendered 30 GPU frames with %u models, %u enemies and %u projectiles",
+                    SDL_Log("PASS: Battle preview rendered %d GPU frames with %u models, %u enemies and %u projectiles",
+                        options.smokeFrames,
                         static_cast<Uint32>(scene.models.size()),
                         static_cast<Uint32>(combatSession->GetEnemies().size()),
                         static_cast<Uint32>(combatSession->GetProjectiles().size()));
@@ -547,7 +554,8 @@ int Application::Run(const ApplicationOptions& options) {
                 }
                 isRunning = false;
             }
-            else if (SDL_GetTicks() - smokeStarted > 10000) {
+            else if (SDL_GetTicks() - smokeStarted >
+                    static_cast<Uint64>(10000 + options.smokeFrames * 1000 / 30)) {
                 SDL_Log("3D smoke test timed out");
                 isRunning = false;
                 exitCode = 1;

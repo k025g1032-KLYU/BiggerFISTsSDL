@@ -20,7 +20,9 @@ constexpr std::array requiredKeys{
     "projectileRumbleMs", "chargeHitRumbleLow", "chargeHitRumbleHigh",
     "chargeHitRumbleMs", "dodgeWav", "dodgeGain",
     "ultimateLaunchGain", "dodgeRumbleLow", "dodgeRumbleHigh",
-    "dodgeRumbleMs", "systemRestartRumbleLow",
+    "dodgeRumbleMs", "bossChangeModeWav", "bossSharpHitWav",
+    "bossRiserWav", "battleExplosionWav", "battleCueGain",
+    "systemRestartRumbleLow",
     "systemRestartRumbleHigh", "systemRestartRumbleMs"};
 
 std::string ToUtf8(const std::filesystem::path& path) {
@@ -86,10 +88,19 @@ bool LoadCombatFeedbackConfig(const std::filesystem::path& path,
             parsed.chargeHitWav = value;
         } else if (key == "dodgeWav" && ValidWavName(value)) {
             parsed.dodgeWav = value;
+        } else if (key == "bossChangeModeWav" && ValidWavName(value)) {
+            parsed.bossChangeModeWav = value;
+        } else if (key == "bossSharpHitWav" && ValidWavName(value)) {
+            parsed.bossSharpHitWav = value;
+        } else if (key == "bossRiserWav" && ValidWavName(value)) {
+            parsed.bossRiserWav = value;
+        } else if (key == "battleExplosionWav" && ValidWavName(value)) {
+            parsed.battleExplosionWav = value;
         } else if ((key == "punchImpactGain" || key == "rocketImpactGain" ||
                 key == "rocketLaunchGain" || key == "punchSwingGain" ||
                 key == "rocketReconnectGain" || key == "chargeHitGain" ||
-                key == "dodgeGain" || key == "ultimateLaunchGain") &&
+                key == "dodgeGain" || key == "ultimateLaunchGain" ||
+                key == "battleCueGain") &&
             ParseNumber(value, gain) &&
             std::isfinite(gain) && gain >= 0.0f && gain <= 2.0f) {
             if (key == "punchImpactGain") {
@@ -106,6 +117,8 @@ bool LoadCombatFeedbackConfig(const std::filesystem::path& path,
                 parsed.dodgeGain = gain;
             } else if (key == "ultimateLaunchGain") {
                 parsed.ultimateLaunchGain = gain;
+            } else if (key == "battleCueGain") {
+                parsed.battleCueGain = gain;
             } else {
                 parsed.chargeHitGain = gain;
             }

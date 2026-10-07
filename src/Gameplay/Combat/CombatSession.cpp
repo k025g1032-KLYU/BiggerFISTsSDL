@@ -39,6 +39,8 @@ void CombatSession::Reset() {
     projectiles_.clear();
     boss_.reset();
     ultimateHitIds_.clear();
+    bossAttackHits_.clear();
+    feedbackEvents_.clear();
     director_.Reset();
     random_.seed(0xB16F157u);
     baseHitPoints_ = kind_ == BattlePreviewKind::Day2
@@ -151,15 +153,20 @@ void CombatSession::SpawnProjectile(BattleProjectileType type,
     projectile.id = NextTargetId();
     projectile.type = type;
     projectile.position = position;
-    projectile.position.y = std::clamp(projectile.position.y,
-        config_.enemy.combatHeightMinimum,
-        config_.enemy.combatHeightMaximum);
+    if (type == BattleProjectileType::Missile ||
+        type == BattleProjectileType::FloatingBomb) {
+        projectile.position.y = std::clamp(projectile.position.y,
+            config_.enemy.combatHeightMinimum,
+            config_.enemy.combatHeightMaximum);
+    }
     projectile.previousPosition = projectile.position;
     projectile.forwardPosition = projectile.position;
     projectile.phase = phase;
-    const float length = std::hypot(direction.x, direction.z);
+    const float length = std::sqrt(direction.x * direction.x +
+        direction.y * direction.y + direction.z * direction.z);
     projectile.direction = length > 0.00001f
-        ? Vector3{direction.x / length, 0.0f, direction.z / length}
+        ? Vector3{direction.x / length, direction.y / length,
+            direction.z / length}
         : Vector3{0.0f, 0.0f, -1.0f};
     projectile.turnStartDirection = projectile.direction;
     const float radius = type == BattleProjectileType::Missile
@@ -170,6 +177,10 @@ void CombatSession::SpawnProjectile(BattleProjectileType type,
     if (player_.SpawnTarget({projectile.id, projectile.position, 1, {}, false,
             radius})) {
         projectiles_.push_back(std::move(projectile));
+        if (type == BattleProjectileType::Missile ||
+            type == BattleProjectileType::FloatingBomb) {
+            feedbackEvents_.push_back(BattleFeedbackEvent::ProjectileLaunched);
+        }
     }
 }
 
@@ -221,10 +232,16 @@ void CombatSession::UpdateBoss(float seconds) {
                 config_.boss.rocketDodgeWarningDistance &&
             alignment >= config_.boss.rocketDodgeDirectionDotThreshold;
     }
-    for (const BossAttackEvent& attack :
-            boss_->Update(seconds, playerPosition, threat)) {
+    const BossMode previousMode = boss_->GetMode();
+    const std::vector<BossAttackEvent> attacks =
+        boss_->Update(seconds, playerPosition, threat);
+    if (previousMode != boss_->GetMode()) {
+        feedbackEvents_.push_back(BattleFeedbackEvent::BossModeChanged);
+    }
+    for (const BossAttackEvent& attack : attacks) {
         if (attack.type == BossAttackType::CrystalSpike ||
             attack.type == BossAttackType::CrystalCube) {
+            feedbackEvents_.push_back(BattleFeedbackEvent::BossCrystalLaunched);
             const Vector3 offset{playerPosition.x - attack.position.x,
                 playerPosition.y + FirstPersonTuning::kPlayerColliderCenterHeight -
                     attack.position.y,
@@ -238,6 +255,32 @@ void CombatSession::UpdateBoss(float seconds) {
                 ? BattleProjectileType::CrystalSpike
                 : BattleProjectileType::CrystalCube,
                 attack.position, direction);
+        } else if (attack.type == BossAttackType::BoxerStrike ||
+            attack.type == BossAttackType::NeedleStrike ||
+            attack.type == BossAttackType::NeedleImpact) {
+            Vector3 playerCenter = playerPosition;
+            playerCenter.y += FirstPersonTuning::kPlayerColliderCenterHeight;
+            Vector3 previousPlayerCenter =
+                player_.GetPlayer().GetPreviousPosition();
+            previousPlayerCenter.y +=
+                FirstPersonTuning::kPlayerColliderCenterHeight;
+            if (!bossAttackHits_.contains(attack.attackId) &&
+                Collision::SweepSphereAgainstMovingSphere(
+                    attack.previousPosition, attack.position, attack.radius,
+                    previousPlayerCenter, playerCenter,
+                    FirstPersonTuning::kPlayerColliderRadius).didHit) {
+                player_.ReceivePlayerHit(
+                    attack.type == BossAttackType::NeedleImpact
+                        ? PlayerHitType::NeedleFinisher
+                        : PlayerHitType::Projectile,
+                    {playerPosition.x - attack.position.x, 0.0f,
+                        playerPosition.z - attack.position.z});
+                if (attack.type == BossAttackType::NeedleStrike &&
+                    boss_->RegisterNeedleStrikeHit(attack.attackId)) {
+                    player_.StartNeedleStun();
+                }
+                bossAttackHits_.insert(attack.attackId);
+            }
         } else if (attack.type == BossAttackType::SpreadBurst) {
             player_.ReceivePlayerHit(PlayerHitType::BossSpreadBurst,
                 {playerPosition.x - attack.position.x, 0.0f,
@@ -248,6 +291,9 @@ void CombatSession::UpdateBoss(float seconds) {
                 {playerPosition.x - attack.position.x, 0.0f,
                     playerPosition.z - attack.position.z});
         }
+    }
+    if (boss_->GetMode() != BossMode::NeedleCombo) {
+        player_.EndNeedleStun();
     }
     if (boss_->GetMode() != BossMode::Defeating) {
         player_.MoveTarget(kBossTargetId, boss_->GetPosition());
@@ -579,6 +625,7 @@ void CombatSession::UpdateProjectiles(float seconds) {
             }
         }
         projectile.forwardPosition.x += projectile.direction.x * speed * seconds;
+        projectile.forwardPosition.y += projectile.direction.y * speed * seconds;
         projectile.forwardPosition.z += projectile.direction.z * speed * seconds;
         projectile.position = projectile.forwardPosition;
         if (projectile.type == BattleProjectileType::FloatingBomb ||
@@ -633,6 +680,7 @@ void CombatSession::ResolveProjectileImpacts() {
                 projectile.position, radius,
                 {kBasePosition, kBaseRadius}).didHit) {
             baseHitPoints_ = std::max(0, baseHitPoints_ - 1);
+            feedbackEvents_.push_back(BattleFeedbackEvent::BaseDamaged);
             player_.RemoveTarget(projectile.id);
             projectile.age = -1.0f;
         }
@@ -681,6 +729,11 @@ bool CombatSession::ApplyTargetDamage(std::string_view id, int damage) {
     }
     if (id == kBossTargetId && boss_) {
         const bool applied = boss_->ReceiveHit(damage);
+        if (applied) {
+            feedbackEvents_.push_back(boss_->GetMode() == BossMode::Defeating
+                ? BattleFeedbackEvent::BossDefeated
+                : BattleFeedbackEvent::BossDamaged);
+        }
         if (applied && boss_->GetMode() == BossMode::Defeating) {
             player_.RemoveTarget(kBossTargetId);
         }
@@ -689,6 +742,7 @@ bool CombatSession::ApplyTargetDamage(std::string_view id, int damage) {
     for (BattleEnemy& enemy : enemies_) {
         if (enemy.id == id && !enemy.defeated) {
             enemy.defeated = true;
+            feedbackEvents_.push_back(BattleFeedbackEvent::EnemyDefeated);
             enemy.stateTimer = 0.0f;
             player_.RemoveTarget(id);
             return true;
@@ -759,6 +813,7 @@ void CombatSession::ProcessUltimateHits() {
 
 void CombatSession::Update(float seconds, const GameInput& input,
     float mouseX, float mouseY) {
+    feedbackEvents_.clear();
     if (input.resetTarget.pressed) {
         Reset();
         return;

@@ -4,6 +4,7 @@
 #include "Gameplay/Combat/BattleMode.h"
 #include "Gameplay/Combat/EncounterDirector.h"
 #include "Gameplay/Combat/BattleBoss.h"
+#include "Gameplay/Combat/BattleFeedbackEvent.h"
 #include "Data/BattleCombatConfig.h"
 
 #include <cstdint>
@@ -79,6 +80,9 @@ public:
     const EncounterDirector& GetDirector() const { return director_; }
     const BattleBoss* GetBoss() const { return boss_ ? &*boss_ : nullptr; }
     const FirstPersonGame& GetPlayerGame() const { return player_; }
+    const std::vector<BattleFeedbackEvent>& GetFeedbackEvents() const {
+        return feedbackEvents_;
+    }
 
 private:
     void BeginPlaying();
@@ -109,4 +113,6 @@ private:
     float countdown_ = 0.0f;
     int baseHitPoints_ = 10;
     std::unordered_set<std::string> ultimateHitIds_;
+    std::unordered_set<std::uint64_t> bossAttackHits_;
+    std::vector<BattleFeedbackEvent> feedbackEvents_;
 };

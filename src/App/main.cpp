@@ -2,6 +2,7 @@
 
 #include <SDL3/SDL_main.h>
 
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 
@@ -10,6 +11,15 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--smoke-test") == 0 && !options.smokeTest) {
             options.smokeTest = true;
+        } else if (std::strncmp(argv[i], "--smoke-frames=", 15) == 0 &&
+            options.smokeFrames == 30) {
+            char* end = nullptr;
+            const long count = std::strtol(argv[i] + 15, &end, 10);
+            if (*end != '\0' || count < 30 || count > 3600) {
+                std::fprintf(stderr, "smoke-frames must be 30..3600\n");
+                return 1;
+            }
+            options.smokeFrames = static_cast<int>(count);
         } else if (std::strcmp(argv[i], "--scene-preview") == 0 &&
             !options.scenePreview && !options.firstPersonPreview) {
             options.scenePreview = true;
@@ -52,10 +62,14 @@ int main(int argc, char** argv) {
             options.smokeTest = true;
         } else {
             std::fprintf(stderr,
-                "Unknown, duplicate or conflicting option: %s\nUsage: BiggerFISTsSDL [--scene-preview | --missile-unit-model-preview | --first-person-preview | --player-combat-preview | --battle-preview=missile-unit|bomber|charge-unit|day1|day2|boss] [--smoke-test]\n       BiggerFISTsSDL --dynamic-target-smoke-test\n",
+                "Unknown, duplicate or conflicting option: %s\nUsage: BiggerFISTsSDL [--scene-preview | --missile-unit-model-preview | --first-person-preview | --player-combat-preview | --battle-preview=missile-unit|bomber|charge-unit|day1|day2|boss] [--smoke-test] [--smoke-frames=30..3600]\n       BiggerFISTsSDL --dynamic-target-smoke-test\n",
                 argv[i]);
             return 1;
         }
+    }
+    if (options.smokeFrames != 30 && !options.smokeTest) {
+        std::fprintf(stderr, "--smoke-frames requires --smoke-test\n");
+        return 1;
     }
     Application application;
     return application.Run(options);

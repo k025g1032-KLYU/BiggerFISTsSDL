@@ -39,6 +39,10 @@ struct PlayerCombatConfig {
     float unshieldedChargeDuration = 1.0f;
     float burstKnockbackSpeed = 28.0f;
     float burstKnockbackDuration = 0.75f;
+    float needleFinisherKnockbackSpeed = 26.0f;
+    float needleFinisherKnockbackDuration = 0.75f;
+    float needleFinisherShutdownDelay = 0.82f;
+    float needleFinisherOfflineDuration = 3.0f;
     float projectileShieldShakeStrength = 0.055f;
     float projectileShieldShakeDuration = 0.10f;
     float projectileHitPointShakeStrength = 0.10f;

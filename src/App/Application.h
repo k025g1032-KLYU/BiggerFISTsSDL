@@ -4,6 +4,7 @@
 
 struct ApplicationOptions {
     bool smokeTest = false;
+    int smokeFrames = 30;
     bool scenePreview = false;
     bool missileUnitModelPreview = false;
     bool firstPersonPreview = false;

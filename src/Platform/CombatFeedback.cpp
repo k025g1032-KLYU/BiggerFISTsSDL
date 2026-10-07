@@ -57,7 +57,15 @@ bool CombatFeedback::Initialize(const std::filesystem::path& soundDirectory,
         !LoadClip(soundDirectory / config_.punchSwingWav, punchSwing_, error) ||
         !LoadClip(soundDirectory / config_.rocketReconnectWav, rocketReconnect_, error) ||
         !LoadClip(soundDirectory / config_.chargeHitWav, chargeHit_, error) ||
-        !LoadClip(soundDirectory / config_.dodgeWav, dodge_, error)) {
+        !LoadClip(soundDirectory / config_.dodgeWav, dodge_, error) ||
+        !LoadClip(soundDirectory / config_.bossChangeModeWav,
+            bossChangeMode_, error) ||
+        !LoadClip(soundDirectory / config_.bossSharpHitWav,
+            bossSharpHit_, error) ||
+        !LoadClip(soundDirectory / config_.bossRiserWav,
+            bossRiser_, error) ||
+        !LoadClip(soundDirectory / config_.battleExplosionWav,
+            battleExplosion_, error)) {
         Shutdown();
         return false;
     }
@@ -68,7 +76,11 @@ bool CombatFeedback::Initialize(const std::filesystem::path& soundDirectory,
         if (audioDevice_ == 0 || !CreateVoices(impact_, 4) ||
             !CreateVoices(rocketLaunch_, 2) || !CreateVoices(punchSwing_, 2) ||
             !CreateVoices(rocketReconnect_, 2) || !CreateVoices(chargeHit_, 2) ||
-            !CreateVoices(dodge_, 2)) {
+            !CreateVoices(dodge_, 2) ||
+            !CreateVoices(bossChangeMode_, 2) ||
+            !CreateVoices(bossSharpHit_, 2) ||
+            !CreateVoices(bossRiser_, 2) ||
+            !CreateVoices(battleExplosion_, 2)) {
             SDL_Log("Audio playback unavailable: %s", SDL_GetError());
             for (SDL_AudioStream* stream : impact_.voices) {
                 SDL_DestroyAudioStream(stream);
@@ -87,6 +99,13 @@ bool CombatFeedback::Initialize(const std::filesystem::path& soundDirectory,
             }
             for (SDL_AudioStream* stream : dodge_.voices) {
                 SDL_DestroyAudioStream(stream);
+            }
+            for (Clip* clip : {&bossChangeMode_, &bossSharpHit_,
+                    &bossRiser_, &battleExplosion_}) {
+                for (SDL_AudioStream* stream : clip->voices) {
+                    SDL_DestroyAudioStream(stream);
+                }
+                clip->voices.clear();
             }
             impact_.voices.clear();
             rocketLaunch_.voices.clear();
@@ -248,6 +267,37 @@ void CombatFeedback::PlayPlayerHit(PlayerHitType type, bool damagedHitPoints) {
     }
 }
 
+void CombatFeedback::PlayBattleEvent(BattleFeedbackEvent event) {
+    switch (event) {
+    case BattleFeedbackEvent::EnemyDefeated:
+    case BattleFeedbackEvent::BossDefeated:
+        PlayClip(battleExplosion_, config_.battleCueGain);
+        Rumble(config_.punchRumbleLow, config_.punchRumbleHigh,
+            config_.punchRumbleMs, 2);
+        break;
+    case BattleFeedbackEvent::ProjectileLaunched:
+        PlayClip(bossRiser_, config_.battleCueGain * 0.35f);
+        break;
+    case BattleFeedbackEvent::BossModeChanged:
+        PlayClip(bossChangeMode_, config_.battleCueGain);
+        break;
+    case BattleFeedbackEvent::BossCrystalLaunched:
+        PlayClip(bossRiser_, config_.battleCueGain);
+        break;
+    case BattleFeedbackEvent::BossDamaged:
+        PlayClip(bossSharpHit_, config_.battleCueGain);
+        Rumble(config_.punchRumbleLow, config_.punchRumbleHigh,
+            config_.punchRumbleMs, 2);
+        break;
+    case BattleFeedbackEvent::BaseDamaged:
+        PlayClip(battleExplosion_, config_.battleCueGain * 0.6f);
+        Rumble(config_.projectileHitPointRumbleLow,
+            config_.projectileHitPointRumbleHigh,
+            config_.projectileRumbleMs, 2);
+        break;
+    }
+}
+
 void CombatFeedback::Shutdown() {
     if (gamepad_ != nullptr) {
         if (SDL_GamepadConnected(gamepad_)) {
@@ -277,6 +327,14 @@ void CombatFeedback::Shutdown() {
     }
     for (SDL_AudioStream* stream : dodge_.voices) {
         SDL_DestroyAudioStream(stream);
+    }
+    for (Clip* clip : {&bossChangeMode_, &bossSharpHit_,
+            &bossRiser_, &battleExplosion_}) {
+        for (SDL_AudioStream* stream : clip->voices) {
+            SDL_DestroyAudioStream(stream);
+        }
+        clip->voices.clear();
+        clip->samples.clear();
     }
     impact_.voices.clear();
     rocketLaunch_.voices.clear();

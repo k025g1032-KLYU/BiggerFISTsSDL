@@ -33,7 +33,12 @@ PlayerHitResult PlayerVitality::ReceiveHit(PlayerHitType type) {
     result.wasApplied = true;
     result.shieldLayersBeforeHit = shieldLayers_;
     shieldRechargeTimer_ = 0.0f;
-    if (shieldLayers_ > 0) {
+    if (type == PlayerHitType::NeedleFinisher) {
+        if (hitPoints_ > 0) {
+            --hitPoints_;
+            result.didDamageHitPoints = true;
+        }
+    } else if (shieldLayers_ > 0) {
         if (type == PlayerHitType::ChargeUnit || type == PlayerHitType::BossSpreadBurst) {
             shieldLayers_ = 0;
         } else {

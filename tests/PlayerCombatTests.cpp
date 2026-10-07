@@ -77,6 +77,12 @@ int main(int argc, char** argv) {
     success &= Expect(burstHit.shieldLayersLost == 3 &&
         vitality.GetHitPoints() == 5,
         "Spread burst uses the original all-shield damage rule");
+    vitality.Reset();
+    const PlayerHitResult finisherHit = vitality.ReceiveHit(
+        PlayerHitType::NeedleFinisher);
+    success &= Expect(finisherHit.didDamageHitPoints &&
+        vitality.GetHitPoints() == 4 && vitality.GetShieldLayers() == 3,
+        "Needle finisher damages HP through remaining shield");
 
     const Collision::SweepHit movingHit = Collision::SweepSphereAgainstMovingSphere(
         {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 0.5f,
@@ -200,6 +206,31 @@ int main(int argc, char** argv) {
     success &= Expect(finalShieldHit.shieldLayersLost == 3 &&
         game.GetPlayer().GetImpactState() == PlayerImpactState::Knockback,
         "Spread burst clears shields and starts knockback");
+    game.StartNeedleStun();
+    GameInput forward{};
+    forward.moveY = -1.0f;
+    game.Update(kStep, forward, 0.0f, 0.0f);
+    success &= Expect(game.GetPlayer().GetImpactState() ==
+            PlayerImpactState::NeedleStun &&
+        std::hypot(game.GetPlayer().GetVelocity().x,
+            game.GetPlayer().GetVelocity().z) < 0.0001f,
+        "First Needle strike stuns movement");
+    game.ReceivePlayerHit(PlayerHitType::NeedleFinisher,
+        {0.0f, 0.0f, 1.0f});
+    success &= Expect(game.GetVitality().GetHitPoints() == 4 &&
+        game.GetPlayer().GetImpactState() == PlayerImpactState::Knockback,
+        "Needle finisher applies direct HP damage and knockback");
+    for (int frame = 0; frame < 51; ++frame) {
+        game.Update(kStep, forward, 0.0f, 0.0f);
+    }
+    const Vector3 offlinePosition = game.GetPlayer().GetPosition();
+    for (int frame = 0; frame < 30; ++frame) {
+        game.Update(kStep, forward, 0.0f, 0.0f);
+    }
+    success &= Expect(std::hypot(game.GetPlayer().GetPosition().x -
+            offlinePosition.x, game.GetPlayer().GetPosition().z -
+            offlinePosition.z) < 0.0001f,
+        "Needle finisher delays and then blocks movement during shutdown");
     for (int hit = 0; hit < 5; ++hit) {
         game.ReceivePlayerHit(PlayerHitType::Projectile);
     }

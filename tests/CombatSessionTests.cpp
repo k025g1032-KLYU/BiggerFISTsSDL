@@ -327,6 +327,32 @@ int main(int argc, char** argv) {
         std::puts("FAIL: Ultimate did not hit Boss through battle collision");
         return 1;
     }
+    BattleCombatConfig crystalCombat = combat;
+    crystalCombat.boss.idleDecisionInterval = 100.0f;
+    crystalCombat.boss.crystalSpikeInitialDelay = 0.05f;
+    crystalCombat.boss.crystalSpikeInterval = 100.0f;
+    crystalCombat.boss.crystalCubeInitialDelay = 100.0f;
+    FirstPersonGame crystalPlayer(GameConfig{}, {0.0f, 5.85f, 0.0f},
+        std::vector<FirstPersonTarget>{});
+    CombatSession crystalSession(BattlePreviewKind::Boss, crystalPlayer,
+        {}, crystalCombat);
+    crystalSession.Start(true);
+    bool launchedFromSlot = false;
+    for (int step = 0; step < 180; ++step) {
+        crystalSession.Update(kStep, {}, 0.0f, 0.0f);
+        for (const BattleProjectile& projectile :
+                crystalSession.GetProjectiles()) {
+            if (projectile.type == BattleProjectileType::CrystalSpike &&
+                projectile.position.y > crystalCombat.boss.hoverHeight &&
+                projectile.direction.y < 0.0f) {
+                launchedFromSlot = true;
+            }
+        }
+    }
+    if (!launchedFromSlot) {
+        std::puts("FAIL: Boss crystal did not spawn above halo and fly downward");
+        return 1;
+    }
     std::puts("PASS: fixed timing, Day1/Day2/Boss Clear, reset/countdown, Charge impact, Missile windup and Bomber");
     return 0;
 }

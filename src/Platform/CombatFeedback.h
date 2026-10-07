@@ -4,6 +4,7 @@
 
 #include "Data/CombatFeedbackConfig.h"
 #include "Gameplay/Player/PlayerVitality.h"
+#include "Gameplay/Combat/BattleFeedbackEvent.h"
 
 #include <filesystem>
 #include <cstddef>
@@ -30,6 +31,7 @@ public:
     void PlayPunchSwing();
     void PlayRocketReconnect();
     void PlayPlayerHit(PlayerHitType type, bool damagedHitPoints);
+    void PlayBattleEvent(BattleFeedbackEvent event);
     void Shutdown();
     bool HasAudioDevice() const { return audioDevice_ != 0; }
     bool HasGamepad() const { return gamepad_ != nullptr; }
@@ -55,6 +57,10 @@ private:
     Clip rocketReconnect_;
     Clip chargeHit_;
     Clip dodge_;
+    Clip bossChangeMode_;
+    Clip bossSharpHit_;
+    Clip bossRiser_;
+    Clip battleExplosion_;
     CombatFeedbackConfig config_{};
     SDL_AudioDeviceID audioDevice_ = 0;
     SDL_Gamepad* gamepad_ = nullptr;

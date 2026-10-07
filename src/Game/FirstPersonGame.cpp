@@ -105,14 +105,28 @@ void FirstPersonGame::Update(double deltaSeconds, const GameInput& input,
     camera_.UpdateLook(mouseDeltaX, mouseDeltaY);
     const float armDeltaTime = static_cast<float>(std::min(
         deltaSeconds, static_cast<double>(maxArmDeltaTime_)));
+    if (needleShutdownDelay_ > 0.0f) {
+        needleShutdownDelay_ -= armDeltaTime;
+        if (needleShutdownDelay_ <= 0.0f) {
+            needleShutdownDelay_ = 0.0f;
+            needleOfflineTimer_ = combatConfig_.needleFinisherOfflineDuration;
+            leftArm_.Reset(player_.GetPosition(), player_.GetBodyYaw());
+            rightArm_.Reset(player_.GetPosition(), player_.GetBodyYaw());
+        }
+    } else if (needleOfflineTimer_ > 0.0f) {
+        needleOfflineTimer_ = std::max(0.0f,
+            needleOfflineTimer_ - armDeltaTime);
+    }
+    const bool needleOffline = needleOfflineTimer_ > 0.0f;
     vitality_.Update(armDeltaTime);
-    if (input.dodge.pressed &&
+    if (!needleOffline && input.dodge.pressed &&
         (ultimateState_ == UltimateState::Idle ||
             ultimateState_ == UltimateState::Forming)) {
         events_.dodgeStarted = player_.TryStartDodge(input.moveX,
             -input.moveY);
     }
-    const bool systemOffline = ultimateState_ == UltimateState::Flying ||
+    const bool systemOffline = needleOffline ||
+        ultimateState_ == UltimateState::Flying ||
         ultimateState_ == UltimateState::Returning ||
         ultimateState_ == UltimateState::Offline;
     player_.Update(deltaSeconds, systemOffline ? 0.0f : input.moveX,
@@ -144,6 +158,8 @@ void FirstPersonGame::Update(double deltaSeconds, const GameInput& input,
         input.rightMouseDown);
     bool lockArms = false;
     UpdateUltimate(armDeltaTime, input, leftInput, rightInput, lockArms);
+    lockArms |= needleOffline ||
+        player_.GetImpactState() == PlayerImpactState::NeedleStun;
     const bool allowNewCharge = player_.GetImpactState() == PlayerImpactState::None &&
         player_.GetDodgeState() != PlayerDodgeState::Boosting && !lockArms;
     leftArm_.Update(armDeltaTime, playerPosition, bodyYaw,
@@ -221,6 +237,8 @@ void FirstPersonGame::ResetCombatState() {
     ultimateTravel_ = 0.0f;
     ultimateReturnTimer_ = 0.0f;
     ultimateOfflineTimer_ = 0.0f;
+    needleShutdownDelay_ = 0.0f;
+    needleOfflineTimer_ = 0.0f;
     ultimateDamageActiveThisFrame_ = false;
     leftHitIds_.clear();
     rightHitIds_.clear();
@@ -394,8 +412,32 @@ PlayerHitResult FirstPersonGame::ReceivePlayerHit(PlayerHitType type,
             result.didDamageHitPoints
                 ? combatConfig_.projectileHitPointShakeDuration
                 : combatConfig_.projectileShieldShakeDuration);
+    } else if (type == PlayerHitType::NeedleFinisher) {
+        if ((ultimateState_ == UltimateState::Idle ||
+                ultimateState_ == UltimateState::Forming) &&
+            needleOfflineTimer_ <= 0.0f) {
+            player_.StartNeedleFinisher(pushDirection);
+            needleShutdownDelay_ = combatConfig_.needleFinisherShutdownDelay;
+        }
+        camera_.AddShake(combatConfig_.chargeHitShakeStrength,
+            combatConfig_.chargeHitShakeDuration);
     }
     return result;
+}
+
+void FirstPersonGame::StartNeedleStun() {
+    if ((ultimateState_ != UltimateState::Idle &&
+            ultimateState_ != UltimateState::Forming) ||
+        needleOfflineTimer_ > 0.0f) {
+        return;
+    }
+    player_.StartNeedleStun();
+    leftArm_.Reset(player_.GetPosition(), player_.GetBodyYaw());
+    rightArm_.Reset(player_.GetPosition(), player_.GetBodyYaw());
+}
+
+void FirstPersonGame::EndNeedleStun() {
+    player_.ClearNeedleStun();
 }
 
 void FirstPersonGame::ResetTarget() {

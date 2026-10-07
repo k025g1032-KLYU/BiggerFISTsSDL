@@ -100,6 +100,35 @@ void PlayerMovement::StartBurstImpact(const Vector3& direction) {
         impactDirection_.z * impactInitialSpeed_};
 }
 
+void PlayerMovement::StartNeedleStun() {
+    impactState_ = PlayerImpactState::NeedleStun;
+    impactTimer_ = 0.0f;
+    velocity_ = {};
+    dodgeState_ = PlayerDodgeState::Recovery;
+    dodgeTimer_ = 0.0f;
+}
+
+void PlayerMovement::StartNeedleFinisher(const Vector3& direction) {
+    const float length = std::hypot(direction.x, direction.z);
+    impactDirection_ = length > 0.00001f
+        ? Vector3{direction.x / length, 0.0f, direction.z / length}
+        : Vector3{std::sin(bodyYaw_), 0.0f, std::cos(bodyYaw_)};
+    impactState_ = PlayerImpactState::Knockback;
+    impactTimer_ = 0.0f;
+    impactInitialSpeed_ = config_.needleFinisherKnockbackSpeed;
+    impactDuration_ = config_.needleFinisherKnockbackDuration;
+    velocity_ = {impactDirection_.x * impactInitialSpeed_, 0.0f,
+        impactDirection_.z * impactInitialSpeed_};
+    dodgeState_ = PlayerDodgeState::Recovery;
+    dodgeTimer_ = 0.0f;
+}
+
+void PlayerMovement::ClearNeedleStun() {
+    if (impactState_ == PlayerImpactState::NeedleStun) {
+        ClearImpact();
+    }
+}
+
 void PlayerMovement::StartUltimateRecoil() {
     impactDirection_ = {-std::sin(bodyYaw_), 0.0f,
         -std::cos(bodyYaw_)};
@@ -134,7 +163,9 @@ void PlayerMovement::Update(double deltaSeconds, float moveRight, float moveForw
 
     if (impactState_ != PlayerImpactState::None) {
         impactTimer_ += deltaTime;
-        if (impactState_ == PlayerImpactState::Holding) {
+        if (impactState_ == PlayerImpactState::NeedleStun) {
+            velocity_ = {};
+        } else if (impactState_ == PlayerImpactState::Holding) {
             velocity_ = {};
             if (impactTimer_ >= config_.unshieldedChargeHoldDuration) {
                 impactState_ = PlayerImpactState::Knockback;
