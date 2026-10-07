@@ -2,6 +2,7 @@
 #include "Gameplay/Combat/BattleBoss.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <vector>
@@ -66,6 +67,87 @@ int main(int argc, char** argv) {
     }
     if (!enteredCruise || !finishedCruise || !movedAcrossField) {
         std::puts("FAIL: weighted Cruise action did not relocate and return to Idle");
+        return 1;
+    }
+    BossCombatConfig dodgeConfig = config.boss;
+    dodgeConfig.idleDecisionInterval = 10.0f;
+    BattleBoss dodgeBoss(dodgeConfig);
+    dodgeBoss.Reset({0.0f, dodgeConfig.hoverHeight, 12.0f});
+    dodgeBoss.BeginBehavior(BossMode::Idle);
+    const Vector3 farPlayer{0.0f, 1.7f, 0.0f};
+    BossPlayerThreat threat;
+    threat.isRocketCharged[0] = true;
+    for (int step = 0; step < 12; ++step) {
+        dodgeBoss.Update(kStep, farPlayer, threat);
+        if (dodgeBoss.DidBeginRocketDodgeThisStep()) {
+            std::puts("FAIL: Boss dodged without a charged Rocket aim");
+            return 1;
+        }
+    }
+    threat.isChargedRocketAimedAtCore[0] = true;
+    for (int step = 0; step < 4; ++step) {
+        dodgeBoss.Update(kStep, farPlayer, threat);
+    }
+    threat.isChargedRocketAimedAtCore[0] = false;
+    dodgeBoss.Update(kStep, farPlayer, threat);
+    threat.isChargedRocketAimedAtCore[0] = true;
+    bool beganDodge = false;
+    for (int step = 0; step < 12; ++step) {
+        dodgeBoss.Update(kStep, farPlayer, threat);
+        beganDodge |= dodgeBoss.DidBeginRocketDodgeThisStep();
+    }
+    if (!beganDodge || !dodgeBoss.IsRocketDodging()) {
+        std::puts("FAIL: Boss did not dodge a sustained charged Rocket aim");
+        return 1;
+    }
+    const float dodgeStartX = dodgeBoss.GetPosition().x;
+    for (int step = 0; step < 12; ++step) {
+        dodgeBoss.Update(kStep, farPlayer, threat);
+    }
+    if (std::abs(dodgeBoss.GetPosition().x - dodgeStartX) < 0.2f) {
+        std::puts("FAIL: Boss Rocket dodge did not move sideways");
+        return 1;
+    }
+    for (int step = 0; step < 120; ++step) {
+        dodgeBoss.Update(kStep, farPlayer, threat);
+        if (dodgeBoss.DidBeginRocketDodgeThisStep()) {
+            std::puts("FAIL: one charged Rocket caused repeated Boss dodges");
+            return 1;
+        }
+    }
+    threat.isRocketCharged[0] = false;
+    threat.isChargedRocketAimedAtCore[0] = false;
+    dodgeBoss.Update(kStep, farPlayer, threat);
+    threat.isRocketCharged[0] = true;
+    threat.isChargedRocketAimedAtCore[0] = true;
+    bool dodgedNewCharge = false;
+    for (int step = 0; step < 12; ++step) {
+        dodgeBoss.Update(kStep, farPlayer, threat);
+        dodgedNewCharge |= dodgeBoss.DidBeginRocketDodgeThisStep();
+    }
+    if (!dodgedNewCharge) {
+        std::puts("FAIL: Boss did not react to a new charged Rocket");
+        return 1;
+    }
+    BattleBoss incomingBoss(dodgeConfig);
+    incomingBoss.Reset({0.0f, dodgeConfig.hoverHeight, 12.0f});
+    incomingBoss.BeginBehavior(BossMode::Idle);
+    BossPlayerThreat incoming;
+    incoming.hasIncomingRocketPunch = true;
+    incomingBoss.Update(kStep, player, incoming);
+    if (!incomingBoss.DidBeginRocketDodgeThisStep()) {
+        std::puts("FAIL: Boss did not react to an incoming Rocket Punch");
+        return 1;
+    }
+    BattleBoss boxerDodge(dodgeConfig);
+    boxerDodge.Reset({0.0f, dodgeConfig.hoverHeight, 12.0f});
+    boxerDodge.BeginBehavior(BossMode::Boxer);
+    threat.isRocketCharged[0] = true;
+    for (int step = 0; step < 12; ++step) {
+        boxerDodge.Update(kStep, player, threat);
+    }
+    if (!boxerDodge.IsRocketDodging()) {
+        std::puts("FAIL: Boxer did not evade a sustained charged Rocket aim");
         return 1;
     }
     BattleBoss pressureBoss(config.boss);

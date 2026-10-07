@@ -30,6 +30,12 @@ struct PunchArmInput {
     bool rocketHeld = false;
 };
 
+struct RocketPreviewTrajectory {
+    Vector3 start{};
+    Vector3 direction{};
+    float flightDistance = 0.0f;
+};
+
 class PunchArm {
 public:
     explicit PunchArm(PunchArmSide side, PlayerCombatConfig config = {});
@@ -61,6 +67,8 @@ public:
     float GetRocketPoseYaw() const { return rocketPoseYaw_; }
     float GetRocketTravelDistance() const { return rocketTravelDistance_; }
     float GetRocketMaximumRange() const { return rocketMaximumRange_; }
+    RocketPreviewTrajectory GetRocketPreviewTrajectory(
+        const Vector3& playerPosition, float bodyYaw) const;
 
 private:
     enum class RocketReturnPhase {

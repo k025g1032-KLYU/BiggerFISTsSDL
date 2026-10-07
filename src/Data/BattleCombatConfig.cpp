@@ -157,7 +157,7 @@ constexpr std::array<std::pair<std::string_view, float ProjectileCombatConfig::*
         {"crystalCubeOscillationAmplitude", &ProjectileCombatConfig::crystalCubeOscillationAmplitude},
         {"crystalCubeOscillationFrequency", &ProjectileCombatConfig::crystalCubeOscillationFrequency},
     }};
-constexpr std::array<std::pair<std::string_view, float BossCombatConfig::*>, 56>
+constexpr std::array<std::pair<std::string_view, float BossCombatConfig::*>, 65>
     kBossFields{{
         {"coreRadius", &BossCombatConfig::coreRadius},
         {"hoverHeight", &BossCombatConfig::hoverHeight},
@@ -193,6 +193,15 @@ constexpr std::array<std::pair<std::string_view, float BossCombatConfig::*>, 56>
         {"cruiseHoverOrbitRadius", &BossCombatConfig::cruiseHoverOrbitRadius},
         {"cruiseHoverOrbitAngularSpeed", &BossCombatConfig::cruiseHoverOrbitAngularSpeed},
         {"cruiseMinimumLandingPlayerDistance", &BossCombatConfig::cruiseMinimumLandingPlayerDistance},
+        {"chargedRocketAimDodgeDelay", &BossCombatConfig::chargedRocketAimDodgeDelay},
+        {"rocketDodgeWarningDistance", &BossCombatConfig::rocketDodgeWarningDistance},
+        {"rocketDodgeDirectionDotThreshold", &BossCombatConfig::rocketDodgeDirectionDotThreshold},
+        {"idleRocketDodgeDuration", &BossCombatConfig::idleRocketDodgeDuration},
+        {"idleRocketDodgeSpeed", &BossCombatConfig::idleRocketDodgeSpeed},
+        {"idleRocketDodgeCooldown", &BossCombatConfig::idleRocketDodgeCooldown},
+        {"boxerRocketDodgeDuration", &BossCombatConfig::boxerRocketDodgeDuration},
+        {"boxerRocketDodgeSpeed", &BossCombatConfig::boxerRocketDodgeSpeed},
+        {"boxerRocketDodgeCooldown", &BossCombatConfig::boxerRocketDodgeCooldown},
         {"spreadPressureDistance", &BossCombatConfig::spreadPressureDistance},
         {"spreadPressureRearmDistance", &BossCombatConfig::spreadPressureRearmDistance},
         {"spreadPressureDuration", &BossCombatConfig::spreadPressureDuration},
@@ -267,7 +276,8 @@ bool LoadBattleCombatConfig(const std::filesystem::path& directory,
     }
     if (parsed.boss.idleNoActionRetryInterval >
             parsed.boss.idleDecisionInterval ||
-        parsed.boss.cruiseMinimumLandingPlayerDistance <= 0.0f) {
+        parsed.boss.cruiseMinimumLandingPlayerDistance <= 0.0f ||
+        parsed.boss.rocketDodgeDirectionDotThreshold > 1.0f) {
         error = "Invalid Boss action or cruise timing in '" +
             ToUtf8(directory / "boss-combat.cfg") + "'";
         return false;

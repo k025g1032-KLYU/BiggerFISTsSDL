@@ -4,6 +4,7 @@
 #include "Gameplay/Player/FirstPersonTuning.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <utility>
@@ -177,7 +178,51 @@ void CombatSession::UpdateBoss(float seconds) {
         return;
     }
     const Vector3 playerPosition = player_.GetPlayer().GetPosition();
-    for (const BossAttackEvent& attack : boss_->Update(seconds, playerPosition)) {
+    BossPlayerThreat threat;
+    const bool ultimateForming = player_.GetUltimateState() ==
+            UltimateState::Forming ||
+        player_.GetUltimateState() == UltimateState::Ready;
+    const std::array<const PunchArm*, 2> arms{
+        &player_.GetLeftArm(), &player_.GetRightArm()};
+    for (std::size_t index = 0; index < arms.size(); ++index) {
+        const PunchArm& arm = *arms[index];
+        threat.isRocketCharged[index] = !ultimateForming &&
+            arm.GetState() == PunchArmState::Charged &&
+            arm.GetAttackType() == PunchArmAttackType::RocketPunch;
+        if (threat.isRocketCharged[index]) {
+            const RocketPreviewTrajectory trajectory =
+                arm.GetRocketPreviewTrajectory(playerPosition,
+                    player_.GetPlayer().GetBodyYaw());
+            const Vector3 end{
+                trajectory.start.x + trajectory.direction.x *
+                    trajectory.flightDistance,
+                trajectory.start.y + trajectory.direction.y *
+                    trajectory.flightDistance,
+                trajectory.start.z + trajectory.direction.z *
+                    trajectory.flightDistance};
+            threat.isChargedRocketAimedAtCore[index] =
+                trajectory.flightDistance > 0.0f &&
+                Collision::SweepSphereAgainstSphere(trajectory.start, end,
+                    FirstPersonTuning::kFistRadius,
+                    {boss_->GetPosition(), config_.boss.coreRadius}).didHit;
+        }
+        if (arm.GetState() != PunchArmState::RocketFlying) {
+            continue;
+        }
+        const Vector3 offset{
+            boss_->GetPosition().x - arm.GetFistPosition().x, 0.0f,
+            boss_->GetPosition().z - arm.GetFistPosition().z};
+        const float distance = std::hypot(offset.x, offset.z);
+        const float yaw = arm.GetRocketPoseYaw();
+        const float alignment = distance > 0.00001f
+            ? (std::sin(yaw) * offset.x + std::cos(yaw) * offset.z) /
+                distance : -1.0f;
+        threat.hasIncomingRocketPunch |= distance <=
+                config_.boss.rocketDodgeWarningDistance &&
+            alignment >= config_.boss.rocketDodgeDirectionDotThreshold;
+    }
+    for (const BossAttackEvent& attack :
+            boss_->Update(seconds, playerPosition, threat)) {
         if (attack.type == BossAttackType::CrystalSpike ||
             attack.type == BossAttackType::CrystalCube) {
             const Vector3 offset{playerPosition.x - attack.position.x,

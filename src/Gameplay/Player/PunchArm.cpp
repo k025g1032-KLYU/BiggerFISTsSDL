@@ -132,6 +132,17 @@ Vector3 PunchArm::CalculateRocketDockPosition(const Vector3& playerPosition,
     return Add(home, {std::sin(bodyYaw) * offset, 0.0f, std::cos(bodyYaw) * offset});
 }
 
+RocketPreviewTrajectory PunchArm::GetRocketPreviewTrajectory(
+    const Vector3& playerPosition, float bodyYaw) const {
+    if (state_ != PunchArmState::Charged ||
+        attackType_ != PunchArmAttackType::RocketPunch) {
+        return {};
+    }
+    const Vector3 start = CalculateRocketDockPosition(playerPosition, bodyYaw);
+    const Vector3 direction{std::sin(bodyYaw), 0.0f, std::cos(bodyYaw)};
+    return {start, direction, CalculateRocketMaximumRange(start, direction)};
+}
+
 Vector3 PunchArm::CalculateChargePosition(const Vector3& playerPosition,
     float bodyYaw) const {
     const Vector3 home = CalculateHomePosition(playerPosition, bodyYaw);

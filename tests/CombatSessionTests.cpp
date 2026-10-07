@@ -281,6 +281,23 @@ int main(int argc, char** argv) {
         std::puts("FAIL: Bomber bomb did not move laterally at combat height");
         return 1;
     }
+    FirstPersonGame aimPlayer(GameConfig{}, {0.0f, 5.85f, 0.0f},
+        std::vector<FirstPersonTarget>{});
+    CombatSession aimSession(BattlePreviewKind::Boss, aimPlayer, {}, combat);
+    aimSession.Start(true);
+    GameInput singleRocket{};
+    singleRocket.leftMouseDown = true;
+    bool bossDodgedAim = false;
+    for (int step = 0; step < 150 &&
+            aimSession.GetPhase() == BattlePhase::Playing; ++step) {
+        aimSession.Update(kStep, singleRocket, 0.0f, 0.0f);
+        bossDodgedAim |= aimSession.GetBoss() &&
+            aimSession.GetBoss()->DidBeginRocketDodgeThisStep();
+    }
+    if (!bossDodgedAim) {
+        std::puts("FAIL: CombatSession did not send charged Rocket aim to Boss");
+        return 1;
+    }
     FirstPersonGame ultimatePlayer(GameConfig{}, {0.0f, 5.85f, 0.0f},
         std::vector<FirstPersonTarget>{});
     CombatSession ultimateSession(BattlePreviewKind::Boss, ultimatePlayer,
@@ -289,11 +306,15 @@ int main(int argc, char** argv) {
     GameInput dualRocket{};
     dualRocket.leftMouseDown = true;
     dualRocket.rightMouseDown = true;
+    bool dodgedUltimateCharge = false;
     for (int step = 0; step < 240; ++step) {
         ultimateSession.Update(kStep, dualRocket, 0.0f, 0.0f);
+        dodgedUltimateCharge |= ultimateSession.GetBoss() &&
+            ultimateSession.GetBoss()->DidBeginRocketDodgeThisStep();
     }
-    if (ultimatePlayer.GetUltimateState() != UltimateState::Ready) {
-        std::puts("FAIL: dual Rocket charge did not prepare Ultimate");
+    if (ultimatePlayer.GetUltimateState() != UltimateState::Ready ||
+        dodgedUltimateCharge) {
+        std::puts("FAIL: dual Rocket charge did not prepare Ultimate cleanly");
         return 1;
     }
     bool ultimateLaunched = false;

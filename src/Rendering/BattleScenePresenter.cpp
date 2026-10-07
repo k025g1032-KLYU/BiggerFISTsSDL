@@ -69,6 +69,7 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
             boss->GetMode() == BossMode::SpreadCounter;
         const Vector3 tint = boss->GetMode() == BossMode::Defeating
             ? Vector3{1.0f, 0.35f, 0.25f}
+            : boss->IsRocketDodging() ? Vector3{0.50f, 0.85f, 1.0f}
             : warning ? Vector3{1.0f, 0.55f, 0.45f}
             : Vector3{1.0f, 1.0f, 1.0f};
         add("boss_core", "boss_core", position, 1.0f, tint);

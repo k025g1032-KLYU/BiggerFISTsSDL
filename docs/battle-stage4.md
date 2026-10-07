@@ -34,8 +34,9 @@ hits, and base damage are logged in the terminal. The ordinary
   capacity, delayed replacement, and wave advancement.
 - `BattleBoss` owns a simplified Boss state machine, the 20 HP core, Idle
   movement/crystal shots, distance-weighted attack choice, a takeoff/flight/
-  landing Cruise relocation, proximity-triggered Spread Counter, attacks,
-  and the mandatory one-HP Full Barrage damage lock.
+  landing Cruise relocation, charged-Rocket aim and incoming-Rocket sidesteps,
+  proximity-triggered Spread Counter, attacks, and the mandatory one-HP Full
+  Barrage damage lock.
 - `FirstPersonGame` owns Dodge, Ultimate, and the player. Battle target hits are
   resolved after enemy/projectile movement so sweeps compare the same fixed
   step. Ultimate and arm interceptions resolve before projectile impacts.
@@ -52,8 +53,8 @@ hits, and base damage are logged in the terminal. The ordinary
 The tests cover the 30/60/120 rendered-FPS fixed-step comparison, wave limits
 and progression, battle reset/countdown, Day1/Day2 Clear, Boss core damage and
 Full Barrage lock, Idle crystal fire and proximity pressure, Ultimate collision
-against Boss, Charge impact, Missile
-windup and turn toward the base, and Bomber lateral bomb motion. Debug and
+against Boss, delayed charged-Rocket dodge and its battle input path, Charge
+impact, Missile windup and turn toward the base, and Bomber lateral bomb motion. Debug and
 Release CTest passed 19/19. All three single-enemy previews and Day1, Day2,
 Boss previews completed 30-frame GPU startup smoke tests. Smoke tests prove
 asset loading and frame rendering; they do not prove a complete playthrough.
@@ -65,10 +66,11 @@ the Day1 preview's measured average render time from about 164 ms/frame to
 
 - Boss action weights and cooldowns now follow the original values, but Cruise
   target selection omits the original dead-zone hysteresis and in-flight
-  retargeting. Charged-Rocket dodge, exact Boxer/Needle hit shapes, and
-  crystal halo/reload logic are not yet reproduced. Idle movement, proximity
-  Spread Counter, crystal shots, mandatory Full Barrage lock, and core damage
-  are present.
+  retargeting. Charged-Rocket and incoming-Rocket sidesteps are present, but
+  Boxer uses one simplified dodge phase rather than the original orbit-phase
+  restrictions. Exact Boxer/Needle hit shapes and crystal halo/reload logic
+  are not yet reproduced. Idle movement, proximity Spread Counter, crystal
+  shots, mandatory Full Barrage lock, and core damage are present.
 - ChargeUnit has battlefield/base-safe movement and separate impact/miss
   braking, but its visual turn/reacquire pose and exact obstacle timing are
   simplified. Bomber movement speed and bomb oscillation match the original

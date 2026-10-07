@@ -3,6 +3,7 @@
 #include "Data/BattleCombatConfig.h"
 #include "Math/MathTypes.h"
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -21,11 +22,18 @@ struct BossAttackEvent {
     Vector3 position{};
 };
 
+struct BossPlayerThreat {
+    std::array<bool, 2> isRocketCharged{};
+    std::array<bool, 2> isChargedRocketAimedAtCore{};
+    bool hasIncomingRocketPunch = false;
+};
+
 class BattleBoss {
 public:
     explicit BattleBoss(BossCombatConfig config = {});
     void Reset(const Vector3& position);
-    std::vector<BossAttackEvent> Update(float seconds, const Vector3& playerPosition);
+    std::vector<BossAttackEvent> Update(float seconds,
+        const Vector3& playerPosition, const BossPlayerThreat& threat = {});
     bool ReceiveHit(int damage);
     void BeginBehavior(BossMode mode);
 
@@ -36,6 +44,8 @@ public:
     int GetMaximumHitPoints() const { return config_.coreHitPoints; }
     bool IsDefeated() const { return mode_ == BossMode::Defeated; }
     float GetModeTime() const { return modeTime_; }
+    bool IsRocketDodging() const { return rocketDodgeTimer_ > 0.0f; }
+    bool DidBeginRocketDodgeThisStep() const { return beganRocketDodgeThisStep_; }
 
 private:
     enum class CruisePhase { TakingOff, Flying, Landing };
@@ -43,6 +53,8 @@ private:
     void ChooseIdleAction(const Vector3& playerPosition, float playerDistance);
     void BeginCruise(const Vector3& playerPosition);
     void UpdateCruise(float seconds);
+    bool UpdateRocketDodge(float seconds, const Vector3& playerPosition,
+        const BossPlayerThreat& threat);
 
     BossCombatConfig config_;
     BossMode mode_ = BossMode::Entrance;
@@ -75,4 +87,11 @@ private:
     bool spreadPressureArmed_ = true;
     float crystalSpikeTimer_ = 0.0f;
     float crystalCubeTimer_ = 0.0f;
+    std::array<float, 2> chargedRocketAimTimers_{};
+    std::array<bool, 2> evaluatedChargedRocketAim_{};
+    float rocketDodgeTimer_ = 0.0f;
+    float rocketDodgeCooldown_ = 0.0f;
+    float boxerRocketDodgeCooldown_ = 0.0f;
+    float rocketDodgeSpeed_ = 0.0f;
+    bool beganRocketDodgeThisStep_ = false;
 };

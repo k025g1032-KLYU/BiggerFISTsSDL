@@ -99,6 +99,15 @@ struct BossCombatConfig {
     float cruiseHoverOrbitRadius = 2.25f;
     float cruiseHoverOrbitAngularSpeed = 2.2f;
     float cruiseMinimumLandingPlayerDistance = 11.0f;
+    float chargedRocketAimDodgeDelay = 0.15f;
+    float rocketDodgeWarningDistance = 14.0f;
+    float rocketDodgeDirectionDotThreshold = 0.82f;
+    float idleRocketDodgeDuration = 0.38f;
+    float idleRocketDodgeSpeed = 12.0f;
+    float idleRocketDodgeCooldown = 1.60f;
+    float boxerRocketDodgeDuration = 0.30f;
+    float boxerRocketDodgeSpeed = 11.0f;
+    float boxerRocketDodgeCooldown = 0.90f;
     float spreadPressureDistance = 8.0f;
     float spreadPressureRearmDistance = 9.0f;
     float spreadPressureDuration = 0.4f;

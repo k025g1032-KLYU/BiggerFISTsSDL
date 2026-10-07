@@ -324,6 +324,8 @@ target_compile_definitions(ObjLoaderTests PRIVATE
     OBJ_TEST_MISSILE_UNIT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RocketLaunch/RocketLaunch.obj"
 )
 add_test(NAME ObjLoaderTests COMMAND ObjLoaderTests)
+set_tests_properties(ObjLoaderTests PROPERTIES
+    WORKING_DIRECTORY "$<TARGET_FILE_DIR:ObjLoaderTests>")
 
 add_executable(ModelConfigTests EXCLUDE_FROM_ALL
     tests/ModelConfigTests.cpp
@@ -331,6 +333,8 @@ add_executable(ModelConfigTests EXCLUDE_FROM_ALL
 )
 target_include_directories(ModelConfigTests PRIVATE src)
 add_test(NAME ModelConfigTests COMMAND ModelConfigTests)
+set_tests_properties(ModelConfigTests PROPERTIES
+    WORKING_DIRECTORY "$<TARGET_FILE_DIR:ModelConfigTests>")
 
 add_executable(SceneConfigTests EXCLUDE_FROM_ALL
     tests/SceneConfigTests.cpp
@@ -338,6 +342,8 @@ add_executable(SceneConfigTests EXCLUDE_FROM_ALL
 )
 target_include_directories(SceneConfigTests PRIVATE src)
 add_test(NAME SceneConfigTests COMMAND SceneConfigTests)
+set_tests_properties(SceneConfigTests PROPERTIES
+    WORKING_DIRECTORY "$<TARGET_FILE_DIR:SceneConfigTests>")
 
 add_executable(SceneLoaderTests EXCLUDE_FROM_ALL
     tests/SceneLoaderTests.cpp

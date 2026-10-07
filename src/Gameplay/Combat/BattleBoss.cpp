@@ -50,6 +50,13 @@ void BattleBoss::Reset(const Vector3& position) {
     spreadPressureArmed_ = true;
     crystalSpikeTimer_ = config_.crystalSpikeInitialDelay;
     crystalCubeTimer_ = config_.crystalCubeInitialDelay;
+    chargedRocketAimTimers_.fill(0.0f);
+    evaluatedChargedRocketAim_.fill(false);
+    rocketDodgeTimer_ = 0.0f;
+    rocketDodgeCooldown_ = 0.0f;
+    boxerRocketDodgeCooldown_ = 0.0f;
+    rocketDodgeSpeed_ = 0.0f;
+    beganRocketDodgeThisStep_ = false;
 }
 
 void BattleBoss::BeginBehavior(BossMode mode) {
@@ -222,6 +229,60 @@ void BattleBoss::UpdateCruise(float seconds) {
     }
 }
 
+bool BattleBoss::UpdateRocketDodge(float seconds,
+    const Vector3& playerPosition, const BossPlayerThreat& threat) {
+    bool confirmedAim = false;
+    for (std::size_t arm = 0; arm < chargedRocketAimTimers_.size(); ++arm) {
+        if (!threat.isRocketCharged[arm]) {
+            chargedRocketAimTimers_[arm] = 0.0f;
+            evaluatedChargedRocketAim_[arm] = false;
+        } else if (!threat.isChargedRocketAimedAtCore[arm] ||
+            evaluatedChargedRocketAim_[arm]) {
+            chargedRocketAimTimers_[arm] = 0.0f;
+        } else {
+            chargedRocketAimTimers_[arm] += seconds;
+            if (chargedRocketAimTimers_[arm] >=
+                config_.chargedRocketAimDodgeDelay) {
+                evaluatedChargedRocketAim_[arm] = true;
+                confirmedAim = true;
+            }
+        }
+    }
+    if (rocketDodgeTimer_ > 0.0f) {
+        const float dodgeStep = std::min(rocketDodgeTimer_, seconds);
+        rocketDodgeTimer_ = std::max(0.0f,
+            rocketDodgeTimer_ - seconds);
+        const Vector3 toPlayer = DirectionTo(position_, playerPosition);
+        position_.x -= toPlayer.z * idleStrafeSide_ *
+            rocketDodgeSpeed_ * dodgeStep;
+        position_.z += toPlayer.x * idleStrafeSide_ *
+            rocketDodgeSpeed_ * dodgeStep;
+        return true;
+    }
+    if (mode_ == BossMode::Idle &&
+        (confirmedAim || threat.hasIncomingRocketPunch) &&
+        rocketDodgeCooldown_ <= 0.0f) {
+        idleStrafeSide_ = -idleStrafeSide_;
+        rocketDodgeTimer_ = config_.idleRocketDodgeDuration;
+        rocketDodgeSpeed_ = config_.idleRocketDodgeSpeed;
+        rocketDodgeCooldown_ = config_.idleRocketDodgeCooldown;
+        beganRocketDodgeThisStep_ = true;
+        return true;
+    }
+    if (mode_ == BossMode::Boxer && confirmedAim &&
+        rocketDodgeCooldown_ <= 0.0f &&
+        boxerRocketDodgeCooldown_ <= 0.0f) {
+        idleStrafeSide_ = -idleStrafeSide_;
+        rocketDodgeTimer_ = config_.boxerRocketDodgeDuration;
+        rocketDodgeSpeed_ = config_.boxerRocketDodgeSpeed;
+        rocketDodgeCooldown_ = config_.idleRocketDodgeCooldown;
+        boxerRocketDodgeCooldown_ = config_.boxerRocketDodgeCooldown;
+        beganRocketDodgeThisStep_ = true;
+        return true;
+    }
+    return false;
+}
+
 bool BattleBoss::ReceiveHit(int damage) {
     if (damage <= 0 || mode_ == BossMode::Defeating ||
         mode_ == BossMode::Defeated || fullBarrageDamageLocked_) {
@@ -247,8 +308,9 @@ bool BattleBoss::ReceiveHit(int damage) {
 }
 
 std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
-    const Vector3& playerPosition) {
+    const Vector3& playerPosition, const BossPlayerThreat& threat) {
     std::vector<BossAttackEvent> attacks;
+    beganRocketDodgeThisStep_ = false;
     if (!std::isfinite(seconds) || seconds < 0.0f ||
         mode_ == BossMode::Defeated) {
         return attacks;
@@ -259,6 +321,10 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
     boxerCooldown_ = std::max(0.0f, boxerCooldown_ - seconds);
     chargeCooldown_ = std::max(0.0f, chargeCooldown_ - seconds);
     cruiseCooldown_ = std::max(0.0f, cruiseCooldown_ - seconds);
+    rocketDodgeCooldown_ = std::max(0.0f,
+        rocketDodgeCooldown_ - seconds);
+    boxerRocketDodgeCooldown_ = std::max(0.0f,
+        boxerRocketDodgeCooldown_ - seconds);
     if (fullBarragePending_ && mode_ != BossMode::Entrance) {
         fullBarragePending_ = false;
         fullBarrageUsed_ = true;
@@ -267,6 +333,9 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
         needleComboPending_ = false;
         needleComboUsed_ = true;
         BeginBehavior(BossMode::NeedleCombo);
+    }
+    if (mode_ != BossMode::Idle && mode_ != BossMode::Boxer) {
+        chargedRocketAimTimers_.fill(0.0f);
     }
     switch (mode_) {
     case BossMode::Entrance:
@@ -301,6 +370,9 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
             spreadPressureTimer_ = 0.0f;
             spreadCooldown_ = config_.spreadBurstCooldown;
             BeginBehavior(BossMode::SpreadCounter);
+            break;
+        }
+        if (UpdateRocketDodge(seconds, playerPosition, threat)) {
             break;
         }
         idleStrafeTimer_ += seconds;
@@ -362,6 +434,9 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
         }
         break;
     case BossMode::Boxer: {
+        if (UpdateRocketDodge(seconds, playerPosition, threat)) {
+            break;
+        }
         const float distance = std::hypot(playerPosition.x - position_.x,
             playerPosition.z - position_.z);
         const Vector3 direction = DirectionTo(position_, playerPosition);
