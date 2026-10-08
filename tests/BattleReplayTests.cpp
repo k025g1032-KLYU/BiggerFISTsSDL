@@ -38,6 +38,8 @@ ReplayResult Play(BattlePreviewKind kind, int renderFps,
     int attacks = 0;
     int steps = 0;
     bool sawBattleModel = false;
+    bool sawReadyUltimateModel = false;
+    bool sawFlyingUltimateFlame = false;
     BattleAssetCatalog assets;
     for (const char* key : {"missile_unit", "bomber", "charge_unit",
             "missile", "floating_bomb", "boss_core", "boss_cone_left",
@@ -181,6 +183,22 @@ ReplayResult Play(BattlePreviewKind kind, int renderFps,
             }
             session.Update(kStep, input, mouseX, 0.0f);
             ++steps;
+        if (kind == BattlePreviewKind::Boss &&
+            ((player.GetUltimateState() == UltimateState::Ready &&
+                    !sawReadyUltimateModel) ||
+                (player.GetUltimateState() == UltimateState::Flying &&
+                    !sawFlyingUltimateFlame))) {
+            presenter.SyncBattle(session, assets);
+            const auto hasModel = [&](const char* id) {
+                return std::any_of(presenter.GetScene().models.begin(),
+                    presenter.GetScene().models.end(),
+                    [&](const ModelInstance& model) { return model.id == id; });
+            };
+            sawReadyUltimateModel |= player.GetUltimateState() ==
+                UltimateState::Ready && hasModel("battle_ultimate");
+            sawFlyingUltimateFlame |= player.GetUltimateState() ==
+                UltimateState::Flying && hasModel("battle_ultimate_flame");
+        }
         if (steps % 120 == 0 && !sawBattleModel) {
             presenter.SyncBattle(session, assets);
             sawBattleModel = std::any_of(presenter.GetScene().models.begin(),
@@ -205,9 +223,12 @@ ReplayResult Play(BattlePreviewKind kind, int renderFps,
     if (!sawBattleModel || (session.GetPhase() == BattlePhase::Clear &&
             (kind == BattlePreviewKind::Boss
                 ? !hasEndBattleModel || hasEndHalo
-                : hasEndBattleModel))) {
-        std::printf("FAIL: battle scene state saw=%d end=%d halo=%d kind=%d phase=%d\n",
+                : hasEndBattleModel)) ||
+        (kind == BattlePreviewKind::Boss &&
+            (!sawReadyUltimateModel || !sawFlyingUltimateFlame))) {
+        std::printf("FAIL: battle scene state saw=%d end=%d halo=%d ready=%d flame=%d kind=%d phase=%d\n",
             sawBattleModel, hasEndBattleModel, hasEndHalo,
+            sawReadyUltimateModel, sawFlyingUltimateFlame,
             static_cast<int>(kind), static_cast<int>(session.GetPhase()));
         return {};
     }

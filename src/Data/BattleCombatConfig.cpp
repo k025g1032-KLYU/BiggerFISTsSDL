@@ -157,12 +157,14 @@ constexpr std::array<std::pair<std::string_view, float ProjectileCombatConfig::*
         {"crystalCubeOscillationAmplitude", &ProjectileCombatConfig::crystalCubeOscillationAmplitude},
         {"crystalCubeOscillationFrequency", &ProjectileCombatConfig::crystalCubeOscillationFrequency},
     }};
-constexpr std::array<std::pair<std::string_view, float BossCombatConfig::*>, 96>
+constexpr std::array<std::pair<std::string_view, float BossCombatConfig::*>, 98>
     kBossFields{{
         {"coreRadius", &BossCombatConfig::coreRadius},
         {"hoverHeight", &BossCombatConfig::hoverHeight},
         {"entranceSpawnHeight", &BossCombatConfig::entranceSpawnHeight},
         {"entranceDropSpeed", &BossCombatConfig::entranceDropSpeed},
+        {"entranceFlipStartHeight", &BossCombatConfig::entranceFlipStartHeight},
+        {"entranceFlipDuration", &BossCombatConfig::entranceFlipDuration},
         {"idleDecisionInterval", &BossCombatConfig::idleDecisionInterval},
         {"idleMoveSpeed", &BossCombatConfig::idleMoveSpeed},
         {"idleMinimumDistance", &BossCombatConfig::idleMinimumDistance},

@@ -354,6 +354,24 @@ Vector3 FirstPersonGame::GetUltimateReturnFistPosition(PunchArmSide side) const 
         start.z + (home.z - start.z) * ratio};
 }
 
+Vector3 FirstPersonGame::GetUltimateFormationPosition() const {
+    const Vector3& left = leftArm_.GetFistPosition();
+    const Vector3& right = rightArm_.GetFistPosition();
+    const float yaw = player_.GetBodyYaw();
+    return {(left.x + right.x) * 0.5f + std::sin(yaw) * 0.8f,
+        (left.y + right.y) * 0.5f,
+        (left.z + right.z) * 0.5f + std::cos(yaw) * 0.8f};
+}
+
+float FirstPersonGame::GetUltimateFormationRatio() const {
+    if (ultimateState_ == UltimateState::Ready) return 1.0f;
+    if (ultimateState_ != UltimateState::Forming) return 0.0f;
+    constexpr float kFormationDelay = 1.5f;
+    return std::clamp((ultimateChargeTimer_ - kFormationDelay) /
+        std::max(0.001f, combatConfig_.ultimateChargeTime - kFormationDelay),
+        0.0f, 1.0f);
+}
+
 void FirstPersonGame::ProcessTargetHits() {
     std::vector<CombatHitTarget> candidates;
     candidates.reserve(targets_.size());

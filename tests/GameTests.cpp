@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <numbers>
 
 namespace {
 bool Expect(bool condition, const char* description) {
@@ -111,6 +112,22 @@ int main() {
         std::abs(withRoll.elements[0][0]) < 0.0001f &&
         withRoll.elements[0][1] > 0.0f,
         "A 90-degree model roll rotates local +X toward screen +Y");
+
+    ModelInstance child;
+    child.position = {2.0f, 0.0f, 0.0f};
+    child.initialXDegrees = 0.0f;
+    child.initialYDegrees = 0.0f;
+    child.rotationXDegreesPerSecond = 0.0f;
+    child.rotationYDegreesPerSecond = 0.0f;
+    child.parentWorld = MultiplyMatrices(MakeRotationYMatrix(
+        std::numbers::pi_v<float> * 0.5f),
+        MakeTranslationMatrix(1.0f, 0.0f, 10.0f));
+    Matrix4x4 childWorld{};
+    success &= Expect(TryBuildModelWorldTransform(rollScene, child, childWorld),
+        "Build a model transform with a parent world matrix");
+    success &= Expect(NearlyEqual(childWorld.elements[3][0], 1.0f) &&
+        NearlyEqual(childWorld.elements[3][2], 8.0f),
+        "Child translation follows parent rotation and translation");
 
     if (success) {
         std::puts("PASS: 3D game input, scene state and transform");

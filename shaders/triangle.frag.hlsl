@@ -10,6 +10,7 @@ struct VertexOutput {
 };
 
 float4 main(VertexOutput input) : SV_Target0 {
-    // This first texture pass is opaque and unlit.
-    return float4(colorTexture.Sample(colorSampler, input.uv).rgb * colorTint.rgb, 1.0f);
+    float4 sampled = colorTexture.Sample(colorSampler, input.uv);
+    clip(sampled.a - 0.02f);
+    return float4(sampled.rgb * colorTint.rgb, sampled.a * colorTint.a);
 }

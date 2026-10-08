@@ -21,6 +21,10 @@ private:
     bool resetPressed_ = false;
     bool resetReleased_ = false;
     bool battleStartPressed_ = false;
+    bool confirmPressed_ = false;
+    bool skipPressed_ = false;
+    bool skipPhasePressed_ = false;
+    bool switchViewPressed_ = false;
     bool dodgePressed_ = false;
     bool projectileHitPressed_ = false;
     bool chargeHitPressed_ = false;

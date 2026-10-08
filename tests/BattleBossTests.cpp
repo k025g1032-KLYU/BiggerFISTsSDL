@@ -30,6 +30,16 @@ int main(int argc, char** argv) {
     }
     BattleBoss boss(config.boss);
     const Vector3 player{0.0f, 1.7f, 18.0f};
+    const BossVisualPose initialPose = boss.GetVisualPose();
+    if (std::abs(initialPose.rootRotation.x + 1.570796327f) > 0.001f ||
+        std::abs(initialPose.cones[0].translation.x - 1.0f) > 0.001f ||
+        std::abs(initialPose.spikes[0].translation.x -
+            config.boss.crystalHaloRadius) > 0.001f ||
+        std::abs(initialPose.spikes[0].translation.z -
+            config.boss.crystalHaloBackOffset) > 0.001f) {
+        std::puts("FAIL: original Boss entrance, cone or crystal local pose changed");
+        return 1;
+    }
     for (int step = 0; step < 180; ++step) {
         boss.Update(kStep, player);
     }
@@ -40,6 +50,14 @@ int main(int argc, char** argv) {
     BattleBoss rangedBoss(config.boss);
     rangedBoss.Reset({0.0f, config.boss.hoverHeight, 34.5f});
     rangedBoss.BeginBehavior(BossMode::Idle);
+    rangedBoss.Update(kStep, {0.0f, 1.7f, 0.0f});
+    const BossVisualPose ringPose = rangedBoss.GetVisualPose();
+    if (std::abs(ringPose.spikes[0].translation.y -
+            std::sin(ringPose.crystalAngle) *
+                config.boss.crystalHaloRadius) > 0.001f) {
+        std::puts("FAIL: Boss crystal ring is not in its original local XY plane");
+        return 1;
+    }
     bool idleSpikeFired = false;
     for (int step = 0; step < 110; ++step) {
         idleSpikeFired |= HasAttack(rangedBoss.Update(kStep,

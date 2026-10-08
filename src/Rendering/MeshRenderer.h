@@ -12,6 +12,8 @@
 
 class WindowSettings;
 struct ModelScene;
+class UiRenderer;
+class UiDrawList;
 
 class MeshRenderer {
 public:
@@ -23,7 +25,10 @@ public:
 
     bool Initialize(SDL_Window* window, const MeshData& mesh);
     bool Initialize(SDL_Window* window, std::span<const MeshData> meshes);
-    bool Render(const ModelScene& scene, WindowSettings& windowSettings, bool* frameRendered = nullptr);
+    bool Render(const ModelScene& scene, WindowSettings& windowSettings,
+        bool* frameRendered = nullptr, UiRenderer* uiRenderer = nullptr,
+        const UiDrawList* uiDrawList = nullptr);
+    SDL_GPUDevice* GetDevice() const { return device_; }
     void Shutdown();
 
 private:
@@ -42,6 +47,7 @@ private:
     SDL_GPUDevice* device_ = nullptr;
     SDL_Window* window_ = nullptr;
     SDL_GPUGraphicsPipeline* pipeline_ = nullptr;
+    SDL_GPUGraphicsPipeline* transparentPipeline_ = nullptr;
     std::vector<GpuMesh> meshes_;
     SDL_GPUSampler* sampler_ = nullptr;
     std::unique_ptr<DepthBuffer> depthBuffer_;

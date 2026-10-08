@@ -14,6 +14,7 @@ public:
     bool IsMouseButtonDown(Uint8 button) const;
     float GetMouseDeltaX() const { return mouseDeltaX_; }
     float GetMouseDeltaY() const { return mouseDeltaY_; }
+    bool HasFocus() const { return hasFocus_; }
 
 private:
     const bool* keyStates_ = nullptr;

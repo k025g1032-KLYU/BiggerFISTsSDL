@@ -38,6 +38,22 @@ struct BossPlayerThreat {
     bool hasIncomingRocketPunch = false;
 };
 
+struct BossPartPose {
+    Vector3 translation{};
+    Vector3 rotation{};
+    Vector3 rootTranslation{};
+};
+
+struct BossVisualPose {
+    Vector3 rootRotation{};
+    Vector3 coreRotation{};
+    std::array<BossPartPose, 3> cones{};
+    std::array<BossPartPose, 6> spikes{};
+    std::array<BossPartPose, 4> cubes{};
+    float spreadSpin = 0.0f;
+    float crystalAngle = 0.0f;
+};
+
 class BattleBoss {
 public:
     explicit BattleBoss(BossCombatConfig config = {});
@@ -59,6 +75,7 @@ public:
     bool DidBeginRocketDodgeThisStep() const { return beganRocketDodgeThisStep_; }
     const std::array<BossCrystalSlot, 6>& GetSpikeSlots() const { return spikeSlots_; }
     const std::array<BossCrystalSlot, 4>& GetCubeSlots() const { return cubeSlots_; }
+    BossVisualPose GetVisualPose() const;
 
 private:
     enum class CruisePhase { TakingOff, Flying, Landing };
@@ -82,6 +99,8 @@ private:
     Vector3 previousPosition_{};
     Vector3 chargeDirection_{0.0f, 0.0f, -1.0f};
     float modeTime_ = 0.0f;
+    bool entranceRecovering_ = false;
+    float entranceRecoveryTime_ = 0.0f;
     float attackTimer_ = 0.0f;
     int hitPoints_ = 0;
     std::uint32_t behaviorRandomState_ = 0x6d2b79f5u;
@@ -140,4 +159,5 @@ private:
     float boxerRocketDodgeCooldown_ = 0.0f;
     float rocketDodgeSpeed_ = 0.0f;
     bool beganRocketDodgeThisStep_ = false;
+    float visualYaw_ = 0.0f;
 };

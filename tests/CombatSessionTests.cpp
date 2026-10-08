@@ -5,6 +5,7 @@
 #include "Input/FixedStepInputBuffer.h"
 #include "Platform/FixedStepClock.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -75,16 +76,22 @@ int main(int argc, char** argv) {
         std::vector<FirstPersonTarget>{});
     CombatSession session(BattlePreviewKind::Day1, player, day1, combat);
     session.Start(true);
+    bool sawExplosion = false;
     for (int step = 0; step < 10000 && session.GetPhase() == BattlePhase::Playing;
         ++step) {
         session.Update(kStep, {}, 0.0f, 0.0f);
         for (const BattleEnemy& enemy : session.GetEnemies()) {
             if (!enemy.defeated) {
                 session.ApplyTargetDamage(enemy.id, 1);
+                sawExplosion |= std::any_of(session.GetVisualEvents().begin(),
+                    session.GetVisualEvents().end(),
+                    [](const BattleVisualEvent& event) {
+                        return event.effect == BattleVisualEffect::Explosion;
+                    });
             }
         }
     }
-    if (session.GetPhase() != BattlePhase::Clear ||
+    if (!sawExplosion || session.GetPhase() != BattlePhase::Clear ||
         session.GetWaveIndex() != 2) {
         std::puts("FAIL: Day1 waves did not advance through Clear");
         return 1;
@@ -117,8 +124,39 @@ int main(int argc, char** argv) {
         std::puts("FAIL: battle reset retained old state");
         return 1;
     }
+    FirstPersonGame retryPlayer(GameConfig{}, {0.0f, 5.85f, 0.0f},
+        std::vector<FirstPersonTarget>{});
+    CombatSession retrySession(BattlePreviewKind::Day1, retryPlayer,
+        day1, combat);
+    retrySession.Start(true);
+    while (!retryPlayer.GetVitality().IsDefeated()) {
+        retryPlayer.ReceivePlayerHit(PlayerHitType::NeedleFinisher);
+    }
+    retrySession.Update(kStep, {}, 0.0f, 0.0f);
+    if (retrySession.GetPhase() != BattlePhase::GameOver) {
+        std::puts("FAIL: defeated player did not enter GameOver");
+        return 1;
+    }
+    GameInput retry{};
+    retry.battleStart.pressed = true;
+    retrySession.Update(kStep, retry, 0.0f, 0.0f);
+    if (retrySession.GetPhase() != BattlePhase::Countdown ||
+        retryPlayer.GetVitality().IsDefeated() ||
+        retrySession.GetBaseHitPoints() != combat.enemy.baseHitPoints ||
+        !retrySession.GetEnemies().empty()) {
+        std::puts("FAIL: Enter retry did not reset the battle and start countdown");
+        return 1;
+    }
     CombatSession bossSession(BattlePreviewKind::Boss, player, {}, combat);
     bossSession.Start(true);
+    if (!bossSession.GetBoss() ||
+        std::abs(bossSession.GetBoss()->GetVisualPose().rootRotation.x +
+            1.570796327f) > 0.001f ||
+        std::abs(bossSession.GetBoss()->GetVisualPose().cones[0]
+            .translation.x - 1.0f) > 0.001f) {
+        std::puts("FAIL: original Boss entrance or cone pose was not preserved");
+        return 1;
+    }
     if (!bossSession.GetBoss() ||
         !bossSession.ApplyTargetDamage("target_boss_core", 17) ||
         bossSession.GetBoss()->GetHitPoints() != 3 ||
@@ -152,11 +190,18 @@ int main(int argc, char** argv) {
         std::vector<FirstPersonTarget>{});
     CombatSession chargeSession(BattlePreviewKind::ChargeUnit, chargePlayer, {}, combat);
     chargeSession.Start(true);
+    bool sawShieldEffect = false;
     for (int step = 0; step < 900 &&
             chargePlayer.GetVitality().GetShieldLayers() == 3; ++step) {
         chargeSession.Update(kStep, {}, 0.0f, 0.0f);
+        sawShieldEffect |= std::any_of(chargeSession.GetVisualEvents().begin(),
+            chargeSession.GetVisualEvents().end(),
+            [](const BattleVisualEvent& event) {
+                return event.effect == BattleVisualEffect::ShieldHit &&
+                    event.shieldLayers == 3;
+            });
     }
-    if (chargePlayer.GetVitality().GetShieldLayers() >= 3 ||
+    if (!sawShieldEffect || chargePlayer.GetVitality().GetShieldLayers() >= 3 ||
         chargeSession.GetEnemies().empty() ||
         chargeSession.GetEnemies().front().defeated) {
         if (!chargeSession.GetEnemies().empty()) {

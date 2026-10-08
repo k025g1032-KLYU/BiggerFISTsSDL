@@ -13,6 +13,8 @@ class BattleAssetCatalog {
 public:
     const ModelInstance* Find(std::string_view key) const;
     void Add(std::string key, ModelInstance model);
+    bool SetPose(std::string_view key, Vector3 scale, Vector3 rotation,
+        Vector3 offset);
     void Clear();
 
 private:

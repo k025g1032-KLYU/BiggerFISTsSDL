@@ -69,6 +69,8 @@ struct BossCombatConfig {
     float hoverHeight = 4.55f;
     float entranceSpawnHeight = 36.55f;
     float entranceDropSpeed = 28.0f;
+    float entranceFlipStartHeight = 2.5f;
+    float entranceFlipDuration = 0.5f;
     float idleDecisionInterval = 2.2f;
     float idleMoveSpeed = 2.25f;
     float idleMinimumDistance = 9.5f;

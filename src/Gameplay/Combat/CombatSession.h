@@ -26,6 +26,9 @@ struct BattleEnemy {
     Vector3 velocity{};
     float attackTimer = 0.0f;
     float stateTimer = 0.0f;
+    float visualAge = 0.0f;
+    float visualYaw = 4.71238898f;
+    float carriedBombScale = 1.0f;
     enum class MissileState { Patrolling, FireWindup, FireRecovery }
         missileState = MissileState::Patrolling;
     float travelSpeed = 0.0f;
@@ -62,6 +65,15 @@ struct BattleProjectile {
     float turnTimer = 0.0f;
 };
 
+enum class BattleVisualEffect { ShieldHit, Explosion };
+
+struct BattleVisualEvent {
+    BattleVisualEffect effect = BattleVisualEffect::Explosion;
+    Vector3 position{};
+    float scale = 1.0f;
+    int shieldLayers = 0;
+};
+
 class CombatSession {
 public:
     CombatSession(BattlePreviewKind kind, FirstPersonGame& player,
@@ -83,6 +95,9 @@ public:
     const std::vector<BattleFeedbackEvent>& GetFeedbackEvents() const {
         return feedbackEvents_;
     }
+    const std::vector<BattleVisualEvent>& GetVisualEvents() const {
+        return visualEvents_;
+    }
 
 private:
     void BeginPlaying();
@@ -97,6 +112,8 @@ private:
     void ResolveChargeImpacts();
     void ProcessPlayerHits();
     void ProcessUltimateHits();
+    PlayerHitResult ReceivePlayerHit(PlayerHitType type,
+        const Vector3& pushDirection = {0.0f, 0.0f, 1.0f});
     std::array<int, 3> CountActiveEnemies() const;
     std::string NextTargetId();
 
@@ -115,4 +132,5 @@ private:
     std::unordered_set<std::string> ultimateHitIds_;
     std::unordered_set<std::uint64_t> bossAttackHits_;
     std::vector<BattleFeedbackEvent> feedbackEvents_;
+    std::vector<BattleVisualEvent> visualEvents_;
 };

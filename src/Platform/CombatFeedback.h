@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <cstddef>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 class CombatFeedback {
@@ -35,6 +36,13 @@ public:
     void Shutdown();
     bool HasAudioDevice() const { return audioDevice_ != 0; }
     bool HasGamepad() const { return gamepad_ != nullptr; }
+    SDL_Gamepad* GetGamepad() const { return gamepad_; }
+    bool InitializeFullGameAudio(const std::filesystem::path& soundDirectory,
+        std::string& error);
+    void SetMusic(const std::string& name);
+    void PlayTutorialVoice(const std::string& name);
+    bool IsTutorialVoicePlaying() const;
+    void UpdateMusic(float seconds);
 
 private:
     struct Clip {
@@ -61,6 +69,14 @@ private:
     Clip bossSharpHit_;
     Clip bossRiser_;
     Clip battleExplosion_;
+    std::unordered_map<std::string, Clip> music_;
+    std::unordered_map<std::string, Clip> tutorialVoices_;
+    std::string currentMusic_;
+    std::string pendingMusic_;
+    std::string currentVoice_;
+    float musicFadeRemaining_ = 0.0f;
+    bool tutorialCheckPending_ = false;
+    bool tutorialCheckPlayed_ = false;
     CombatFeedbackConfig config_{};
     SDL_AudioDeviceID audioDevice_ = 0;
     SDL_Gamepad* gamepad_ = nullptr;

@@ -91,15 +91,15 @@ const ModelInstance* FindModelById(const ModelScene& scene, std::string_view id)
     return found == scene.models.end() ? nullptr : &*found;
 }
 
-bool TryBuildModelTransform(const ModelScene& scene, const ModelInstance& model,
-    std::uint32_t outputWidth,
-    std::uint32_t outputHeight, Matrix4x4& result) {
+bool TryBuildModelWorldTransform(const ModelScene& scene,
+    const ModelInstance& model, Matrix4x4& result) {
     result = {};
-    if (outputWidth == 0 || outputHeight == 0 || !std::isfinite(scene.elapsedSeconds) ||
+    if (!std::isfinite(scene.elapsedSeconds) ||
         !std::isfinite(model.scale) || !std::isfinite(model.scaleAxes.x) ||
         !std::isfinite(model.scaleAxes.y) || !std::isfinite(model.scaleAxes.z) ||
         !std::isfinite(model.colorTint.x) || !std::isfinite(model.colorTint.y) ||
-        !std::isfinite(model.colorTint.z) ||
+        !std::isfinite(model.colorTint.z) || !std::isfinite(model.opacity) ||
+        model.opacity < 0.0f || model.opacity > 1.0f ||
         !std::isfinite(model.modelCenter.x) ||
         !std::isfinite(model.modelCenter.y) || !std::isfinite(model.modelCenter.z) ||
         !std::isfinite(model.position.x) ||
@@ -108,6 +108,13 @@ bool TryBuildModelTransform(const ModelScene& scene, const ModelInstance& model,
         !std::isfinite(model.initialZDegrees) ||
         !std::isfinite(model.rotationXDegreesPerSecond) || !std::isfinite(model.rotationYDegreesPerSecond)) {
         return false;
+    }
+    if (model.parentWorld) {
+        for (const auto& row : model.parentWorld->elements) {
+            for (float value : row) {
+                if (!std::isfinite(value)) return false;
+            }
+        }
     }
 
     const Matrix4x4 scale = MakeScaleMatrix(model.scale * model.scaleAxes.x,
@@ -122,8 +129,19 @@ bool TryBuildModelTransform(const ModelScene& scene, const ModelInstance& model,
         model.initialZDegrees * std::numbers::pi_v<float> / 180.0f);
     const Matrix4x4 translation = MakeTranslationMatrix(
         model.position.x, model.position.y, model.position.z);
-    const Matrix4x4 world = MultiplyMatrices(
+    result = MultiplyMatrices(
         MultiplyMatrices(MultiplyMatrices(MultiplyMatrices(MultiplyMatrices(center, scale), rotationZ), rotationX), rotationY), translation);
+    if (model.parentWorld) result = MultiplyMatrices(result, *model.parentWorld);
+    return true;
+}
+
+bool TryBuildModelTransform(const ModelScene& scene, const ModelInstance& model,
+    std::uint32_t outputWidth,
+    std::uint32_t outputHeight, Matrix4x4& result) {
+    result = {};
+    if (outputWidth == 0 || outputHeight == 0) return false;
+    Matrix4x4 world{};
+    if (!TryBuildModelWorldTransform(scene, model, world)) return false;
 
     Matrix4x4 view{};
     if (!TryMakeLookAtLHMatrix(scene.cameraPosition, scene.cameraTarget, scene.cameraUp, view)) {

@@ -87,6 +87,9 @@ public:
     }
     const Vector3& GetUltimatePosition() const { return ultimatePosition_; }
     const Vector3& GetPreviousUltimatePosition() const { return previousUltimatePosition_; }
+    const Vector3& GetUltimateDirection() const { return ultimateDirection_; }
+    Vector3 GetUltimateFormationPosition() const;
+    float GetUltimateFormationRatio() const;
     float GetUltimateRadius() const { return combatConfig_.ultimateRadius; }
     Vector3 GetUltimateReturnFistPosition(PunchArmSide side) const;
     double GetElapsedSeconds() const { return elapsedSeconds_; }

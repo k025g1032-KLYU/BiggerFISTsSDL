@@ -3,8 +3,10 @@
 #include "Data/ObjLoader.h"
 
 #include <fstream>
+#include <cmath>
 #include <iterator>
 #include <sstream>
+#include <unordered_set>
 #include <utility>
 
 namespace {
@@ -23,6 +25,18 @@ void BattleAssetCatalog::Add(std::string key, ModelInstance model) {
     models_.emplace(std::move(key), std::move(model));
 }
 
+bool BattleAssetCatalog::SetPose(std::string_view key, Vector3 scale,
+    Vector3 rotation, Vector3 offset) {
+    const auto found = models_.find(std::string(key));
+    if (found == models_.end()) return false;
+    found->second.scaleAxes = scale;
+    found->second.initialXDegrees = rotation.x;
+    found->second.initialYDegrees = rotation.y;
+    found->second.initialZDegrees = rotation.z;
+    found->second.position = offset;
+    return true;
+}
+
 void BattleAssetCatalog::Clear() {
     models_.clear();
 }
@@ -38,6 +52,7 @@ bool LoadBattleAssetCatalog(const std::filesystem::path& configPath,
     }
     BattleAssetCatalog loadedCatalog;
     std::vector<MeshData> loadedMeshes;
+    std::unordered_set<std::string> posedAssets;
     std::string line;
     int lineNumber = 0;
     while (std::getline(input, line)) {
@@ -48,6 +63,26 @@ bool LoadBattleAssetCatalog(const std::filesystem::path& configPath,
         std::string relativeName;
         std::string extra;
         if (!(fields >> command) || command.starts_with('#')) {
+            continue;
+        }
+        if (command == "pose") {
+            Vector3 scale{}, rotation{}, offset{};
+            if (!(fields >> key >> scale.x >> scale.y >> scale.z >>
+                    rotation.x >> rotation.y >> rotation.z >>
+                    offset.x >> offset.y >> offset.z) ||
+                (fields >> extra) || posedAssets.contains(key) ||
+                !std::isfinite(scale.x) || !std::isfinite(scale.y) ||
+                !std::isfinite(scale.z) || scale.x <= 0.0f ||
+                scale.y <= 0.0f || scale.z <= 0.0f ||
+                !std::isfinite(rotation.x) || !std::isfinite(rotation.y) ||
+                !std::isfinite(rotation.z) || !std::isfinite(offset.x) ||
+                !std::isfinite(offset.y) || !std::isfinite(offset.z) ||
+                !loadedCatalog.SetPose(key, scale, rotation, offset)) {
+                error = "Invalid model pose in '" + ToUtf8(configPath) +
+                    "' line " + std::to_string(lineNumber);
+                return false;
+            }
+            posedAssets.insert(key);
             continue;
         }
         if (command != "asset" || !(fields >> key >> relativeName) ||
@@ -78,14 +113,20 @@ bool LoadBattleAssetCatalog(const std::filesystem::path& configPath,
         ModelInstance model;
         model.id = key;
         model.meshIndex = meshes.size() + loadedMeshes.size();
-        model.modelCenter = bounds.center;
+        model.modelCenter = {};
         model.initialXDegrees = 0.0f;
         model.initialYDegrees = 0.0f;
+        model.rotationXDegreesPerSecond = 0.0f;
+        model.rotationYDegreesPerSecond = 0.0f;
         loadedCatalog.Add(key, model);
         loadedMeshes.push_back(std::move(mesh));
     }
     if (input.bad() || loadedMeshes.empty()) {
         error = "Could not read battle assets from '" + ToUtf8(configPath) + "'";
+        return false;
+    }
+    if (posedAssets.size() != loadedMeshes.size()) {
+        error = "Missing model pose in '" + ToUtf8(configPath) + "'";
         return false;
     }
     meshes.insert(meshes.end(), std::make_move_iterator(loadedMeshes.begin()),

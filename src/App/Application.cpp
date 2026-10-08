@@ -23,9 +23,16 @@
 #include "Rendering/FirstPersonScenePresenter.h"
 #include "Gameplay/Combat/CombatSession.h"
 #include "Gameplay/Combat/EncounterConfig.h"
+#include "Data/StoryConfig.h"
+#include "Game/GameFlow.h"
+#include "Gameplay/Tutorial/TutorialSession.h"
+#include "Rendering/FullGameUi.h"
+#include "Rendering/UiRenderer.h"
+#include "Collision/Collision.h"
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -35,8 +42,35 @@
 #include <utility>
 #include <vector>
 
+namespace {
+TutorialObservation ObserveTutorial(const FirstPersonGame& player) {
+    TutorialObservation observation{};
+    observation.cameraYaw = player.GetCamera().GetYaw();
+    observation.cameraPitch = player.GetCamera().GetPitch();
+    observation.playerPosition = player.GetPlayer().GetPosition();
+    observation.leftFistAway = player.GetLeftArm().IsFistAway();
+    observation.rightFistAway = player.GetRightArm().IsFistAway();
+    observation.playerHit = player.GetEvents().playerHit &&
+        player.GetEvents().playerHitResult.wasApplied;
+    observation.dodgeStarted = player.GetEvents().dodgeStarted;
+    for (const CombatHitEvent& hit : player.GetEvents().targetHits) {
+        const bool left = hit.armSide == PunchArmSide::Left;
+        const bool punch = hit.attackType == PunchArmAttackType::Punch;
+        const bool rocket = hit.attackType == PunchArmAttackType::RocketPunch;
+        if (left && punch) observation.leftPunchHit = true;
+        if (!left && punch) observation.rightPunchHit = true;
+        if (left && rocket) observation.leftRocketHit = true;
+        if (!left && rocket) observation.rightRocketHit = true;
+        if (hit.targetId == "target_tutorial_missile")
+            observation.defenseIntercepted = true;
+    }
+    return observation;
+}
+}
+
 int Application::Run(const ApplicationOptions& options) {
     const bool battlePreview = options.battlePreview != BattlePreviewKind::None;
+    const bool fullGame = !options.scenePreview && !options.firstPersonPreview;
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("SDL_Init failed: %s", SDL_GetError());
         return 1;
@@ -47,11 +81,12 @@ int Application::Run(const ApplicationOptions& options) {
     const DisplaySettings displaySettings = LoadDisplaySettings();
 
     SDL_Window* window = SDL_CreateWindow(
-        battlePreview ? "BiggerFISTs SDL3 Battle Preview" :
+        fullGame ? "BiggerFISTs" :
+        (battlePreview ? "BiggerFISTs SDL3 Battle Preview" :
         (options.playerCombatPreview ? "BiggerFISTs SDL3 Player Combat Test" :
         (options.firstPersonPreview ? "BiggerFISTs SDL3 First Person" :
         (options.missileUnitModelPreview ? "BiggerFISTs SDL3 Missile Unit Model" :
-        (options.scenePreview ? "BiggerFISTs SDL3 Scene Preview" : "BiggerFISTs SDL3 Model Viewer")))),
+        (options.scenePreview ? "BiggerFISTs SDL3 Scene Preview" : "BiggerFISTs SDL3 Model Viewer"))))),
         displaySettings.windowWidth,
         displaySettings.windowHeight,
         SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY
@@ -82,20 +117,22 @@ int Application::Run(const ApplicationOptions& options) {
     std::vector<FirstPersonTarget> firstPersonTargets;
     BattleAssetCatalog battleAssets;
     std::string loadError;
-    if (options.scenePreview || options.firstPersonPreview) {
-        const char* sceneName = battlePreview ? "battlefield-scene.cfg" :
+    if (options.scenePreview || options.firstPersonPreview || fullGame) {
+        const char* sceneName = (battlePreview || fullGame) ? "battlefield-scene.cfg" :
             (options.firstPersonPreview ? "first-person-scene.cfg" :
             (options.missileUnitModelPreview ? "missile-unit-scene.cfg" : "scene.cfg"));
         SceneConfig sceneConfig;
         if (!LoadSceneConfig(executableDirectory / sceneName, sceneConfig, loadError) ||
             !LoadSceneAssets(executableDirectory / "assets/models", sceneConfig,
-                meshes, previewScene, loadError)) {
+                meshes, previewScene, loadError,
+                (battlePreview || fullGame || options.firstPersonPreview)
+                    ? ModelOrigin::Authored : ModelOrigin::BoundsCenter)) {
             SDL_Log("%s", loadError.c_str());
             SDL_DestroyWindow(window);
             SDL_Quit();
             return 1;
         }
-        if (battlePreview) {
+        if (battlePreview || fullGame) {
             if (!LoadBattleAssetCatalog(executableDirectory / "battle-assets.cfg",
                     executableDirectory / "assets/models", meshes, battleAssets, loadError)) {
                 SDL_Log("%s", loadError.c_str());
@@ -196,12 +233,31 @@ int Application::Run(const ApplicationOptions& options) {
         SDL_Quit();
         return 1;
     }
+    UiRenderer uiRenderer;
+    UiDrawList uiDrawList;
+    StoryConfig storyConfig;
+    std::optional<GameFlow> gameFlow;
+    std::optional<TutorialSession> tutorial;
+    if (fullGame) {
+        if (!LoadStoryConfig(executableDirectory / "story-pages.cfg", storyConfig, loadError) ||
+            !uiRenderer.Initialize(renderer.GetDevice(), window,
+                executableDirectory / "assets", storyConfig, loadError)) {
+            SDL_Log("%s", loadError.c_str());
+            uiRenderer.Shutdown();
+            renderer.Shutdown();
+            SDL_DestroyWindow(window);
+            SDL_Quit();
+            return 1;
+        }
+        gameFlow.emplace(storyConfig);
+        tutorial.emplace();
+    }
     Game game(config, previewScene);
     std::optional<FirstPersonGame> firstPersonGame;
     std::optional<FirstPersonScenePresenter> firstPersonView;
     std::optional<CombatFeedback> combatFeedback;
     std::optional<CombatSession> combatSession;
-    if (options.firstPersonPreview) {
+    if (options.firstPersonPreview || fullGame) {
         PlayerCombatConfig playerCombatConfig;
         if (!LoadPlayerCombatConfig(executableDirectory / "player-combat.cfg",
                 playerCombatConfig, loadError)) {
@@ -249,7 +305,9 @@ int Application::Run(const ApplicationOptions& options) {
         if (!LoadCombatFeedbackConfig(executableDirectory / "combat-feedback.cfg",
                 feedbackConfig, loadError) ||
             !combatFeedback->Initialize(executableDirectory / "assets/sound",
-                feedbackConfig, loadError)) {
+                feedbackConfig, loadError) ||
+            (fullGame && !combatFeedback->InitializeFullGameAudio(
+                executableDirectory / "assets/sound", loadError))) {
             SDL_Log("%s", loadError.c_str());
             combatFeedback->Shutdown();
             renderer.Shutdown();
@@ -257,7 +315,7 @@ int Application::Run(const ApplicationOptions& options) {
             SDL_Quit();
             return 1;
         }
-        if (!options.smokeTest && !SDL_SetWindowRelativeMouseMode(window, true)) {
+        if (!fullGame && !options.smokeTest && !SDL_SetWindowRelativeMouseMode(window, true)) {
             SDL_Log("Could not capture mouse for first-person view: %s", SDL_GetError());
             combatFeedback->Shutdown();
             renderer.Shutdown();
@@ -284,6 +342,12 @@ int Application::Run(const ApplicationOptions& options) {
     Uint64 smokeUpdateNanoseconds = 0;
     Uint64 smokeRenderNanoseconds = 0;
     double battleStatusElapsed = 0.0;
+    float cockpitStartupRemaining = 0.0f;
+    bool cockpitVisible = true;
+    float tutorialDefenseElapsed = 0.0f;
+    bool tutorialMissileActive = false;
+    Vector3 tutorialMissilePosition{};
+    double fullGameElapsed = 0.0;
     const Uint64 smokeStarted = SDL_GetTicks();
 
     while (isRunning) {
@@ -309,8 +373,9 @@ int Application::Run(const ApplicationOptions& options) {
         }
 
         input.Update();
-        GameInput gameInput = inputActions.Evaluate(input);
-        if (!battlePreview) {
+        GameInput gameInput = inputActions.Evaluate(input,
+            combatFeedback ? combatFeedback->GetGamepad() : nullptr, deltaTime);
+        if (!battlePreview && !fullGame) {
             gameInput.dodge = {};
             gameInput.battleStart = {};
         } else {
@@ -337,11 +402,187 @@ int Application::Run(const ApplicationOptions& options) {
         }
         if (firstPersonGame) {
             fixedStepInput.QueueFrame(gameInput,
-                input.GetMouseDeltaX(), input.GetMouseDeltaY());
+                input.GetMouseDeltaX() + gameInput.lookX,
+                input.GetMouseDeltaY() + gameInput.lookY);
             const int simulationSteps = fixedStepClock.Advance(deltaTime);
             for (int step = 0; step < simulationSteps; ++step) {
                 const SimulationStepInput stepInput =
                     fixedStepInput.ConsumeStep(simulationSteps - step);
+                if (gameFlow) {
+                    const bool tutorialWasComplete = tutorial->IsComplete();
+                    if (gameFlow->GetPhase() == FlowPhase::Tutorial &&
+                        (stepInput.game.skip.pressed ||
+                         (stepInput.game.skipPhase.pressed && !tutorial->IsComplete()))) {
+                        tutorial->SkipToFreePractice();
+                    }
+                    FlowBattleResult result = FlowBattleResult::None;
+                    if (combatSession) {
+                        result = combatSession->GetPhase() == BattlePhase::Clear
+                            ? FlowBattleResult::Clear :
+                            combatSession->GetPhase() == BattlePhase::GameOver
+                            ? FlowBattleResult::GameOver : FlowBattleResult::Playing;
+                    }
+                    gameFlow->Update(static_cast<float>(FixedStepClock::kStepSeconds),
+                        stepInput.game, result, tutorialWasComplete);
+                    if (gameFlow->ConsumePhaseChanged()) {
+                        combatSession.reset();
+                        firstPersonGame->ResetCombatState();
+                        if (fullGame) {
+                            std::vector<std::string> targetIds;
+                            for (const FirstPersonTarget& target : firstPersonGame->GetTargets())
+                                targetIds.push_back(target.id);
+                            for (const std::string& id : targetIds)
+                                firstPersonGame->RemoveTarget(id);
+                        }
+                        const FlowPhase phase = gameFlow->GetPhase();
+                        SDL_Log("Full game phase: %d", static_cast<int>(phase));
+                        const char* phaseTitle = phase == FlowPhase::Title
+                            ? "BiggerFISTs | Title" : phase == FlowPhase::Prologue
+                            ? "BiggerFISTs | Prologue" : phase == FlowPhase::Story0
+                            ? "BiggerFISTs | Story 0" : phase == FlowPhase::Tutorial
+                            ? "BiggerFISTs | Tutorial" : phase == FlowPhase::Story1
+                            ? "BiggerFISTs | Story 1" : phase == FlowPhase::Day1
+                            ? "BiggerFISTs | Day 1" : phase == FlowPhase::Story2
+                            ? "BiggerFISTs | Story 2" : phase == FlowPhase::Day2
+                            ? "BiggerFISTs | Day 2" : phase == FlowPhase::Story3
+                            ? "BiggerFISTs | Story 3" : phase == FlowPhase::Boss
+                            ? "BiggerFISTs | Boss" : "BiggerFISTs | Ending";
+                        SDL_SetWindowTitle(window, phaseTitle);
+                        cockpitVisible = true;
+                        if (phase == FlowPhase::Tutorial) {
+                            tutorial->Start(ObserveTutorial(*firstPersonGame));
+                            firstPersonGame->SpawnTarget({"target_tutorial_left", {-1.55f, 4.55f, 9.0f}, 1,
+                                {}, false, 2.0f});
+                            firstPersonGame->SpawnTarget({"target_tutorial_right", {1.55f, 4.55f, 9.0f}, 1,
+                                {}, false, 2.0f});
+                            cockpitStartupRemaining = 4.8f;
+                            tutorialDefenseElapsed = 0.0f;
+                            tutorialMissileActive = false;
+                        } else if (gameFlow->IsBattlePhase()) {
+                            const BattlePreviewKind kind = phase == FlowPhase::Day1
+                                ? BattlePreviewKind::Day1 : phase == FlowPhase::Day2
+                                ? BattlePreviewKind::Day2 : BattlePreviewKind::Boss;
+                            EncounterConfig encounter;
+                            BattleCombatConfig battleConfig;
+                            const char* encounterName = kind == BattlePreviewKind::Day1
+                                ? "day1-encounter.cfg" : "day2-encounter.cfg";
+                            if (!LoadBattleCombatConfig(executableDirectory, battleConfig, loadError) ||
+                                (kind != BattlePreviewKind::Boss &&
+                                !LoadEncounterConfig(executableDirectory / encounterName,
+                                    encounter, loadError))) {
+                                SDL_Log("%s", loadError.c_str());
+                                exitCode = 1;
+                                isRunning = false;
+                                break;
+                            }
+                            combatSession.emplace(kind, *firstPersonGame,
+                                std::move(encounter), battleConfig);
+                            cockpitStartupRemaining = 4.8f;
+                        } else {
+                            firstPersonView->ClearDynamic();
+                            cockpitStartupRemaining = 0.0f;
+                        }
+                        if (!options.smokeTest) {
+                            const bool capture = phase == FlowPhase::Tutorial ||
+                                gameFlow->IsBattlePhase();
+                            SDL_SetWindowRelativeMouseMode(window, capture);
+                        }
+                        const std::string music = phase == FlowPhase::Tutorial ? "elevator" :
+                            phase == FlowPhase::Day1 || phase == FlowPhase::Day2 ? "energetic" :
+                            phase == FlowPhase::Boss ? "boss" :
+                            phase == FlowPhase::Ending ? "win" :
+                            phase == FlowPhase::Title ? "" : "hisAction";
+                        combatFeedback->SetMusic(music);
+                    }
+                    if (gameFlow->GetScreenState().presentation != FlowPresentation::Normal) {
+                        continue;
+                    }
+                    if (cockpitStartupRemaining > 0.0f) {
+                        cockpitStartupRemaining -= static_cast<float>(FixedStepClock::kStepSeconds);
+                        if (cockpitStartupRemaining <= 0.0f && combatSession)
+                            combatSession->Start(options.smokeTest);
+                        continue;
+                    }
+                    if (stepInput.game.switchView.pressed &&
+                        (gameFlow->IsBattlePhase() ||
+                         (gameFlow->GetPhase() == FlowPhase::Tutorial &&
+                          tutorial->IsCockpitConnected()))) {
+                        cockpitVisible = !cockpitVisible;
+                    }
+                    if (gameFlow->GetPhase() == FlowPhase::Tutorial) {
+                        GameInput tutorialInput = tutorial->FilterInput(stepInput.game);
+                        if (tutorial->GetStep() == TutorialStep::Defense) {
+                            tutorialDefenseElapsed += static_cast<float>(FixedStepClock::kStepSeconds);
+                            if (!tutorialMissileActive && tutorialDefenseElapsed >= 1.0f) {
+                                const Vector3& position = firstPersonGame->GetPlayer().GetPosition();
+                                tutorialMissilePosition = {position.x, 4.55f, position.z + 18.0f};
+                                tutorialMissileActive = firstPersonGame->SpawnTarget(
+                                    {"target_tutorial_missile", tutorialMissilePosition,
+                                        1, {}, false, 1.0f});
+                                tutorialDefenseElapsed = 0.0f;
+                            }
+                        }
+                        const Vector3 previousMissilePosition = tutorialMissilePosition;
+                        if (tutorialMissileActive) {
+                            tutorialMissilePosition.z -=
+                                12.0f * static_cast<float>(FixedStepClock::kStepSeconds);
+                            firstPersonGame->MoveTarget("target_tutorial_missile",
+                                tutorialMissilePosition);
+                        }
+                        firstPersonGame->Update(FixedStepClock::kStepSeconds,
+                            tutorialInput, stepInput.mouseDeltaX, stepInput.mouseDeltaY);
+                        if (tutorialMissileActive) {
+                            const auto& targets = firstPersonGame->GetTargets();
+                            const auto missile = std::find_if(targets.begin(), targets.end(),
+                                [](const FirstPersonTarget& target) {
+                                    return target.id == "target_tutorial_missile";
+                                });
+                            if (missile == targets.end() || missile->hitPoints <= 0) {
+                                firstPersonGame->RemoveTarget("target_tutorial_missile");
+                                tutorialMissileActive = false;
+                            }
+                        }
+                        if (tutorialMissileActive) {
+                            const Vector3& position = firstPersonGame->GetPlayer().GetPosition();
+                            const Collision::Sphere body{
+                                {position.x, 4.55f, position.z}, 1.6f};
+                            if (Collision::SweepSphereAgainstSphere(previousMissilePosition,
+                                    tutorialMissilePosition, 1.0f, body).didHit) {
+                                firstPersonGame->ReceivePlayerHit(PlayerHitType::Projectile);
+                                firstPersonGame->RemoveTarget("target_tutorial_missile");
+                                tutorialMissileActive = false;
+                            } else if (tutorialMissilePosition.z < position.z - 5.0f) {
+                                firstPersonGame->RemoveTarget("target_tutorial_missile");
+                                tutorialMissileActive = false;
+                            }
+                        }
+                        tutorial->Update(static_cast<float>(FixedStepClock::kStepSeconds),
+                            stepInput.game, ObserveTutorial(*firstPersonGame));
+                        if (tutorial->GetStep() != TutorialStep::Defense && tutorialMissileActive) {
+                            firstPersonGame->RemoveTarget("target_tutorial_missile");
+                            tutorialMissileActive = false;
+                        }
+                        if (const char* cue = tutorial->ConsumeVoiceCue())
+                            combatFeedback->PlayTutorialVoice(cue);
+                        if (tutorial->GetStep() == TutorialStep::RocketPunch) {
+                            for (const char* id : {"target_tutorial_left", "target_tutorial_right"}) {
+                                auto found = std::find_if(firstPersonGame->GetTargets().begin(),
+                                    firstPersonGame->GetTargets().end(),
+                                    [&](const FirstPersonTarget& target) { return target.id == id; });
+                                if (found != firstPersonGame->GetTargets().end() &&
+                                    found->hitPoints <= 0) {
+                                    firstPersonGame->RemoveTarget(id);
+                                    firstPersonGame->SpawnTarget({id,
+                                        {std::string_view(id).ends_with("left") ? -1.55f : 1.55f,
+                                            4.55f, 9.0f},
+                                        1, {}, false, 2.0f});
+                                }
+                            }
+                        }
+                    } else if (!combatSession) {
+                        continue;
+                    }
+                }
                 if (combatSession) {
                     const BattlePhase previousPhase = combatSession->GetPhase();
                     const int previousBaseHitPoints = combatSession->GetBaseHitPoints();
@@ -351,6 +592,8 @@ int Application::Run(const ApplicationOptions& options) {
                         ? previousBoss->GetHitPoints() : -1;
                     combatSession->Update(static_cast<float>(FixedStepClock::kStepSeconds),
                         stepInput.game, stepInput.mouseDeltaX, stepInput.mouseDeltaY);
+                    firstPersonView->QueueVisualEvents(
+                        combatSession->GetVisualEvents());
                     if (combatSession->GetBaseHitPoints() != previousBaseHitPoints) {
                         SDL_Log("Base hit: HP=%d", combatSession->GetBaseHitPoints());
                     }
@@ -376,7 +619,7 @@ int Application::Run(const ApplicationOptions& options) {
                             combatSession->GetWaveIndex() + 1,
                             combatSession->GetWaveCount());
                     }
-                } else {
+                } else if (!gameFlow) {
                     firstPersonGame->Update(FixedStepClock::kStepSeconds, stepInput.game,
                         stepInput.mouseDeltaX, stepInput.mouseDeltaY);
                 }
@@ -468,6 +711,7 @@ int Application::Run(const ApplicationOptions& options) {
                     break;
                 }
             }
+            firstPersonView->AdvanceVisualTime(deltaTime);
             firstPersonView->Sync(*firstPersonGame);
             if (combatSession) {
                 firstPersonView->SyncBattle(*combatSession, battleAssets);
@@ -497,11 +741,28 @@ int Application::Run(const ApplicationOptions& options) {
                     }
                     SDL_SetWindowTitle(window, title);
                 }
+            } else if (gameFlow && gameFlow->GetPhase() == FlowPhase::Tutorial) {
+                firstPersonView->SyncTutorial(*firstPersonGame, battleAssets,
+                    tutorial->ShouldShowTargets());
+            }
+            if (gameFlow && (gameFlow->GetPhase() == FlowPhase::Tutorial ||
+                    gameFlow->IsBattlePhase())) {
+                firstPersonView->SyncCockpit(*firstPersonGame, battleAssets,
+                    cockpitVisible && (gameFlow->GetPhase() != FlowPhase::Tutorial ||
+                    tutorial->IsCockpitConnected() || cockpitStartupRemaining > 0.0f),
+                    std::clamp(cockpitStartupRemaining / 4.8f, 0.0f, 1.0f));
             }
         } else {
             game.Update(deltaTime, gameInput);
         }
         const ModelScene& scene = firstPersonView ? firstPersonView->GetScene() : game.GetScene();
+        if (gameFlow) {
+            fullGameElapsed += deltaTime;
+            BuildFullGameUi(gameFlow->GetScreenState(),
+                gameFlow->GetPhase() == FlowPhase::Tutorial ? &*tutorial : nullptr,
+                combatSession ? &*combatSession : nullptr, *firstPersonGame,
+                fullGameElapsed, cockpitStartupRemaining, uiDrawList);
+        }
         if (options.dynamicTargetSmokeTest) {
             const ModelInstance* dynamicTarget = FindModelById(scene, "target_dynamic");
             const bool shouldExist = renderedFrames >= 5 && renderedFrames < 25;
@@ -520,7 +781,8 @@ int Application::Run(const ApplicationOptions& options) {
         if (options.smokeTest) {
             smokeUpdateNanoseconds += renderStarted - frameStarted;
         }
-        if (!renderer.Render(scene, windowSettings, &frameRendered)) {
+        if (!renderer.Render(scene, windowSettings, &frameRendered,
+                gameFlow ? &uiRenderer : nullptr, gameFlow ? &uiDrawList : nullptr)) {
             SDL_Log("3D rendering failed");
             isRunning = false;
             exitCode = 1;
@@ -535,6 +797,8 @@ int Application::Run(const ApplicationOptions& options) {
                     smokeRenderNanoseconds / (static_cast<double>(options.smokeFrames) * 1000000.0));
                 if (options.dynamicTargetSmokeTest) {
                     SDL_Log("PASS: Dynamic Target spawned, moved, removed and rendered across 30 GPU frames");
+                } else if (gameFlow) {
+                    SDL_Log("PASS: Full game rendered %d GPU frames with UI", options.smokeFrames);
                 } else if (battlePreview) {
                     SDL_Log("PASS: Battle preview rendered %d GPU frames with %u models, %u enemies and %u projectiles",
                         options.smokeFrames,
@@ -563,6 +827,8 @@ int Application::Run(const ApplicationOptions& options) {
         }
 
         frameTimer.EndFrame();
+        if (gameFlow && combatFeedback)
+            combatFeedback->UpdateMusic(static_cast<float>(deltaTime));
     }
 
     if (options.firstPersonPreview && !options.smokeTest) {
@@ -571,6 +837,7 @@ int Application::Run(const ApplicationOptions& options) {
     if (combatFeedback) {
         combatFeedback->Shutdown();
     }
+    uiRenderer.Shutdown();
     renderer.Shutdown();
     SDL_DestroyWindow(window);
     SDL_Quit();

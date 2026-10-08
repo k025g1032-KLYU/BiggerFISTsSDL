@@ -298,7 +298,113 @@ void CombatFeedback::PlayBattleEvent(BattleFeedbackEvent event) {
     }
 }
 
+bool CombatFeedback::InitializeFullGameAudio(
+    const std::filesystem::path& soundDirectory, std::string& error) {
+    for (const char* name : {"elevator", "hisAction", "energetic", "boss", "win"}) {
+        Clip& clip = music_[name];
+        if (!LoadClip(soundDirectory / "BGM" / (std::string(name) + ".wav"),
+                clip, error)) return false;
+        if (audioDevice_ != 0 && !CreateVoices(clip, 1)) {
+            error = std::string("Could not create music stream for ") + name + ": " + SDL_GetError();
+            return false;
+        }
+    }
+    for (const char* name : {"personnel.wav", "system/system_check_start.wav",
+            "system/system_visual_link_pass.wav", "system/system_mobility_pass.wav",
+            "system/system_punch_pass.wav", "system/system_rocket_pass.wav",
+            "system/system_defense_pass.wav", "system/system_dodge_pass.wav",
+            "system/system_all_green.wav"}) {
+        Clip& clip = tutorialVoices_[name];
+        if (!LoadClip(soundDirectory / "Tutorial" / name, clip, error)) return false;
+        if (audioDevice_ != 0 && !CreateVoices(clip, 1)) {
+            error = std::string("Could not create tutorial voice stream for ") + name +
+                ": " + SDL_GetError();
+            return false;
+        }
+    }
+    return true;
+}
+
+void CombatFeedback::SetMusic(const std::string& name) {
+    if (name == currentMusic_ && pendingMusic_.empty()) return;
+    if (!name.empty() && !music_.contains(name)) return;
+    pendingMusic_ = name;
+    musicFadeRemaining_ = currentMusic_.empty() ? 0.0f : 0.4f;
+    if (name == "elevator" && currentMusic_ != "elevator") {
+        tutorialCheckPending_ = false;
+        tutorialCheckPlayed_ = false;
+    }
+}
+
+void CombatFeedback::PlayTutorialVoice(const std::string& name) {
+    const auto found = tutorialVoices_.find(name);
+    if (found == tutorialVoices_.end()) return;
+    if (!currentVoice_.empty()) {
+        for (SDL_AudioStream* stream : tutorialVoices_[currentVoice_].voices)
+            SDL_ClearAudioStream(stream);
+    }
+    currentVoice_ = name;
+    PlayClip(found->second, 0.9f);
+    if (name == "personnel.wav" && !tutorialCheckPlayed_)
+        tutorialCheckPending_ = true;
+}
+
+bool CombatFeedback::IsTutorialVoicePlaying() const {
+    if (currentVoice_.empty()) return false;
+    const auto found = tutorialVoices_.find(currentVoice_);
+    return found != tutorialVoices_.end() && !found->second.voices.empty() &&
+        SDL_GetAudioStreamQueued(found->second.voices.front()) > 0;
+}
+
+void CombatFeedback::UpdateMusic(float seconds) {
+    if (audioDevice_ == 0) return;
+    if (tutorialCheckPending_ && !IsTutorialVoicePlaying()) {
+        tutorialCheckPending_ = false;
+        tutorialCheckPlayed_ = true;
+        PlayTutorialVoice("system/system_check_start.wav");
+    }
+    if (musicFadeRemaining_ > 0.0f) {
+        musicFadeRemaining_ = std::max(0.0f, musicFadeRemaining_ - seconds);
+        if (!currentMusic_.empty()) {
+            auto* stream = music_[currentMusic_].voices.front();
+            SDL_SetAudioStreamGain(stream, musicFadeRemaining_ / 0.4f * 0.45f);
+        }
+    }
+    if (musicFadeRemaining_ <= 0.0f && currentMusic_ != pendingMusic_) {
+        if (!currentMusic_.empty())
+            SDL_ClearAudioStream(music_[currentMusic_].voices.front());
+        currentMusic_ = pendingMusic_;
+    }
+    if (currentMusic_.empty()) return;
+    Clip& clip = music_[currentMusic_];
+    SDL_AudioStream* stream = clip.voices.front();
+    const float gain = currentMusic_ == "elevator"
+        ? (IsTutorialVoicePlaying() ? 0.20f : 0.45f)
+        : currentMusic_ == "hisAction" ? 0.42f
+        : currentMusic_ == "boss" ? 0.48f
+        : currentMusic_ == "win" ? 0.50f : 0.45f;
+    if (musicFadeRemaining_ <= 0.0f) SDL_SetAudioStreamGain(stream, gain);
+    if (SDL_GetAudioStreamQueued(stream) <= 0) {
+        if (!SDL_PutAudioStreamData(stream, clip.samples.data(),
+                static_cast<int>(clip.samples.size())) || !SDL_FlushAudioStream(stream)) {
+            SDL_Log("Could not loop music %s: %s", currentMusic_.c_str(), SDL_GetError());
+        }
+    }
+}
+
 void CombatFeedback::Shutdown() {
+    for (auto* collection : {&music_, &tutorialVoices_}) {
+        for (auto& [name, clip] : *collection) {
+            for (SDL_AudioStream* stream : clip.voices) SDL_DestroyAudioStream(stream);
+            clip.voices.clear();
+        }
+        collection->clear();
+    }
+    currentMusic_.clear();
+    pendingMusic_.clear();
+    currentVoice_.clear();
+    tutorialCheckPending_ = false;
+    tutorialCheckPlayed_ = false;
     if (gamepad_ != nullptr) {
         if (SDL_GamepadConnected(gamepad_)) {
             SDL_RumbleGamepad(gamepad_, 0, 0, 0);

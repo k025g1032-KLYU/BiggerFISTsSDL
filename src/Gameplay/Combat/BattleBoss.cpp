@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 
 namespace {
 Vector3 DirectionTo(const Vector3& from, const Vector3& to) {
@@ -25,6 +26,8 @@ void BattleBoss::Reset(const Vector3& position) {
     previousPosition_ = position;
     mode_ = BossMode::Entrance;
     modeTime_ = 0.0f;
+    entranceRecovering_ = false;
+    entranceRecoveryTime_ = 0.0f;
     attackTimer_ = 0.0f;
     hitPoints_ = config_.coreHitPoints;
     behaviorRandomState_ = 0x6d2b79f5u;
@@ -78,6 +81,99 @@ void BattleBoss::Reset(const Vector3& position) {
     boxerRocketDodgeCooldown_ = 0.0f;
     rocketDodgeSpeed_ = 0.0f;
     beganRocketDodgeThisStep_ = false;
+    visualYaw_ = 0.0f;
+}
+
+BossVisualPose BattleBoss::GetVisualPose() const {
+    constexpr float pi = std::numbers::pi_v<float>;
+    constexpr std::array<BossPartPose, 3> cruise{{
+        {{1.0f, 0.0f, 0.0f}, {0.30f, pi - 0.70f, 0.10f}},
+        {{-1.0f, 0.0f, 0.0f}, {0.30f, pi + 0.70f, -0.10f}},
+        {{0.0f, 0.0f, 0.0f}, {-0.72f, pi, 0.0f}}
+    }};
+    constexpr std::array<BossPartPose, 3> spread{{
+        {{}, {0.30f, -0.70f, 0.10f}},
+        {{}, {0.30f, 0.70f, -0.10f}},
+        {{}, {-0.72f, 0.0f, 0.0f}}
+    }};
+    constexpr std::array<BossPartPose, 3> needle{{
+        {{2.10f, 1.20f, 2.50f}, {0.0f, pi / 18.0f, 0.0f}},
+        {{-2.10f, 1.20f, 2.50f}, {0.0f, -pi / 18.0f, 0.0f}},
+        {{0.0f, -2.10f, 2.50f}, {pi / 18.0f, 0.0f, 0.0f}}
+    }};
+    BossVisualPose pose;
+    pose.rootRotation.y = visualYaw_;
+    pose.cones = cruise;
+    pose.crystalAngle = crystalAngle_;
+    if (mode_ == BossMode::Entrance) {
+        const float recoveryRatio = entranceRecovering_
+            ? std::clamp(entranceRecoveryTime_ /
+                config_.entranceFlipDuration, 0.0f, 1.0f)
+            : 0.0f;
+        pose.rootRotation.x = -pi * 0.5f * (1.0f - recoveryRatio);
+    } else if (mode_ == BossMode::Charge) {
+        pose.cones = {};
+        pose.coreRotation.x = pi * 0.5f;
+    } else if (mode_ == BossMode::NeedleCombo || mode_ == BossMode::Boxer) {
+        pose.cones = needle;
+        if (activeAttackId_ != 0) {
+            const std::size_t index = mode_ == BossMode::NeedleCombo
+                ? static_cast<std::size_t>(std::clamp(attackCount_ - 1, 0, 2))
+                : 0;
+            const Vector3 direction = DirectionTo(position_, strikePrevious_);
+            const float distance = std::hypot(strikePrevious_.x - position_.x,
+                strikePrevious_.z - position_.z);
+            const float localAngle = std::atan2(direction.x, direction.z) - visualYaw_;
+            pose.cones[index].rootTranslation = {
+                std::sin(localAngle) * distance,
+                strikePrevious_.y - position_.y,
+                std::cos(localAngle) * distance};
+            pose.cones[index].translation = {};
+        }
+    } else if (mode_ == BossMode::SpreadCounter) {
+        pose.cones = spread;
+        const float spinTime = modeTime_ - config_.spreadWindupDuration;
+        if (spinTime > 0.0f && spinTime < config_.spreadSpinDuration) {
+            pose.spreadSpin = std::clamp(spinTime /
+                config_.spreadSpinDuration, 0.0f, 1.0f) *
+                4.0f * pi;
+        }
+    } else if (mode_ == BossMode::FullBarrage) {
+        const float height = position_.y - config_.hoverHeight;
+        pose.rootRotation.x = pi * 0.5f *
+            std::clamp(height / 12.0f, 0.0f, 1.0f);
+    } else if (mode_ == BossMode::Defeating || mode_ == BossMode::Defeated) {
+        pose.rootRotation.x = modeTime_ * 2.2f;
+        pose.rootRotation.y += modeTime_ * 3.0f;
+        pose.rootRotation.z = modeTime_ * 1.2f;
+    }
+    for (std::size_t index = 0; index < pose.spikes.size(); ++index) {
+        const float angle = crystalAngle_ + 2.0f * pi *
+            static_cast<float>(index) / static_cast<float>(pose.spikes.size());
+        const float progress = std::clamp(spikeSlots_[index].launchTime /
+            std::max(0.001f, config_.crystalLaunchDuration), 0.0f, 1.0f);
+        pose.spikes[index] = {{
+            std::cos(angle) * config_.crystalHaloRadius,
+            std::sin(angle) * config_.crystalHaloRadius +
+                config_.crystalLaunchHeight * progress,
+            config_.crystalHaloBackOffset},
+            {0.0f, 0.0f, angle - pi * 0.5f}};
+    }
+    for (std::size_t index = 0; index < pose.cubes.size(); ++index) {
+        const float angle = crystalAngle_ + pi /
+            static_cast<float>(pose.cubes.size()) + 2.0f * pi *
+            static_cast<float>(index) / static_cast<float>(pose.cubes.size());
+        const float progress = std::clamp(cubeSlots_[index].launchTime /
+            std::max(0.001f, config_.crystalLaunchDuration), 0.0f, 1.0f);
+        pose.cubes[index] = {{
+            std::cos(angle) * config_.crystalHaloRadius * 0.76f,
+            std::sin(angle) * config_.crystalHaloRadius * 0.76f +
+                config_.crystalLaunchHeight * progress,
+            config_.crystalHaloBackOffset},
+            {crystalAngle_ * 0.55f, -crystalAngle_,
+                static_cast<float>(index) * 0.45f}};
+    }
+    return pose;
 }
 
 void BattleBoss::BeginBehavior(BossMode mode) {
@@ -349,10 +445,20 @@ void BattleBoss::UpdateCrystals(float seconds,
             const float angle = crystalAngle_ + phase +
                 6.283185307f * static_cast<float>(index) /
                     static_cast<float>(slots.size());
-            slot.position = {position_.x + std::cos(angle) *
-                    config_.crystalHaloRadius * radiusScale,
-                position_.y, position_.z - config_.crystalHaloBackOffset +
-                    std::sin(angle) * config_.crystalHaloRadius * radiusScale};
+            const float localX = std::cos(angle) *
+                config_.crystalHaloRadius * radiusScale;
+            const float localY = std::sin(angle) *
+                config_.crystalHaloRadius * radiusScale;
+            const float rightX = std::cos(visualYaw_);
+            const float rightZ = -std::sin(visualYaw_);
+            const float forwardX = std::sin(visualYaw_);
+            const float forwardZ = std::cos(visualYaw_);
+            slot.position = {
+                position_.x + rightX * localX +
+                    forwardX * config_.crystalHaloBackOffset,
+                position_.y + localY,
+                position_.z + rightZ * localX +
+                    forwardZ * config_.crystalHaloBackOffset};
             if (slot.launchTime > 0.0f) {
                 slot.launchTime += seconds;
                 const float progress = std::min(1.0f, slot.launchTime /
@@ -477,6 +583,15 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
     }
     previousPosition_ = position_;
     modeTime_ += seconds;
+    if ((mode_ != BossMode::Entrance || entranceRecovering_) &&
+        mode_ != BossMode::Defeating) {
+        const Vector3 towardPlayer = DirectionTo(position_, playerPosition);
+        const float targetYaw = std::atan2(towardPlayer.x,
+            towardPlayer.z) + std::numbers::pi_v<float>;
+        const float turn = std::remainder(targetYaw - visualYaw_,
+            2.0f * std::numbers::pi_v<float>);
+        visualYaw_ += std::clamp(turn, -5.5f * seconds, 5.5f * seconds);
+    }
     spreadCooldown_ = std::max(0.0f, spreadCooldown_ - seconds);
     boxerCooldown_ = std::max(0.0f, boxerCooldown_ - seconds);
     chargeCooldown_ = std::max(0.0f, chargeCooldown_ - seconds);
@@ -499,10 +614,22 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
     }
     switch (mode_) {
     case BossMode::Entrance:
-        position_.y = std::max(config_.hoverHeight,
-            position_.y - config_.entranceDropSpeed * seconds);
-        if (position_.y <= config_.hoverHeight) {
-            BeginBehavior(BossMode::Idle);
+        if (!entranceRecovering_) {
+            position_.y = std::max(config_.hoverHeight +
+                config_.entranceFlipStartHeight,
+                position_.y - config_.entranceDropSpeed * seconds);
+            if (position_.y <= config_.hoverHeight +
+                    config_.entranceFlipStartHeight) {
+                entranceRecovering_ = true;
+                entranceRecoveryTime_ = 0.0f;
+            }
+        } else {
+            entranceRecoveryTime_ += seconds;
+            const float ratio = std::clamp(entranceRecoveryTime_ /
+                config_.entranceFlipDuration, 0.0f, 1.0f);
+            position_.y = config_.hoverHeight +
+                config_.entranceFlipStartHeight * (1.0f - ratio);
+            if (ratio >= 1.0f) BeginBehavior(BossMode::Idle);
         }
         break;
     case BossMode::Cruise:

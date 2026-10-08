@@ -13,7 +13,7 @@ std::string PathToUtf8(const std::filesystem::path& path) {
 
 bool LoadSceneAssets(const std::filesystem::path& modelDirectory,
     const SceneConfig& config, std::vector<MeshData>& meshes,
-    ModelScene& scene, std::string& error) {
+    ModelScene& scene, std::string& error, ModelOrigin origin) {
     meshes.clear();
     scene = {};
     scene.models.clear();
@@ -63,7 +63,8 @@ bool LoadSceneAssets(const std::filesystem::path& modelDirectory,
         ModelInstance instance;
         instance.id = entry.id;
         instance.meshIndex = meshIndex;
-        instance.modelCenter = loadedBounds[meshIndex].center;
+        instance.modelCenter = origin == ModelOrigin::BoundsCenter
+            ? loadedBounds[meshIndex].center : Vector3{};
         instance.position = entry.position;
         instance.scale = entry.scale;
         instance.initialXDegrees = entry.initialXDegrees;
@@ -71,6 +72,7 @@ bool LoadSceneAssets(const std::filesystem::path& modelDirectory,
         instance.initialZDegrees = entry.initialZDegrees;
         instance.rotationXDegreesPerSecond = entry.rotationXDegreesPerSecond;
         instance.rotationYDegreesPerSecond = entry.rotationYDegreesPerSecond;
+        instance.transparent = entry.transparent;
         loadedScene.models.push_back(instance);
     }
 

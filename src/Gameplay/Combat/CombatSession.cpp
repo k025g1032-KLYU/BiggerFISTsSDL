@@ -41,6 +41,7 @@ void CombatSession::Reset() {
     ultimateHitIds_.clear();
     bossAttackHits_.clear();
     feedbackEvents_.clear();
+    visualEvents_.clear();
     director_.Reset();
     random_.seed(0xB16F157u);
     baseHitPoints_ = kind_ == BattlePreviewKind::Day2
@@ -269,7 +270,7 @@ void CombatSession::UpdateBoss(float seconds) {
                     attack.previousPosition, attack.position, attack.radius,
                     previousPlayerCenter, playerCenter,
                     FirstPersonTuning::kPlayerColliderRadius).didHit) {
-                player_.ReceivePlayerHit(
+                ReceivePlayerHit(
                     attack.type == BossAttackType::NeedleImpact
                         ? PlayerHitType::NeedleFinisher
                         : PlayerHitType::Projectile,
@@ -282,11 +283,11 @@ void CombatSession::UpdateBoss(float seconds) {
                 bossAttackHits_.insert(attack.attackId);
             }
         } else if (attack.type == BossAttackType::SpreadBurst) {
-            player_.ReceivePlayerHit(PlayerHitType::BossSpreadBurst,
+            ReceivePlayerHit(PlayerHitType::BossSpreadBurst,
                 {playerPosition.x - attack.position.x, 0.0f,
                     playerPosition.z - attack.position.z});
         } else {
-            player_.ReceivePlayerHit(attack.type == BossAttackType::ChargeImpact
+            ReceivePlayerHit(attack.type == BossAttackType::ChargeImpact
                 ? PlayerHitType::ChargeUnit : PlayerHitType::Projectile,
                 {playerPosition.x - attack.position.x, 0.0f,
                     playerPosition.z - attack.position.z});
@@ -313,6 +314,7 @@ std::array<int, 3> CombatSession::CountActiveEnemies() const {
 void CombatSession::UpdateEnemies(float seconds) {
     for (BattleEnemy& enemy : enemies_) {
         enemy.previousPosition = enemy.position;
+        enemy.visualAge += seconds;
         enemy.chargeDamageActiveThisStep = false;
         if (enemy.defeated) {
             enemy.stateTimer += seconds;
@@ -355,6 +357,11 @@ void CombatSession::UpdateEnemies(float seconds) {
             UpdateChargeEnemy(enemy, seconds);
         } else {
             const bool isMissile = enemy.type == BattleEnemyType::MissileUnit;
+            if (!isMissile) {
+                enemy.carriedBombScale = std::min(1.0f,
+                    enemy.carriedBombScale + seconds /
+                        std::max(0.001f, config_.enemy.bomberFireCooldown));
+            }
             const bool patrol = !isMissile ||
                 enemy.missileState == BattleEnemy::MissileState::Patrolling;
             if (patrol) {
@@ -409,6 +416,7 @@ void CombatSession::UpdateEnemies(float seconds) {
                         enemy.position.z - 1.1f}, {0.0f, 0.0f, -1.0f},
                     enemy.rotation);
                 enemy.attackTimer = config_.enemy.bomberFireCooldown;
+                enemy.carriedBombScale = 0.0f;
                 enemy.rotation += 3.14159265f;
                 std::uniform_real_distribution<float> speedDistribution(
                     config_.enemy.bomberMinimumMoveSpeed,
@@ -484,6 +492,8 @@ void CombatSession::UpdateChargeEnemy(BattleEnemy& enemy, float seconds) {
         enemy.chargeState = BattleEnemy::ChargeState::Preparing;
         enemy.chargeTimer = 0.0f;
         enemy.chargeDirection = toPlayer;
+        enemy.visualYaw = std::atan2(toPlayer.x, toPlayer.z) +
+            1.570796327f;
         enemy.chargeTarget = playerPosition;
     };
     switch (enemy.chargeState) {
@@ -499,6 +509,7 @@ void CombatSession::UpdateChargeEnemy(BattleEnemy& enemy, float seconds) {
         } else {
             moveSafely({0.0f, 0.0f, -1.0f},
                 config_.enemy.chargeApproachSpeed * seconds);
+            enemy.visualYaw = 4.71238898f;
         }
         break;
     case BattleEnemy::ChargeState::Repositioning:
@@ -510,9 +521,15 @@ void CombatSession::UpdateChargeEnemy(BattleEnemy& enemy, float seconds) {
         } else {
             moveSafely({-toPlayer.x, 0.0f, -toPlayer.z},
                 config_.enemy.chargeRepositionSpeed * seconds);
+            enemy.visualYaw = std::atan2(toPlayer.x, toPlayer.z) +
+                1.570796327f;
         }
         break;
     case BattleEnemy::ChargeState::ReacquiringTarget:
+        enemy.visualYaw += std::clamp(std::remainder(
+            std::atan2(toPlayer.x, toPlayer.z) + 1.570796327f -
+                enemy.visualYaw, 6.283185307f),
+            -4.5f * seconds, 4.5f * seconds);
         enemy.chargeTimer += seconds;
         if (enemy.chargeTimer >= 0.5f) {
             enemy.chargeTimer = 0.0f;
@@ -673,7 +690,7 @@ void CombatSession::ResolveProjectileImpacts() {
         if (Collision::SweepSphereAgainstMovingSphere(projectile.previousPosition,
                 projectile.position, radius, previousPlayerPosition,
                 playerPosition, FirstPersonTuning::kPlayerColliderRadius).didHit) {
-            player_.ReceivePlayerHit(PlayerHitType::Projectile);
+            ReceivePlayerHit(PlayerHitType::Projectile);
             player_.RemoveTarget(projectile.id);
             projectile.age = -1.0f;
         } else if (Collision::SweepSphereAgainstSphere(projectile.previousPosition,
@@ -681,6 +698,8 @@ void CombatSession::ResolveProjectileImpacts() {
                 {kBasePosition, kBaseRadius}).didHit) {
             baseHitPoints_ = std::max(0, baseHitPoints_ - 1);
             feedbackEvents_.push_back(BattleFeedbackEvent::BaseDamaged);
+            visualEvents_.push_back({BattleVisualEffect::Explosion,
+                projectile.position, 1.0f});
             player_.RemoveTarget(projectile.id);
             projectile.age = -1.0f;
         }
@@ -704,7 +723,7 @@ void CombatSession::ResolveChargeImpacts() {
                 enemy.position, config_.enemy.radius,
                 previousPlayerPosition, playerPosition,
                 FirstPersonTuning::kPlayerColliderRadius).didHit) {
-            player_.ReceivePlayerHit(PlayerHitType::ChargeUnit,
+            ReceivePlayerHit(PlayerHitType::ChargeUnit,
                 {playerPosition.x - enemy.position.x, 0.0f,
                     playerPosition.z - enemy.position.z});
             enemy.chargeState = BattleEnemy::ChargeState::Impact;
@@ -723,6 +742,18 @@ void CombatSession::ProcessPlayerHits() {
     });
 }
 
+PlayerHitResult CombatSession::ReceivePlayerHit(PlayerHitType type,
+    const Vector3& pushDirection) {
+    const PlayerHitResult result = player_.ReceivePlayerHit(type, pushDirection);
+    if (result.wasApplied && result.shieldLayersLost > 0) {
+        Vector3 center = player_.GetPlayer().GetPosition();
+        center.y += FirstPersonTuning::kPlayerColliderCenterHeight;
+        visualEvents_.push_back({BattleVisualEffect::ShieldHit, center,
+            1.0f, result.shieldLayersBeforeHit});
+    }
+    return result;
+}
+
 bool CombatSession::ApplyTargetDamage(std::string_view id, int damage) {
     if (phase_ != BattlePhase::Playing || damage <= 0) {
         return false;
@@ -733,6 +764,9 @@ bool CombatSession::ApplyTargetDamage(std::string_view id, int damage) {
             feedbackEvents_.push_back(boss_->GetMode() == BossMode::Defeating
                 ? BattleFeedbackEvent::BossDefeated
                 : BattleFeedbackEvent::BossDamaged);
+            if (boss_->GetMode() == BossMode::Defeating)
+                visualEvents_.push_back({BattleVisualEffect::Explosion,
+                    boss_->GetPosition(), 3.0f});
         }
         if (applied && boss_->GetMode() == BossMode::Defeating) {
             player_.RemoveTarget(kBossTargetId);
@@ -743,6 +777,8 @@ bool CombatSession::ApplyTargetDamage(std::string_view id, int damage) {
         if (enemy.id == id && !enemy.defeated) {
             enemy.defeated = true;
             feedbackEvents_.push_back(BattleFeedbackEvent::EnemyDefeated);
+            visualEvents_.push_back({BattleVisualEffect::Explosion,
+                enemy.position, 1.0f});
             enemy.stateTimer = 0.0f;
             player_.RemoveTarget(id);
             return true;
@@ -814,8 +850,13 @@ void CombatSession::ProcessUltimateHits() {
 void CombatSession::Update(float seconds, const GameInput& input,
     float mouseX, float mouseY) {
     feedbackEvents_.clear();
+    visualEvents_.clear();
     if (input.resetTarget.pressed) {
         Reset();
+        return;
+    }
+    if (phase_ == BattlePhase::GameOver && input.battleStart.pressed) {
+        Start();
         return;
     }
     if (phase_ == BattlePhase::Ready && input.battleStart.pressed) {

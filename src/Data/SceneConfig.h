@@ -16,6 +16,7 @@ struct SceneModelConfig {
     float initialZDegrees = 0.0f;
     float rotationXDegreesPerSecond = 0.0f;
     float rotationYDegreesPerSecond = 0.0f;
+    bool transparent = false;
 };
 
 struct SceneConfig {

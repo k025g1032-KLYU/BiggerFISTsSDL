@@ -63,6 +63,8 @@ set(SCENE_RENDERING_SOURCES
     src/Rendering/DepthBuffer.h
     src/Rendering/MeshRenderer.cpp
     src/Rendering/MeshRenderer.h
+    src/Rendering/UiRenderer.cpp
+    src/Rendering/UiRenderer.h
     src/Rendering/TextureLoader.cpp
     src/Rendering/TextureLoader.h
 )
@@ -116,11 +118,19 @@ add_executable(BiggerFISTsSDL
     src/Gameplay/Combat/EncounterDirector.h
     src/Gameplay/Combat/CombatSession.cpp
     src/Gameplay/Combat/CombatSession.h
+    src/Gameplay/Tutorial/TutorialSession.cpp
+    src/Gameplay/Tutorial/TutorialSession.h
     src/Gameplay/Combat/BattleBoss.cpp
     src/Gameplay/Combat/BattleBoss.h
     src/Data/BattleCombatConfig.cpp
     src/Data/BattleCombatConfig.h
     src/Rendering/BattleScenePresenter.cpp
+    src/Rendering/FullGameUi.cpp
+    src/Rendering/FullGameUi.h
+    src/Game/GameFlow.cpp
+    src/Game/GameFlow.h
+    src/Data/StoryConfig.cpp
+    src/Data/StoryConfig.h
     src/Data/ObjLoader.cpp
     src/Data/ObjLoader.h
     src/Data/MeshData.h
@@ -196,6 +206,23 @@ add_custom_target(CombatSoundAssets
     VERBATIM
 )
 add_dependencies(BiggerFISTsSDL CombatSoundAssets)
+
+add_custom_target(FullGameAssets
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/ui"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/ui"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/story"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/story"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/BGM"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/sound/BGM"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/Tutorial"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/sound/Tutorial"
+    VERBATIM
+)
+add_dependencies(BiggerFISTsSDL FullGameAssets)
 
 add_executable(InputActionsTests EXCLUDE_FROM_ALL
     tests/InputActionsTests.cpp
@@ -464,6 +491,45 @@ target_include_directories(BattleReplayTests PRIVATE src)
 add_test(NAME BattleReplayTests COMMAND BattleReplayTests
     "${CMAKE_CURRENT_SOURCE_DIR}/config")
 
+add_executable(GameFlowTests EXCLUDE_FROM_ALL
+    tests/GameFlowTests.cpp
+    src/Game/GameFlow.cpp
+    src/Data/StoryConfig.cpp
+    src/Platform/FixedStepClock.cpp
+)
+target_include_directories(GameFlowTests PRIVATE src)
+add_test(NAME GameFlowTests COMMAND GameFlowTests
+    "${CMAKE_CURRENT_SOURCE_DIR}/config")
+
+add_executable(TutorialSessionTests EXCLUDE_FROM_ALL
+    tests/TutorialSessionTests.cpp
+    src/Gameplay/Tutorial/TutorialSession.cpp
+)
+target_include_directories(TutorialSessionTests PRIVATE src)
+add_test(NAME TutorialSessionTests COMMAND TutorialSessionTests)
+
+add_executable(FullGameIntegrationTests EXCLUDE_FROM_ALL
+    tests/FullGameIntegrationTests.cpp
+    src/Game/GameFlow.cpp
+    src/Data/StoryConfig.cpp
+    src/Data/BattleCombatConfig.cpp
+    src/Gameplay/Combat/BattleBoss.cpp
+    src/Gameplay/Combat/CombatSession.cpp
+    src/Gameplay/Combat/EncounterConfig.cpp
+    src/Gameplay/Combat/EncounterDirector.cpp
+    src/Game/FirstPersonGame.cpp
+    src/Gameplay/Player/PlayerMovement.cpp
+    src/Gameplay/Player/PlayerVitality.cpp
+    src/Gameplay/Player/PunchArm.cpp
+    src/Gameplay/Combat/CombatHitResolver.cpp
+    src/Collision/Collision.cpp
+    src/World/FirstPersonCamera.cpp
+    src/Math/MathTypes.cpp
+)
+target_include_directories(FullGameIntegrationTests PRIVATE src)
+add_test(NAME FullGameIntegrationTests COMMAND FullGameIntegrationTests
+    "${CMAKE_CURRENT_SOURCE_DIR}/config")
+
 if(MSVC)
     target_compile_options(BiggerFISTsSDL PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(InputActionsTests PRIVATE /W4 /utf-8 /EHsc)
@@ -486,6 +552,9 @@ if(MSVC)
     target_compile_options(BattleBossTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(CombatSessionTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(BattleReplayTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(GameFlowTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(TutorialSessionTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(FullGameIntegrationTests PRIVATE /W4 /utf-8 /EHsc)
 endif()
 
 add_custom_command(TARGET BiggerFISTsSDL POST_BUILD
@@ -611,6 +680,11 @@ file(GENERATE
     INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/boss-combat.cfg"
 )
 
+file(GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/story-pages.cfg"
+    INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/story-pages.cfg"
+)
+
 find_program(GPU_DXC_EXECUTABLE
     NAMES dxc
     HINTS "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64"
@@ -649,6 +723,8 @@ add_custom_command(
     OUTPUT
         "${GPU_SHADER_OUTPUT_DIR}/triangle.vert.dxil"
         "${GPU_SHADER_OUTPUT_DIR}/triangle.frag.dxil"
+        "${GPU_SHADER_OUTPUT_DIR}/ui.vert.dxil"
+        "${GPU_SHADER_OUTPUT_DIR}/ui.frag.dxil"
 
     COMMAND ${CMAKE_COMMAND} -E make_directory
         "${GPU_SHADER_OUTPUT_DIR}"
@@ -665,9 +741,23 @@ add_custom_command(
         -Fo "${GPU_SHADER_OUTPUT_DIR}/triangle.frag.dxil"
         "${GPU_SHADER_SOURCE_DIR}/triangle.frag.hlsl"
 
+    COMMAND "${GPU_DXC_EXECUTABLE}"
+        -T vs_6_0
+        -E main
+        -Fo "${GPU_SHADER_OUTPUT_DIR}/ui.vert.dxil"
+        "${GPU_SHADER_SOURCE_DIR}/ui.vert.hlsl"
+
+    COMMAND "${GPU_DXC_EXECUTABLE}"
+        -T ps_6_0
+        -E main
+        -Fo "${GPU_SHADER_OUTPUT_DIR}/ui.frag.dxil"
+        "${GPU_SHADER_SOURCE_DIR}/ui.frag.hlsl"
+
     DEPENDS
         "${GPU_SHADER_SOURCE_DIR}/triangle.vert.hlsl"
         "${GPU_SHADER_SOURCE_DIR}/triangle.frag.hlsl"
+        "${GPU_SHADER_SOURCE_DIR}/ui.vert.hlsl"
+        "${GPU_SHADER_SOURCE_DIR}/ui.frag.hlsl"
 
     VERBATIM
 )
@@ -676,6 +766,8 @@ add_custom_target(CubeShaders
     DEPENDS
         "${GPU_SHADER_OUTPUT_DIR}/triangle.vert.dxil"
         "${GPU_SHADER_OUTPUT_DIR}/triangle.frag.dxil"
+        "${GPU_SHADER_OUTPUT_DIR}/ui.vert.dxil"
+        "${GPU_SHADER_OUTPUT_DIR}/ui.frag.dxil"
 )
 
 add_dependencies(GpuTriangle

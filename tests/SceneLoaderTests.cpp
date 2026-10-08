@@ -55,6 +55,16 @@ int main() {
             "preserve the left fist model roll");
     }
 
+    passed &= Expect(LoadSceneAssets(modelDirectory, config, meshes, scene, error,
+        ModelOrigin::Authored), "load models with their authored origins");
+    if (scene.models.size() == 3) {
+        passed &= Expect(scene.models[0].modelCenter.x == 0.0f &&
+            scene.models[0].modelCenter.y == 0.0f &&
+            scene.models[0].modelCenter.z == 0.0f &&
+            scene.models[1].modelCenter.x == 0.0f,
+            "game models keep OBJ local coordinates");
+    }
+
     config.models[1].relativeObjPath = "Missing/Missing.obj";
     passed &= Expect(!LoadSceneAssets(modelDirectory, config, meshes, scene, error) &&
         !error.empty(), "report a missing OBJ");

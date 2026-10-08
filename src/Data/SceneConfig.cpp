@@ -14,6 +14,7 @@ constexpr unsigned PositionField = 2;
 constexpr unsigned ScaleField = 4;
 constexpr unsigned RotationField = 8;
 constexpr unsigned SpinField = 16;
+constexpr unsigned TransparentField = 32;
 constexpr unsigned RequiredFields = IdField | PositionField | ScaleField | RotationField | SpinField;
 
 bool IsIdentifier(const std::string& value) {
@@ -143,7 +144,8 @@ bool LoadSceneConfig(const std::filesystem::path& configPath, SceneConfig& resul
         }
 
         if (key == "model") {
-            if (!loaded.models.empty() && modelFields != RequiredFields) {
+            if (!loaded.models.empty() &&
+                (modelFields & RequiredFields) != RequiredFields) {
                 error = PathToUtf8(configPath) + ":" + std::to_string(modelLine) +
                     ": model requires id, position, scale, rotation and spin";
                 return false;
@@ -219,6 +221,13 @@ bool LoadSceneConfig(const std::filesystem::path& configPath, SceneConfig& resul
             model.rotationXDegreesPerSecond = values[0];
             model.rotationYDegreesPerSecond = values[1];
             modelFields |= SpinField;
+        } else if (key == "transparent" && !(modelFields & TransparentField)) {
+            if (value != "0" && value != "1") {
+                error = location + "expected 'transparent 0|1'";
+                return false;
+            }
+            model.transparent = value == "1";
+            modelFields |= TransparentField;
         } else {
             error = location + "unknown or duplicate scene setting: " + key;
             return false;
@@ -237,7 +246,7 @@ bool LoadSceneConfig(const std::filesystem::path& configPath, SceneConfig& resul
         error = "Scene config has no models: " + PathToUtf8(configPath);
         return false;
     }
-    if (modelFields != RequiredFields) {
+    if ((modelFields & RequiredFields) != RequiredFields) {
         error = PathToUtf8(configPath) + ":" + std::to_string(modelLine) +
             ": model requires id, position, scale, rotation and spin";
         return false;

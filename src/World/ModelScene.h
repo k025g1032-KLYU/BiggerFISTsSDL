@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -18,11 +19,14 @@ struct ModelInstance {
     float scale = 1.0f;
     Vector3 scaleAxes{ 1.0f, 1.0f, 1.0f };
     Vector3 colorTint{ 1.0f, 1.0f, 1.0f };
+    float opacity = 1.0f;
+    bool transparent = false;
     float initialXDegrees = 20.0f;
     float initialYDegrees = 30.0f;
     float initialZDegrees = 0.0f;
     float rotationXDegreesPerSecond = 25.0f;
     float rotationYDegreesPerSecond = 40.0f;
+    std::optional<Matrix4x4> parentWorld;
 };
 
 struct ModelBounds {
@@ -48,5 +52,7 @@ ModelInstance* FindModelById(ModelScene& scene, std::string_view id);
 const ModelInstance* FindModelById(const ModelScene& scene, std::string_view id);
 bool TryBuildModelTransform(const ModelScene& scene, const ModelInstance& model,
     std::uint32_t outputWidth, std::uint32_t outputHeight, Matrix4x4& result);
+bool TryBuildModelWorldTransform(const ModelScene& scene,
+    const ModelInstance& model, Matrix4x4& result);
 bool TryBuildModelTransform(const ModelScene& scene, std::uint32_t outputWidth,
     std::uint32_t outputHeight, Matrix4x4& result);

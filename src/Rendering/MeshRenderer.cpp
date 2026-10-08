@@ -3,6 +3,7 @@
 #include "Platform/WindowSettings.h"
 #include "Rendering/DepthBuffer.h"
 #include "Rendering/TextureLoader.h"
+#include "Rendering/UiRenderer.h"
 #include "World/ModelScene.h"
 
 #include <algorithm>
@@ -178,7 +179,8 @@ SDL_GPUShader* LoadShader(
 SDL_GPUGraphicsPipeline* CreatePipeline(
     SDL_GPUDevice* device,
     SDL_Window* window,
-    SDL_GPUTextureFormat depthFormat
+    SDL_GPUTextureFormat depthFormat,
+    bool depthWrite
 ) {
     SDL_GPUShader* vertexShader = LoadShader(
         device,
@@ -208,6 +210,15 @@ SDL_GPUGraphicsPipeline* CreatePipeline(
     SDL_GPUColorTargetDescription colorTarget{};
     colorTarget.format =
         SDL_GetGPUSwapchainTextureFormat(device, window);
+    colorTarget.blend_state.enable_blend = true;
+    colorTarget.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
+    colorTarget.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+    colorTarget.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
+    colorTarget.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+    colorTarget.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+    colorTarget.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+    colorTarget.blend_state.color_write_mask = SDL_GPU_COLORCOMPONENT_R |
+        SDL_GPU_COLORCOMPONENT_G | SDL_GPU_COLORCOMPONENT_B | SDL_GPU_COLORCOMPONENT_A;
 
     SDL_GPUVertexBufferDescription vertexDescription{};
     vertexDescription.slot = 0;
@@ -237,7 +248,7 @@ SDL_GPUGraphicsPipeline* CreatePipeline(
     info.rasterizer_state.enable_depth_clip = true;
     info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
     info.depth_stencil_state.enable_depth_test = true;
-    info.depth_stencil_state.enable_depth_write = true;
+    info.depth_stencil_state.enable_depth_write = depthWrite;
     info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS;
     info.target_info.color_target_descriptions = &colorTarget;
     info.target_info.num_color_targets = 1;
@@ -343,8 +354,9 @@ bool MeshRenderer::Initialize(SDL_Window* window, std::span<const MeshData> mesh
         Shutdown();
         return false;
     }
-    pipeline_ = CreatePipeline(device_, window_, depthFormat);
-    if (pipeline_ == nullptr) {
+    pipeline_ = CreatePipeline(device_, window_, depthFormat, true);
+    transparentPipeline_ = CreatePipeline(device_, window_, depthFormat, false);
+    if (pipeline_ == nullptr || transparentPipeline_ == nullptr) {
         Shutdown();
         return false;
     }
@@ -402,7 +414,8 @@ bool MeshRenderer::Initialize(SDL_Window* window, std::span<const MeshData> mesh
     return true;
 }
 
-bool MeshRenderer::Render(const ModelScene& scene, WindowSettings& windowSettings, bool* frameRendered) {
+bool MeshRenderer::Render(const ModelScene& scene, WindowSettings& windowSettings,
+    bool* frameRendered, UiRenderer* uiRenderer, const UiDrawList* uiDrawList) {
     if (frameRendered != nullptr) {
         *frameRendered = false;
     }
@@ -486,11 +499,11 @@ bool MeshRenderer::Render(const ModelScene& scene, WindowSettings& windowSetting
         return false;
     }
 
-    SDL_BindGPUGraphicsPipeline(pass, pipeline_);
-    for (std::size_t i = 0; i < scene.models.size(); ++i) {
+    const auto drawModel = [&](std::size_t i) {
         const GpuMesh& mesh = meshes_[scene.models[i].meshIndex];
         const Vector3& tint = scene.models[i].colorTint;
-        const float colorUniform[4]{tint.x, tint.y, tint.z, 1.0f};
+        const float colorUniform[4]{tint.x, tint.y, tint.z,
+            scene.models[i].opacity};
         SDL_PushGPUVertexUniformData(commands, 0, &transformScratch_[i],
             static_cast<Uint32>(sizeof(Matrix4x4)));
         SDL_PushGPUFragmentUniformData(commands, 0, colorUniform,
@@ -509,8 +522,36 @@ bool MeshRenderer::Render(const ModelScene& scene, WindowSettings& windowSetting
             SDL_BindGPUFragmentSamplers(pass, 0, &textureBinding, 1);
             SDL_DrawGPUIndexedPrimitives(pass, draw.indexCount, 1, draw.firstIndex, 0, 0);
         }
+    };
+    SDL_BindGPUGraphicsPipeline(pass, pipeline_);
+    std::vector<std::size_t> transparentIndices;
+    for (std::size_t i = 0; i < scene.models.size(); ++i) {
+        if (scene.models[i].transparent || scene.models[i].opacity < 0.999f)
+            transparentIndices.push_back(i);
+        else
+            drawModel(i);
     }
+    std::stable_sort(transparentIndices.begin(), transparentIndices.end(),
+        [&](std::size_t first, std::size_t second) {
+            const auto distanceSquared = [&](std::size_t index) {
+                const Vector3& position = scene.models[index].position;
+                const float x = position.x - scene.cameraPosition.x;
+                const float y = position.y - scene.cameraPosition.y;
+                const float z = position.z - scene.cameraPosition.z;
+                return x * x + y * y + z * z;
+            };
+            return distanceSquared(first) > distanceSquared(second);
+        });
+    SDL_BindGPUGraphicsPipeline(pass, transparentPipeline_);
+    for (std::size_t index : transparentIndices) drawModel(index);
     SDL_EndGPURenderPass(pass);
+
+    if (uiRenderer && uiDrawList &&
+        !uiRenderer->Draw(commands, backbuffer, outputWidth, outputHeight, *uiDrawList)) {
+        SDL_Log("UI rendering failed: %s", SDL_GetError());
+        SDL_SubmitGPUCommandBuffer(commands);
+        return false;
+    }
 
     if (!SDL_SubmitGPUCommandBuffer(commands)) {
         SDL_Log("SDL_SubmitGPUCommandBuffer failed: %s", SDL_GetError());
@@ -550,6 +591,10 @@ void MeshRenderer::Shutdown() {
     if (pipeline_ != nullptr) {
         SDL_ReleaseGPUGraphicsPipeline(device_, pipeline_);
         pipeline_ = nullptr;
+    }
+    if (transparentPipeline_ != nullptr) {
+        SDL_ReleaseGPUGraphicsPipeline(device_, transparentPipeline_);
+        transparentPipeline_ = nullptr;
     }
     if (window_ != nullptr) {
         SDL_ReleaseWindowFromGPUDevice(device_, window_);
