@@ -207,6 +207,22 @@ add_custom_target(CombatSoundAssets
 )
 add_dependencies(BiggerFISTsSDL CombatSoundAssets)
 
+set(ADDITIONAL_COMBAT_SOUNDS
+    Engine.wav Sp2.wav Sp3.wav activate.wav dash.wav direction_set.wav
+    explosion.wav object-falling.wav overload_shutdown.wav sharp_whoosh.wav)
+add_custom_target(AdditionalCombatSoundAssets
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/sound"
+    VERBATIM)
+foreach(sound IN LISTS ADDITIONAL_COMBAT_SOUNDS)
+    add_custom_command(TARGET AdditionalCombatSoundAssets POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/sound/${sound}"
+            "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/assets/sound/${sound}"
+        VERBATIM)
+endforeach()
+add_dependencies(BiggerFISTsSDL AdditionalCombatSoundAssets)
+
 add_custom_target(FullGameAssets
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/ui"
@@ -365,6 +381,7 @@ target_compile_definitions(ObjLoaderTests PRIVATE
     OBJ_TEST_GAME_FIST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/models/LfistTEST/LfistTEST.obj"
     OBJ_TEST_RIGHT_FIST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RFist/Rfist.obj"
     OBJ_TEST_MISSILE_UNIT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/models/RocketLaunch/RocketLaunch.obj"
+    OBJ_TEST_TUTORIAL_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/models/tutorial/tutorial.obj"
 )
 add_test(NAME ObjLoaderTests COMMAND ObjLoaderTests)
 set_tests_properties(ObjLoaderTests PROPERTIES

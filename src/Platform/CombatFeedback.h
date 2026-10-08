@@ -33,6 +33,9 @@ public:
     void PlayRocketReconnect();
     void PlayPlayerHit(PlayerHitType type, bool damagedHitPoints);
     void PlayBattleEvent(BattleFeedbackEvent event);
+    void PlayCue(const std::string& name);
+    void SetEngineLoop(bool enabled);
+    bool IsEngineLoopQueued() const;
     void Shutdown();
     bool HasAudioDevice() const { return audioDevice_ != 0; }
     bool HasGamepad() const { return gamepad_ != nullptr; }
@@ -40,6 +43,7 @@ public:
     bool InitializeFullGameAudio(const std::filesystem::path& soundDirectory,
         std::string& error);
     void SetMusic(const std::string& name);
+    const std::string& GetCurrentMusic() const { return currentMusic_; }
     void PlayTutorialVoice(const std::string& name);
     bool IsTutorialVoicePlaying() const;
     void UpdateMusic(float seconds);
@@ -71,12 +75,15 @@ private:
     Clip battleExplosion_;
     std::unordered_map<std::string, Clip> music_;
     std::unordered_map<std::string, Clip> tutorialVoices_;
+    std::unordered_map<std::string, Clip> cues_;
     std::string currentMusic_;
     std::string pendingMusic_;
     std::string currentVoice_;
     float musicFadeRemaining_ = 0.0f;
     bool tutorialCheckPending_ = false;
     bool tutorialCheckPlayed_ = false;
+    bool engineRequested_ = false;
+    float engineFadeRemaining_ = 0.0f;
     CombatFeedbackConfig config_{};
     SDL_AudioDeviceID audioDevice_ = 0;
     SDL_Gamepad* gamepad_ = nullptr;

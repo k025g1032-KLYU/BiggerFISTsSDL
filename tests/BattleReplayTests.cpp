@@ -291,11 +291,21 @@ int main(int argc, char** argv) {
     GameInput enter{};
     enter.battleStart.pressed = true;
     retrySession.Update(kStep, enter, 0.0f, 0.0f);
+    int landingCues = 0;
     for (int step = 0; step < 3000 &&
             retrySession.GetPhase() != BattlePhase::GameOver; ++step) {
         retrySession.Update(kStep, {}, 0.0f, 0.0f);
+        const auto& cues = retrySession.GetFeedbackEvents();
+        const int inStep = static_cast<int>(std::count(cues.begin(),
+            cues.end(), BattleFeedbackEvent::EnemyLanded));
+        if (inStep > 1) {
+            std::puts("FAIL: enemy landing cue repeated in one step");
+            return 1;
+        }
+        landingCues += inStep;
     }
-    if (retrySession.GetPhase() != BattlePhase::GameOver) {
+    if (retrySession.GetPhase() != BattlePhase::GameOver ||
+        landingCues != 1) {
         std::puts("FAIL: unattended battle did not reach GameOver");
         return 1;
     }

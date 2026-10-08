@@ -456,6 +456,7 @@ int Application::Run(const ApplicationOptions& options) {
                             firstPersonGame->SpawnTarget({"target_tutorial_right", {1.55f, 4.55f, 9.0f}, 1,
                                 {}, false, 2.0f});
                             cockpitStartupRemaining = 4.8f;
+                            combatFeedback->PlayCue("cockpitStart");
                             tutorialDefenseElapsed = 0.0f;
                             tutorialMissileActive = false;
                         } else if (gameFlow->IsBattlePhase()) {
@@ -478,6 +479,7 @@ int Application::Run(const ApplicationOptions& options) {
                             combatSession.emplace(kind, *firstPersonGame,
                                 std::move(encounter), battleConfig);
                             cockpitStartupRemaining = 4.8f;
+                            combatFeedback->PlayCue("cockpitStart");
                         } else {
                             firstPersonView->ClearDynamic();
                             cockpitStartupRemaining = 0.0f;
@@ -493,6 +495,7 @@ int Application::Run(const ApplicationOptions& options) {
                             phase == FlowPhase::Ending ? "win" :
                             phase == FlowPhase::Title ? "" : "hisAction";
                         combatFeedback->SetMusic(music);
+                        combatFeedback->SetEngineLoop(false);
                     }
                     if (gameFlow->GetScreenState().presentation != FlowPresentation::Normal) {
                         continue;
@@ -667,6 +670,21 @@ int Application::Run(const ApplicationOptions& options) {
                 if (firstPersonGame->GetEvents().systemRestarted) {
                     combatFeedback->PlaySystemRestart();
                 }
+                if (firstPersonGame->GetEvents().systemOfflineStarted) {
+                    combatFeedback->PlayCue("systemOffline");
+                }
+                if (firstPersonGame->GetEvents().footstep &&
+                    !firstPersonGame->GetEvents().dodgeStarted) {
+                    combatFeedback->PlayCue("footstep");
+                }
+                combatFeedback->SetEngineLoop(
+                    (combatSession || (gameFlow &&
+                        gameFlow->GetPhase() == FlowPhase::Tutorial)) &&
+                    cockpitStartupRemaining <= 0.0f &&
+                    !firstPersonGame->IsSystemOffline() &&
+                    (!combatSession || (combatSession->GetPhase() !=
+                        BattlePhase::Clear && combatSession->GetPhase() !=
+                        BattlePhase::GameOver)));
                 if (firstPersonGame->GetEvents().targetDestroyed) {
                     if (firstPersonGame->GetEvents().punchHit) {
                         SDL_Log("Target destroyed by Punch. Press R to reset the Targets.");
@@ -712,9 +730,11 @@ int Application::Run(const ApplicationOptions& options) {
                 }
             }
             firstPersonView->AdvanceVisualTime(deltaTime);
-            firstPersonView->Sync(*firstPersonGame);
+            firstPersonView->Sync(*firstPersonGame,
+                static_cast<float>(fixedStepClock.GetInterpolationAlpha()));
             if (combatSession) {
-                firstPersonView->SyncBattle(*combatSession, battleAssets);
+                firstPersonView->SyncBattle(*combatSession, battleAssets,
+                    static_cast<float>(fixedStepClock.GetInterpolationAlpha()));
                 battleStatusElapsed += deltaTime;
                 if (battleStatusElapsed >= 0.25) {
                     battleStatusElapsed = 0.0;
@@ -827,7 +847,7 @@ int Application::Run(const ApplicationOptions& options) {
         }
 
         frameTimer.EndFrame();
-        if (gameFlow && combatFeedback)
+        if (combatFeedback)
             combatFeedback->UpdateMusic(static_cast<float>(deltaTime));
     }
 

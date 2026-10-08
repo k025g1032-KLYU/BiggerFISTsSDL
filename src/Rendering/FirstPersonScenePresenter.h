@@ -14,8 +14,9 @@ enum class BattleVisualEffect;
 class FirstPersonScenePresenter {
 public:
     explicit FirstPersonScenePresenter(ModelScene initialScene);
-    void Sync(const FirstPersonGame& game);
-    void SyncBattle(const CombatSession& battle, const BattleAssetCatalog& assets);
+    void Sync(const FirstPersonGame& game, float interpolationAlpha = 1.0f);
+    void SyncBattle(const CombatSession& battle, const BattleAssetCatalog& assets,
+        float interpolationAlpha = 1.0f);
     void QueueVisualEvents(const std::vector<BattleVisualEvent>& events);
     void AdvanceVisualTime(double seconds);
     void SyncTutorial(const FirstPersonGame& game, const BattleAssetCatalog& assets,
@@ -36,6 +37,7 @@ private:
         const FirstPersonGame& game, const PunchArm& arm);
 
     ModelScene scene_;
+    float interpolationAlpha_ = 1.0f;
     std::vector<ModelInstance> initialModels_;
     struct ActiveVisualEffect {
         int id = 0;

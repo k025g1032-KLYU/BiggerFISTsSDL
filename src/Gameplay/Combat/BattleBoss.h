@@ -76,6 +76,7 @@ public:
     const std::array<BossCrystalSlot, 6>& GetSpikeSlots() const { return spikeSlots_; }
     const std::array<BossCrystalSlot, 4>& GetCubeSlots() const { return cubeSlots_; }
     BossVisualPose GetVisualPose() const;
+    BossVisualPose GetInterpolatedVisualPose(float alpha) const;
 
 private:
     enum class CruisePhase { TakingOff, Flying, Landing };
@@ -92,6 +93,8 @@ private:
     bool BeginCrystalLaunch(bool spike);
     bool UpdateRocketDodge(float seconds, const Vector3& playerPosition,
         const BossPlayerThreat& threat);
+    BossVisualPose CalculateTargetVisualPose() const;
+    void UpdateVisualPose(float seconds);
 
     BossCombatConfig config_;
     BossMode mode_ = BossMode::Entrance;
@@ -160,4 +163,8 @@ private:
     float rocketDodgeSpeed_ = 0.0f;
     bool beganRocketDodgeThisStep_ = false;
     float visualYaw_ = 0.0f;
+    std::array<BossPartPose, 3> visualCones_{};
+    std::array<BossPartPose, 3> spreadStartCones_{};
+    Vector3 visualCoreRotation_{};
+    BossVisualPose previousVisualPose_{};
 };

@@ -9,8 +9,17 @@
 #include <utility>
 
 namespace {
-Vector3 ShoulderPosition(const FirstPersonGame& game, float sideSign) {
-    const Vector3& player = game.GetPlayer().GetPosition();
+Vector3 BlendPosition(const Vector3& previous, const Vector3& current,
+    float alpha) {
+    return {previous.x + (current.x - previous.x) * alpha,
+        previous.y + (current.y - previous.y) * alpha,
+        previous.z + (current.z - previous.z) * alpha};
+}
+
+Vector3 ShoulderPosition(const FirstPersonGame& game, float sideSign,
+    float alpha) {
+    const Vector3 player = BlendPosition(game.GetPlayer().GetPreviousPosition(),
+        game.GetPlayer().GetPosition(), alpha);
     const float yaw = game.GetPlayer().GetBodyYaw();
     const float offset = sideSign * FirstPersonTuning::kShoulderHalfWidth;
     return {player.x + std::cos(yaw) * offset,
@@ -19,11 +28,10 @@ Vector3 ShoulderPosition(const FirstPersonGame& game, float sideSign) {
 }
 
 Vector3 ElbowPosition(const FirstPersonGame& game, const PunchArm& arm,
-    float sideSign, const Vector3& shoulder) {
+    float sideSign, const Vector3& shoulder, const Vector3& fist) {
     const float yaw = game.GetPlayer().GetBodyYaw();
     const float sine = std::sin(yaw);
     const float cosine = std::cos(yaw);
-    const Vector3& fist = arm.GetFistPosition();
     const bool rocket = arm.GetAttackType() == PunchArmAttackType::RocketPunch;
     if (rocket && (arm.IsFistAway() || arm.IsChargingOrCharged())) {
         const Vector3 target = arm.IsFistAway()
@@ -77,9 +85,17 @@ FirstPersonScenePresenter::FirstPersonScenePresenter(ModelScene initialScene)
     : scene_(std::move(initialScene)), initialModels_(scene_.models) {
 }
 
-void FirstPersonScenePresenter::Sync(const FirstPersonGame& game) {
-    scene_.cameraPosition = game.GetCamera().GetPosition();
-    scene_.cameraTarget = game.GetCamera().GetTarget();
+void FirstPersonScenePresenter::Sync(const FirstPersonGame& game,
+    float interpolationAlpha) {
+    interpolationAlpha_ = std::clamp(interpolationAlpha, 0.0f, 1.0f);
+    scene_.cameraPosition = BlendPosition(
+        game.GetCamera().GetPreviousPosition(),
+        game.GetCamera().GetPosition(), interpolationAlpha_);
+    const Vector3 targetOffset = SubtractVectors(game.GetCamera().GetTarget(),
+        game.GetCamera().GetPosition());
+    scene_.cameraTarget = {scene_.cameraPosition.x + targetOffset.x,
+        scene_.cameraPosition.y + targetOffset.y,
+        scene_.cameraPosition.z + targetOffset.z};
     scene_.elapsedSeconds = game.GetElapsedSeconds();
     scene_.warmBackground = game.IsWarmBackground();
 
@@ -111,7 +127,8 @@ void FirstPersonScenePresenter::Sync(const FirstPersonGame& game) {
             model = &scene_.models.front();
             model->id = target.id;
         }
-        model->position = target.position;
+        model->position = BlendPosition(target.previousPosition,
+            target.position, interpolationAlpha_);
     }
 
     UpdateFistPose("left_fist", -1.0f, game, game.GetLeftArm());
@@ -126,7 +143,9 @@ void FirstPersonScenePresenter::UpdateFistPose(const char* id, float sideSign,
     if (fist == nullptr) {
         return;
     }
-    const Vector3& fistPosition = arm.GetFistPosition();
+    const Vector3 fistPosition = BlendPosition(
+        arm.GetPreviousFistPosition(), arm.GetFistPosition(),
+        interpolationAlpha_);
     if (arm.IsFistAway()) {
         fist->position = fistPosition;
         fist->initialXDegrees = arm.GetRocketPosePitch() *
@@ -136,8 +155,10 @@ void FirstPersonScenePresenter::UpdateFistPose(const char* id, float sideSign,
         fist->initialZDegrees = 0.0f;
         return;
     }
-    const Vector3 shoulder = ShoulderPosition(game, sideSign);
-    const Vector3 elbow = ElbowPosition(game, arm, sideSign, shoulder);
+    const Vector3 shoulder = ShoulderPosition(game, sideSign,
+        interpolationAlpha_);
+    const Vector3 elbow = ElbowPosition(game, arm, sideSign, shoulder,
+        fistPosition);
     const float forearmX = fistPosition.x - elbow.x;
     const float forearmY = fistPosition.y - elbow.y;
     const float forearmZ = fistPosition.z - elbow.z;
@@ -159,8 +180,13 @@ void FirstPersonScenePresenter::UpdateUpperArmPose(const char* id, float sideSig
     if (model == nullptr) {
         return;
     }
-    const Vector3 shoulder = ShoulderPosition(game, sideSign);
-    const Vector3 elbow = ElbowPosition(game, arm, sideSign, shoulder);
+    const Vector3 shoulder = ShoulderPosition(game, sideSign,
+        interpolationAlpha_);
+    const Vector3 fistPosition = BlendPosition(
+        arm.GetPreviousFistPosition(), arm.GetFistPosition(),
+        interpolationAlpha_);
+    const Vector3 elbow = ElbowPosition(game, arm, sideSign, shoulder,
+        fistPosition);
     Vector3 direction{};
     if (!TryNormalizeVector(SubtractVectors(elbow, shoulder), direction)) {
         return;

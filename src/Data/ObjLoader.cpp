@@ -223,7 +223,8 @@ bool LoadObjModel(const std::filesystem::path& objPath, MeshData& result, std::s
                     const auto& position = positions[static_cast<size_t>(key.position - 1)];
                     const auto& uv = texcoords[static_cast<size_t>(key.uv - 1)];
                     const std::uint32_t index = static_cast<std::uint32_t>(mesh.vertices.size());
-                    mesh.vertices.push_back({ { position.x, position.y, position.z }, { uv.u, 1.0f - uv.v } });
+                    // Blender OBJ coordinates are right-handed. The game world is left-handed.
+                    mesh.vertices.push_back({ { -position.x, position.y, position.z }, { uv.u, 1.0f - uv.v } });
                     vertexLookup.emplace(key, index);
                     face[corners++] = index;
                 }
@@ -245,9 +246,9 @@ bool LoadObjModel(const std::filesystem::path& objPath, MeshData& result, std::s
                 materialGroups.push_back(materialName);
                 mesh.submeshes.push_back({static_cast<std::uint32_t>(mesh.indices.size()), 0, {}});
             }
-            // Fan triangulation preserves the OBJ face order for triangles and quads.
+            // Mirroring X reverses the face winding; reverse each triangle as well.
             for (size_t i = 1; i + 1 < corners; ++i) {
-                mesh.indices.insert(mesh.indices.end(), { face[0], face[i], face[i + 1] });
+                mesh.indices.insert(mesh.indices.end(), { face[0], face[i + 1], face[i] });
                 mesh.submeshes.back().indexCount += 3;
             }
         }

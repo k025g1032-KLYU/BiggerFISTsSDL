@@ -9,6 +9,9 @@ public:
 
     int Advance(double frameSeconds);
     double GetDroppedSecondsLastFrame() const { return droppedSecondsLastFrame_; }
+    double GetInterpolationAlpha() const {
+        return accumulatedSeconds_ / kStepSeconds;
+    }
 
 private:
     double accumulatedSeconds_ = 0.0;

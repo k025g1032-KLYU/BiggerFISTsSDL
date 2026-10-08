@@ -69,6 +69,12 @@ bool CombatFeedback::Initialize(const std::filesystem::path& soundDirectory,
         Shutdown();
         return false;
     }
+    for (const auto& [name, cue] : config_.cues) {
+        if (!LoadClip(soundDirectory / cue.wav, cues_[name], error)) {
+            Shutdown();
+            return false;
+        }
+    }
 
     if (SDL_InitSubSystem(SDL_INIT_AUDIO)) {
         audioInitialized_ = true;
@@ -119,6 +125,16 @@ bool CombatFeedback::Initialize(const std::filesystem::path& soundDirectory,
             }
             SDL_QuitSubSystem(SDL_INIT_AUDIO);
             audioInitialized_ = false;
+        }
+        if (audioDevice_ != 0) {
+            for (auto& [name, clip] : cues_) {
+                if (!CreateVoices(clip, name == "engineLoop" ? 1 : 2)) {
+                    error = "Could not create sound stream for '" + name +
+                        "': " + SDL_GetError();
+                    Shutdown();
+                    return false;
+                }
+            }
         }
     } else {
         SDL_Log("Audio playback unavailable: %s", SDL_GetError());
@@ -240,6 +256,7 @@ void CombatFeedback::PlayDodge() {
 }
 
 void CombatFeedback::PlaySystemRestart() {
+    PlayCue("cockpitStart");
     Rumble(config_.systemRestartRumbleLow,
         config_.systemRestartRumbleHigh,
         config_.systemRestartRumbleMs, 3);
@@ -259,12 +276,38 @@ void CombatFeedback::PlayPlayerHit(PlayerHitType type, bool damagedHitPoints) {
         Rumble(config_.chargeHitRumbleLow, config_.chargeHitRumbleHigh,
             config_.chargeHitRumbleMs, 3);
     } else {
+        PlayCue(damagedHitPoints ? "playerHealth" : "playerShield");
         Rumble(damagedHitPoints ? config_.projectileHitPointRumbleLow
                 : config_.projectileShieldRumbleLow,
             damagedHitPoints ? config_.projectileHitPointRumbleHigh
                 : config_.projectileShieldRumbleHigh,
             config_.projectileRumbleMs, 3);
     }
+}
+
+void CombatFeedback::PlayCue(const std::string& name) {
+    const auto found = cues_.find(name);
+    const auto setting = config_.cues.find(name);
+    if (found != cues_.end() && setting != config_.cues.end() &&
+        name != "engineLoop") {
+        PlayClip(found->second, setting->second.gain);
+    }
+}
+
+void CombatFeedback::SetEngineLoop(bool enabled) {
+    if (engineRequested_ == enabled) return;
+    engineRequested_ = enabled;
+    engineFadeRemaining_ = enabled ? 2.0f : 0.0f;
+    const auto found = cues_.find("engineLoop");
+    if (!enabled && found != cues_.end() && !found->second.voices.empty()) {
+        SDL_ClearAudioStream(found->second.voices.front());
+    }
+}
+
+bool CombatFeedback::IsEngineLoopQueued() const {
+    const auto found = cues_.find("engineLoop");
+    return found != cues_.end() && !found->second.voices.empty() &&
+        SDL_GetAudioStreamQueued(found->second.voices.front()) > 0;
 }
 
 void CombatFeedback::PlayBattleEvent(BattleFeedbackEvent event) {
@@ -276,7 +319,7 @@ void CombatFeedback::PlayBattleEvent(BattleFeedbackEvent event) {
             config_.punchRumbleMs, 2);
         break;
     case BattleFeedbackEvent::ProjectileLaunched:
-        PlayClip(bossRiser_, config_.battleCueGain * 0.35f);
+        PlayCue("missileLaunch");
         break;
     case BattleFeedbackEvent::BossModeChanged:
         PlayClip(bossChangeMode_, config_.battleCueGain);
@@ -290,10 +333,34 @@ void CombatFeedback::PlayBattleEvent(BattleFeedbackEvent event) {
             config_.punchRumbleMs, 2);
         break;
     case BattleFeedbackEvent::BaseDamaged:
-        PlayClip(battleExplosion_, config_.battleCueGain * 0.6f);
+        PlayCue("projectileExplosion");
         Rumble(config_.projectileHitPointRumbleLow,
             config_.projectileHitPointRumbleHigh,
             config_.projectileRumbleMs, 2);
+        break;
+    case BattleFeedbackEvent::EnemyLanded:
+        PlayCue("landing");
+        break;
+    case BattleFeedbackEvent::ChargePreparing:
+        PlayCue("chargePrepare");
+        break;
+    case BattleFeedbackEvent::ChargeDashing:
+        PlayCue("chargeDash");
+        break;
+    case BattleFeedbackEvent::BossDodged:
+        PlayCue("bossDash");
+        break;
+    case BattleFeedbackEvent::BossStriking:
+        PlayCue("bossStrike");
+        break;
+    case BattleFeedbackEvent::BossNeedleStarted:
+        PlayCue("bossNeedle");
+        break;
+    case BattleFeedbackEvent::BossBarrageStarted:
+        PlayCue("bossBarrage");
+        break;
+    case BattleFeedbackEvent::ProjectileExploded:
+        PlayCue("projectileExplosion");
         break;
     }
 }
@@ -358,6 +425,23 @@ bool CombatFeedback::IsTutorialVoicePlaying() const {
 
 void CombatFeedback::UpdateMusic(float seconds) {
     if (audioDevice_ == 0) return;
+    if (engineRequested_) {
+        const auto found = cues_.find("engineLoop");
+        if (found != cues_.end() && !found->second.voices.empty()) {
+            Clip& clip = found->second;
+            SDL_AudioStream* stream = clip.voices.front();
+            engineFadeRemaining_ = std::max(0.0f,
+                engineFadeRemaining_ - seconds);
+            const float gain = 0.55f + (config_.cues.at("engineLoop").gain -
+                0.55f) * (1.0f - engineFadeRemaining_ / 2.0f);
+            SDL_SetAudioStreamGain(stream, gain);
+            if (SDL_GetAudioStreamQueued(stream) <= 0) {
+                SDL_PutAudioStreamData(stream, clip.samples.data(),
+                    static_cast<int>(clip.samples.size()));
+                SDL_FlushAudioStream(stream);
+            }
+        }
+    }
     if (tutorialCheckPending_ && !IsTutorialVoicePlaying()) {
         tutorialCheckPending_ = false;
         tutorialCheckPlayed_ = true;
@@ -393,7 +477,7 @@ void CombatFeedback::UpdateMusic(float seconds) {
 }
 
 void CombatFeedback::Shutdown() {
-    for (auto* collection : {&music_, &tutorialVoices_}) {
+    for (auto* collection : {&music_, &tutorialVoices_, &cues_}) {
         for (auto& [name, clip] : *collection) {
             for (SDL_AudioStream* stream : clip.voices) SDL_DestroyAudioStream(stream);
             clip.voices.clear();
@@ -405,6 +489,8 @@ void CombatFeedback::Shutdown() {
     currentVoice_.clear();
     tutorialCheckPending_ = false;
     tutorialCheckPlayed_ = false;
+    engineRequested_ = false;
+    engineFadeRemaining_ = 0.0f;
     if (gamepad_ != nullptr) {
         if (SDL_GamepadConnected(gamepad_)) {
             SDL_RumbleGamepad(gamepad_, 0, 0, 0);

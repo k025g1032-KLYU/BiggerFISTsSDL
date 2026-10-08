@@ -3,8 +3,15 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <unordered_map>
+
+struct SoundCueConfig {
+    std::string wav;
+    float gain = 0.0f;
+};
 
 struct CombatFeedbackConfig {
+    std::unordered_map<std::string, SoundCueConfig> cues;
     std::string impactWav;
     std::string rocketLaunchWav;
     std::string punchSwingWav;

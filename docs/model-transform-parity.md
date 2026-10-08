@@ -8,7 +8,9 @@ now use the original local XY halo before the Boss parent yaw is applied.
 
 ## Coordinate and model rules
 
-- Game scenes preserve OBJ vertex coordinates. The standalone model preview
+- Game scenes preserve the authored OBJ origin and scale. OBJ X is mirrored on
+  import to convert the right-handed mesh basis to the game's left-handed
+  world; triangle winding is reversed with it. The standalone model preview
   still centers its model for inspection.
 - The SDL transform is local scale, Z/X/Y rotation, translation, then optional
   parent world matrix. Angles in gameplay are radians; scene and asset config
@@ -36,7 +38,7 @@ now use the original local XY halo before the Boss parent yaw is applied.
 | Bomber | `Bomber.cpp` ring speed 5 radians/second and loaded bomb | Ring Z spin and carried bomb Y spin; carried bomb scale tracks reload | Implemented |
 | ChargeUnit | `ChargeUnit.cpp` drop/takeoff/charge transforms | Landing roll, takeoff blend, tracked yaw, charge booster flame | Implemented with simplified warning pulse |
 | Missiles, bombs, crystals | Original projectile and Boss sources | Direction/age rotation, missile tail flame, crystal slot local pose and launch elevation | Implemented; particle effects simplified |
-| Boss core and three cones | `Boss.cpp::UpdateTransforms` | Root/core/cone parent matrices; Cruise, Charge, Needle, Boxer, Spread, Full Barrage, entrance and defeat poses | Mode poses implemented; strike articulation is approximate |
+| Boss core and three cones | `Boss.cpp::UpdateTransforms` | Root/core/cone parent matrices; Cruise, Charge, Needle, Boxer, Spread, Full Barrage, entrance and defeat poses | Mode poses and fixed-step blending implemented; strike articulation is approximate |
 | Boss crystal halo | `Boss.cpp::UpdateCrystalTransforms` | Six Spike and four Cube instances rotate in local XY around a Boss parent, with original model scales and launch height | Numeric slot positions tested |
 | Punch, Rocket Punch, Ultimate | `RobotArm.cpp`, `UltimateRocketPunch.cpp` | Fist/upper arm pose and rocket flame; Ultimate formation, Ready combined fist, flying combined fist/flame, split return | Implemented; staged Ultimate return timing/pose remains simplified |
 | Shield and explosion OBJ | Original damage/defeat effects | Visual events create copied shield and explosion planes with independent visual lifetime | Geometry and state cues implemented; particles and exact color blending remain simplified |
@@ -63,9 +65,10 @@ now use the original local XY halo before the Boss parent yaw is applied.
 ## Remaining visual differences
 
 Boss cone strikes use the existing simplified combat state to move the active
-cone. The original has additional interpolation for winding up and recovery.
-Likewise, Ultimate return docking, shield/explosion blending, cockpit startup,
-and some enemy warning cues are approximations. These differences are visual;
+cone. Mode transitions now blend, and attack positions bypass an extra blend,
+but the original has more detailed winding up and recovery. Likewise,
+Ultimate return docking, shield/explosion blending, and cockpit startup remain
+approximations. These differences are visual;
 the fixed-step input-driven battle clear tests continue to pass. Before release,
 capture matching gameplay states from a manually operated original executable
 and the SDL build, then tune these poses and material effects from the images.

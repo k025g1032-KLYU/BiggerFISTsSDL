@@ -44,6 +44,30 @@ int main() {
         std::cerr << error << '\n';
     }
 
+    const bool loadedTutorial = LoadObjModel(OBJ_TEST_TUTORIAL_PATH,
+        model, error);
+    passed &= Expect(loadedTutorial, "load original tutorial banner OBJ");
+    if (loadedTutorial) {
+        float leftUWorldX = 0.0f;
+        float rightUWorldX = 0.0f;
+        int leftCount = 0;
+        int rightCount = 0;
+        for (const MeshVertex& vertex : model.vertices) {
+            // The original scene rotates this banner 180 degrees around Y.
+            const float worldX = -vertex.position[0];
+            if (vertex.uv[0] < 0.1f) {
+                leftUWorldX += worldX;
+                ++leftCount;
+            } else if (vertex.uv[0] > 0.9f) {
+                rightUWorldX += worldX;
+                ++rightCount;
+            }
+        }
+        passed &= Expect(leftCount > 0 && rightCount > 0 &&
+            leftUWorldX / leftCount < rightUWorldX / rightCount,
+            "tutorial banner keeps its texture left-to-right after the original Y rotation");
+    }
+
     const bool loadedGameFist = LoadObjModel(OBJ_TEST_GAME_FIST_PATH, model, error);
     passed &= Expect(loadedGameFist, "load the left fist used by CombatScene");
     if (loadedGameFist) {
@@ -106,14 +130,17 @@ int main() {
     passed &= Expect(model.vertices.size() == 4 && model.indices.size() == 6,
         "quad becomes four vertices and two triangles");
     if (model.indices.size() == 6) {
-        passed &= Expect(model.indices[0] == 0 && model.indices[1] == 1 && model.indices[2] == 2 &&
-            model.indices[3] == 0 && model.indices[4] == 2 && model.indices[5] == 3,
-            "quad triangulation preserves face order");
+        passed &= Expect(model.indices[0] == 0 && model.indices[1] == 2 && model.indices[2] == 1 &&
+            model.indices[3] == 0 && model.indices[4] == 3 && model.indices[5] == 2,
+            "left-handed OBJ conversion reverses face winding");
     }
     if (!model.vertices.empty()) {
         passed &= Expect(std::fabs(model.vertices[0].uv[0]) < 0.0001f &&
             std::fabs(model.vertices[0].uv[1]) < 0.0001f,
             "OBJ top-left becomes GPU UV (0,0)");
+        passed &= Expect(std::fabs(model.vertices[0].position[0] - 1.0f) < 0.0001f &&
+            std::fabs(model.vertices[1].position[0] + 1.0f) < 0.0001f,
+            "OBJ X coordinates convert to the game's left-handed basis");
     }
 
     // Each material group keeps its own texture and index range.

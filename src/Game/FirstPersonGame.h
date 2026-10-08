@@ -40,6 +40,8 @@ struct FirstPersonEvents {
     bool ultimateLaunched = false;
     bool ultimateReturned = false;
     bool systemRestarted = false;
+    bool systemOfflineStarted = false;
+    bool footstep = false;
     bool dodgeStarted = false;
     bool playerHit = false;
     bool playerDefeated = false;
@@ -82,6 +84,10 @@ public:
         player_.SetResearchInstituteCollisionEnabled(enabled);
     }
     UltimateState GetUltimateState() const { return ultimateState_; }
+    bool IsSystemOffline() const {
+        return ultimateState_ == UltimateState::Offline ||
+            needleOfflineTimer_ > 0.0f;
+    }
     bool IsUltimateDamageActiveThisFrame() const {
         return ultimateDamageActiveThisFrame_;
     }

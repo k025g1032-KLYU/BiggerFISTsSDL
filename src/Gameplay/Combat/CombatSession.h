@@ -131,6 +131,7 @@ private:
     int baseHitPoints_ = 10;
     std::unordered_set<std::string> ultimateHitIds_;
     std::unordered_set<std::uint64_t> bossAttackHits_;
+    std::uint64_t lastBossStrikeCueId_ = 0;
     std::vector<BattleFeedbackEvent> feedbackEvents_;
     std::vector<BattleVisualEvent> visualEvents_;
 };

@@ -17,6 +17,13 @@ Vector3 Add(const Vector3& first, const Vector3& second) {
     return {first.x + second.x, first.y + second.y, first.z + second.z};
 }
 
+Vector3 Interpolate(const Vector3& previous, const Vector3& current,
+    float alpha) {
+    return {previous.x + (current.x - previous.x) * alpha,
+        previous.y + (current.y - previous.y) * alpha,
+        previous.z + (current.z - previous.z) * alpha};
+}
+
 void Rotate(ModelInstance& model, const Vector3& radians) {
     model.initialXDegrees += radians.x * kDegreesPerRadian;
     model.initialYDegrees += radians.y * kDegreesPerRadian;
@@ -55,7 +62,9 @@ void FirstPersonScenePresenter::SyncEnvironment(const FirstPersonGame& game,
     if (const ModelInstance* prototype = assets.Find("body")) {
         ModelInstance body = *prototype;
         body.id = "fullgame_body";
-        const Vector3& position = game.GetPlayer().GetPosition();
+        const Vector3 position = Interpolate(
+            game.GetPlayer().GetPreviousPosition(),
+            game.GetPlayer().GetPosition(), interpolationAlpha_);
         body.position = {position.x, position.y + 1.8f, position.z};
         Rotate(body, {0.0f, game.GetPlayer().GetBodyYaw(), 0.0f});
         scene_.models.push_back(std::move(body));
@@ -135,7 +144,9 @@ void FirstPersonScenePresenter::SyncCockpit(const FirstPersonGame& game,
     if (!prototype) return;
     ModelInstance cockpit = *prototype;
     cockpit.id = "fullgame_cockpit";
-    const Vector3& player = game.GetPlayer().GetPosition();
+    const Vector3 player = Interpolate(
+        game.GetPlayer().GetPreviousPosition(),
+        game.GetPlayer().GetPosition(), interpolationAlpha_);
     cockpit.position = {player.x, player.y + 4.15f -
         startupRemainingRatio * 2.9f,
         player.z};
@@ -149,7 +160,7 @@ void FirstPersonScenePresenter::SyncCockpit(const FirstPersonGame& game,
     if (const ModelInstance* helmetPrototype = assets.Find("helmet")) {
         ModelInstance helmet = *helmetPrototype;
         helmet.id = "fullgame_helmet";
-        helmet.position = game.GetCamera().GetPosition();
+        helmet.position = scene_.cameraPosition;
         helmet.position.y -= 0.3f * startupRemainingRatio;
         helmet.opacity = 0.45f;
         helmet.transparent = true;
@@ -204,7 +215,8 @@ void FirstPersonScenePresenter::SyncRocketFlames(
         }
         const float length = flameScale;
         const float distance = 0.55f + 1.5f + length;
-        const Vector3& fist = arm.GetFistPosition();
+        const Vector3 fist = Interpolate(arm.GetPreviousFistPosition(),
+            arm.GetFistPosition(), interpolationAlpha_);
         ModelInstance flame = *prototype;
         flame.id = "battle_" + std::string(side) + "_rocket_flame";
         flame.position = {fist.x + backward.x * distance,
@@ -223,7 +235,8 @@ void FirstPersonScenePresenter::SyncRocketFlames(
 }
 
 void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
-    const BattleAssetCatalog& assets) {
+    const BattleAssetCatalog& assets, float interpolationAlpha) {
+    interpolationAlpha = std::clamp(interpolationAlpha, 0.0f, 1.0f);
     std::erase_if(scene_.models, [](const ModelInstance& model) {
         return model.id.starts_with("battle_") || model.id.starts_with("tutorial_");
     });
@@ -289,6 +302,8 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
         }
     }
     for (const BattleEnemy& enemy : battle.GetEnemies()) {
+        const Vector3 displayPosition = Interpolate(enemy.previousPosition,
+            enemy.position, interpolationAlpha);
         const std::string_view key = enemy.type == BattleEnemyType::MissileUnit
             ? "missile_unit" : enemy.type == BattleEnemyType::Bomber
             ? "bomber" : "charge_unit";
@@ -296,7 +311,7 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
         const bool chargeWarning = enemy.type == BattleEnemyType::ChargeUnit &&
             (enemy.chargeState == BattleEnemy::ChargeState::Preparing ||
                 enemy.chargeState == BattleEnemy::ChargeState::Charging);
-        add(enemy.id, key, enemy.position, scale,
+        add(enemy.id, key, displayPosition, scale,
             enemy.defeated ? Vector3{1.0f, 0.35f, 0.25f} :
                 chargeWarning ? Vector3{1.0f, 0.55f, 0.3f} :
                 Vector3{1.0f, 1.0f, 1.0f});
@@ -309,7 +324,7 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
                     enemy.deploymentState == BattleEnemy::DeploymentState::Landed) {
                     Rotate(*model, {-std::numbers::pi_v<float> * 0.5f, 0.0f, 0.0f});
                 } else if (enemy.deploymentState == BattleEnemy::DeploymentState::TakingOff) {
-                    const float progress = std::clamp((enemy.position.y - 1.25f) /
+                    const float progress = std::clamp((displayPosition.y - 1.25f) /
                         std::max(0.001f, enemy.combatHeight - 1.25f), 0.0f, 1.0f);
                     Rotate(*model, {-std::numbers::pi_v<float> * 0.5f *
                         (1.0f - progress), 0.0f, 0.0f});
@@ -329,7 +344,7 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
                         std::numbers::pi_v<float> * 0.5f});
                 } else if (enemy.deploymentState ==
                         BattleEnemy::DeploymentState::TakingOff) {
-                    const float progress = std::clamp((enemy.position.y - 1.25f) /
+                    const float progress = std::clamp((displayPosition.y - 1.25f) /
                         std::max(0.001f, enemy.combatHeight - 1.25f),
                         0.0f, 1.0f);
                     Rotate(*model, {0.0f,
@@ -350,9 +365,9 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
         if (enemy.type == BattleEnemyType::ChargeUnit &&
             enemy.chargeState == BattleEnemy::ChargeState::Charging) {
             add(enemy.id + "_flame", "flame",
-                {enemy.position.x - enemy.chargeDirection.x * 1.2f,
-                    enemy.position.y,
-                    enemy.position.z - enemy.chargeDirection.z * 1.2f},
+                {displayPosition.x - enemy.chargeDirection.x * 1.2f,
+                    displayPosition.y,
+                    displayPosition.z - enemy.chargeDirection.z * 1.2f},
                 1.0f, {1.0f, 0.7f, 0.3f});
             if (ModelInstance* flame = FindModelById(scene_,
                     "battle_" + enemy.id + "_flame")) {
@@ -366,7 +381,7 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
         if (enemy.type == BattleEnemyType::Bomber && !enemy.defeated &&
             enemy.deployed) {
             add(enemy.id + "_carried_bomb", "floating_bomb",
-                enemy.position, 1.0f,
+                displayPosition, 1.0f,
                 enemy.attackTimer < 1.0f ? Vector3{1.0f, 0.55f, 0.25f}
                     : Vector3{1.0f, 1.0f, 1.0f});
             if (ModelInstance* bomb = FindModelById(scene_,
@@ -377,11 +392,14 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
         }
     }
     for (const BattleProjectile& projectile : battle.GetProjectiles()) {
+        const Vector3 displayPosition = Interpolate(
+            projectile.previousPosition, projectile.position,
+            interpolationAlpha);
         const std::string_view key = projectile.type == BattleProjectileType::Missile
             ? "missile" : projectile.type == BattleProjectileType::FloatingBomb
             ? "floating_bomb" : projectile.type == BattleProjectileType::CrystalSpike
             ? "boss_crystal_spike" : "boss_crystal_cube";
-        add(projectile.id, key, projectile.position,
+        add(projectile.id, key, displayPosition,
             1.0f,
             {1.0f, 1.0f, 1.0f});
         if (ModelInstance* model = FindModelById(scene_, "battle_" + projectile.id)) {
@@ -404,9 +422,9 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
             const Vector3 tail{-projectile.direction.x,
                 -projectile.direction.y, -projectile.direction.z};
             add(projectile.id + "_tail", "flame", {
-                projectile.position.x + tail.x * 0.663f,
-                projectile.position.y + tail.y * 0.663f,
-                projectile.position.z + tail.z * 0.663f},
+                displayPosition.x + tail.x * 0.663f,
+                displayPosition.y + tail.y * 0.663f,
+                displayPosition.z + tail.z * 0.663f},
                 1.0f, {1.0f, 0.65f, 0.25f});
             if (ModelInstance* flame = FindModelById(scene_,
                     "battle_" + projectile.id + "_tail")) {
@@ -418,8 +436,18 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
         }
     }
     if (const BattleBoss* boss = battle.GetBoss()) {
-        const Vector3& position = boss->GetPosition();
-        const BossVisualPose pose = boss->GetVisualPose();
+        const Vector3 position{
+            boss->GetPreviousPosition().x +
+                (boss->GetPosition().x - boss->GetPreviousPosition().x) *
+                interpolationAlpha,
+            boss->GetPreviousPosition().y +
+                (boss->GetPosition().y - boss->GetPreviousPosition().y) *
+                interpolationAlpha,
+            boss->GetPreviousPosition().z +
+                (boss->GetPosition().z - boss->GetPreviousPosition().z) *
+                interpolationAlpha};
+        const BossVisualPose pose = boss->GetInterpolatedVisualPose(
+            interpolationAlpha);
         ModelInstance root;
         root.position = position;
         root.initialXDegrees = 0.0f;

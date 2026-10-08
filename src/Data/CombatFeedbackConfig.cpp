@@ -1,5 +1,6 @@
 #include "Data/CombatFeedbackConfig.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <fstream>
@@ -24,6 +25,12 @@ constexpr std::array requiredKeys{
     "bossRiserWav", "battleExplosionWav", "battleCueGain",
     "systemRestartRumbleLow",
     "systemRestartRumbleHigh", "systemRestartRumbleMs"};
+constexpr std::array cueNames{
+    "landing", "chargePrepare", "chargeDash", "missileLaunch",
+    "bossDash", "bossStrike",
+    "bossNeedle", "bossBarrage", "playerShield", "playerHealth",
+    "cockpitStart", "systemOffline", "engineLoop", "footstep",
+    "projectileExplosion"};
 
 std::string ToUtf8(const std::filesystem::path& path) {
     const std::u8string value = path.u8string();
@@ -67,6 +74,23 @@ bool LoadCombatFeedbackConfig(const std::filesystem::path& path,
         std::string value;
         std::string extra;
         if (!(fields >> key) || key.starts_with('#')) {
+            continue;
+        }
+        if (key == "cue") {
+            std::string name;
+            std::string wav;
+            std::string gainText;
+            float gain = 0.0f;
+            if (!(fields >> name >> wav >> gainText) || (fields >> extra) ||
+                std::find(cueNames.begin(), cueNames.end(), name) ==
+                    cueNames.end() ||
+                !ValidWavName(wav) || !ParseNumber(gainText, gain) ||
+                !std::isfinite(gain) || gain < 0.0f || gain > 2.0f ||
+                !parsed.cues.emplace(name, SoundCueConfig{wav, gain}).second) {
+                error = "Invalid or duplicate cue in '" + ToUtf8(path) +
+                    "' line " + std::to_string(lineNumber);
+                return false;
+            }
             continue;
         }
         if (!(fields >> value) || (fields >> extra) || !seen.insert(key).second) {
@@ -186,6 +210,12 @@ bool LoadCombatFeedbackConfig(const std::filesystem::path& path,
     for (const char* key : requiredKeys) {
         if (!seen.contains(key)) {
             error = "Missing key in '" + ToUtf8(path) + "': " + key;
+            return false;
+        }
+    }
+    for (const char* name : cueNames) {
+        if (!parsed.cues.contains(name)) {
+            error = "Missing cue in '" + ToUtf8(path) + "': " + name;
             return false;
         }
     }

@@ -15,6 +15,25 @@ Vector3 DirectionTo(const Vector3& from, const Vector3& to) {
     return length > 0.00001f ? Vector3{x / length, 0.0f, z / length}
         : Vector3{0.0f, 0.0f, -1.0f};
 }
+
+float BlendAngle(float current, float target, float amount) {
+    return current + std::remainder(target - current,
+        2.0f * std::numbers::pi_v<float>) * amount;
+}
+
+Vector3 BlendPosition(const Vector3& current, const Vector3& target,
+    float amount) {
+    return {current.x + (target.x - current.x) * amount,
+        current.y + (target.y - current.y) * amount,
+        current.z + (target.z - current.z) * amount};
+}
+
+Vector3 BlendRotation(const Vector3& current, const Vector3& target,
+    float amount) {
+    return {BlendAngle(current.x, target.x, amount),
+        BlendAngle(current.y, target.y, amount),
+        BlendAngle(current.z, target.z, amount)};
+}
 }
 
 BattleBoss::BattleBoss(BossCombatConfig config) : config_(config) {
@@ -82,9 +101,56 @@ void BattleBoss::Reset(const Vector3& position) {
     rocketDodgeSpeed_ = 0.0f;
     beganRocketDodgeThisStep_ = false;
     visualYaw_ = 0.0f;
+    const BossVisualPose initialPose = CalculateTargetVisualPose();
+    visualCones_ = initialPose.cones;
+    spreadStartCones_ = visualCones_;
+    visualCoreRotation_ = initialPose.coreRotation;
+    previousVisualPose_ = GetVisualPose();
 }
 
 BossVisualPose BattleBoss::GetVisualPose() const {
+    BossVisualPose pose = CalculateTargetVisualPose();
+    pose.cones = visualCones_;
+    pose.coreRotation = visualCoreRotation_;
+    return pose;
+}
+
+BossVisualPose BattleBoss::GetInterpolatedVisualPose(float alpha) const {
+    const BossVisualPose current = GetVisualPose();
+    const float amount = std::clamp(alpha, 0.0f, 1.0f);
+    BossVisualPose result = current;
+    result.rootRotation = BlendRotation(previousVisualPose_.rootRotation,
+        current.rootRotation, amount);
+    result.coreRotation = BlendRotation(previousVisualPose_.coreRotation,
+        current.coreRotation, amount);
+    result.crystalAngle = BlendAngle(previousVisualPose_.crystalAngle,
+        current.crystalAngle, amount);
+    result.spreadSpin = BlendAngle(previousVisualPose_.spreadSpin,
+        current.spreadSpin, amount);
+    const auto blendPart = [amount](const BossPartPose& previous,
+        const BossPartPose& next) {
+        return BossPartPose{BlendPosition(previous.translation,
+                next.translation, amount),
+            BlendRotation(previous.rotation, next.rotation, amount),
+            BlendPosition(previous.rootTranslation,
+                next.rootTranslation, amount)};
+    };
+    for (std::size_t index = 0; index < result.cones.size(); ++index) {
+        result.cones[index] = blendPart(previousVisualPose_.cones[index],
+            current.cones[index]);
+    }
+    for (std::size_t index = 0; index < result.spikes.size(); ++index) {
+        result.spikes[index] = blendPart(previousVisualPose_.spikes[index],
+            current.spikes[index]);
+    }
+    for (std::size_t index = 0; index < result.cubes.size(); ++index) {
+        result.cubes[index] = blendPart(previousVisualPose_.cubes[index],
+            current.cubes[index]);
+    }
+    return result;
+}
+
+BossVisualPose BattleBoss::CalculateTargetVisualPose() const {
     constexpr float pi = std::numbers::pi_v<float>;
     constexpr std::array<BossPartPose, 3> cruise{{
         {{1.0f, 0.0f, 0.0f}, {0.30f, pi - 0.70f, 0.10f}},
@@ -133,7 +199,7 @@ BossVisualPose BattleBoss::GetVisualPose() const {
     } else if (mode_ == BossMode::SpreadCounter) {
         pose.cones = spread;
         const float spinTime = modeTime_ - config_.spreadWindupDuration;
-        if (spinTime > 0.0f && spinTime < config_.spreadSpinDuration) {
+        if (spinTime > 0.0f) {
             pose.spreadSpin = std::clamp(spinTime /
                 config_.spreadSpinDuration, 0.0f, 1.0f) *
                 4.0f * pi;
@@ -176,9 +242,52 @@ BossVisualPose BattleBoss::GetVisualPose() const {
     return pose;
 }
 
+void BattleBoss::UpdateVisualPose(float seconds) {
+    const BossVisualPose target = CalculateTargetVisualPose();
+    const float speed = mode_ == BossMode::Cruise
+        ? config_.cruisePoseBlendSpeed : config_.poseBlendSpeed;
+    const float amount = std::clamp(seconds * speed, 0.0f, 1.0f);
+    for (std::size_t index = 0; index < visualCones_.size(); ++index) {
+        BossPartPose& current = visualCones_[index];
+        const BossPartPose& destination = target.cones[index];
+        if (mode_ == BossMode::SpreadCounter &&
+            modeTime_ < config_.spreadWindupDuration) {
+            const float progress = std::clamp(modeTime_ /
+                config_.spreadWindupDuration, 0.0f, 1.0f);
+            current.translation = BlendPosition(
+                spreadStartCones_[index].translation,
+                destination.translation, progress);
+            current.rotation = BlendRotation(spreadStartCones_[index].rotation,
+                destination.rotation, progress);
+            current.rootTranslation = BlendPosition(
+                spreadStartCones_[index].rootTranslation,
+                destination.rootTranslation, progress);
+        } else if (mode_ == BossMode::SpreadCounter ||
+            ((mode_ == BossMode::NeedleCombo || mode_ == BossMode::Boxer) &&
+                activeAttackId_ != 0 &&
+                index == (mode_ == BossMode::Boxer ? 0u :
+                    static_cast<std::size_t>(std::clamp(attackCount_ - 1,
+                        0, 2))))) {
+            current = destination;
+        } else {
+            current.translation = BlendPosition(current.translation,
+                destination.translation, amount);
+            current.rotation = BlendRotation(current.rotation,
+                destination.rotation, amount);
+            current.rootTranslation = BlendPosition(current.rootTranslation,
+                destination.rootTranslation, amount);
+        }
+    }
+    visualCoreRotation_ = BlendPosition(visualCoreRotation_,
+        target.coreRotation, amount);
+}
+
 void BattleBoss::BeginBehavior(BossMode mode) {
     if (mode_ == BossMode::Defeating || mode_ == BossMode::Defeated) {
         return;
+    }
+    if (mode == BossMode::SpreadCounter) {
+        spreadStartCones_ = visualCones_;
     }
     mode_ = mode;
     modeTime_ = 0.0f;
@@ -581,6 +690,7 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
         mode_ == BossMode::Defeated) {
         return attacks;
     }
+    previousVisualPose_ = GetVisualPose();
     previousPosition_ = position_;
     modeTime_ += seconds;
     if ((mode_ != BossMode::Entrance || entranceRecovering_) &&
@@ -1008,5 +1118,6 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
         position_.x = fromBaseX * baseClearance / fromBaseLength;
         position_.z = -16.0f + fromBaseZ * baseClearance / fromBaseLength;
     }
+    UpdateVisualPose(seconds);
     return attacks;
 }

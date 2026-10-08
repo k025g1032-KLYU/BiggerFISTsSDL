@@ -157,8 +157,10 @@ constexpr std::array<std::pair<std::string_view, float ProjectileCombatConfig::*
         {"crystalCubeOscillationAmplitude", &ProjectileCombatConfig::crystalCubeOscillationAmplitude},
         {"crystalCubeOscillationFrequency", &ProjectileCombatConfig::crystalCubeOscillationFrequency},
     }};
-constexpr std::array<std::pair<std::string_view, float BossCombatConfig::*>, 98>
+constexpr std::array<std::pair<std::string_view, float BossCombatConfig::*>, 100>
     kBossFields{{
+        {"poseBlendSpeed", &BossCombatConfig::poseBlendSpeed},
+        {"cruisePoseBlendSpeed", &BossCombatConfig::cruisePoseBlendSpeed},
         {"coreRadius", &BossCombatConfig::coreRadius},
         {"hoverHeight", &BossCombatConfig::hoverHeight},
         {"entranceSpawnHeight", &BossCombatConfig::entranceSpawnHeight},

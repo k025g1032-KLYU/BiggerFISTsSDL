@@ -63,6 +63,8 @@ struct ProjectileCombatConfig {
 };
 
 struct BossCombatConfig {
+    float poseBlendSpeed = 6.0f;
+    float cruisePoseBlendSpeed = 18.0f;
     int coreHitPoints = 20;
     int ultimateDamage = 3;
     float coreRadius = 1.75f;

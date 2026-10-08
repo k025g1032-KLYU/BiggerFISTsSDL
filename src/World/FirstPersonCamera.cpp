@@ -8,6 +8,7 @@
 
 void FirstPersonCamera::Reset(const Vector3& eye) {
     position_ = eye;
+    previousPosition_ = eye;
     followedAnchor_ = eye;
     yaw_ = 0.0f;
     pitch_ = 0.0f;
@@ -19,6 +20,7 @@ void FirstPersonCamera::Reset(const Vector3& eye) {
     stepBobWeight_ = 0.0f;
     stepImpactTimer_ = 0.0f;
     stepPitchOffset_ = 0.0f;
+    didStepThisFrame_ = false;
 }
 
 void FirstPersonCamera::UpdateLook(float mouseDeltaX, float mouseDeltaY) {
@@ -33,11 +35,13 @@ void FirstPersonCamera::UpdateLook(float mouseDeltaX, float mouseDeltaY) {
 
 void FirstPersonCamera::Follow(const Vector3& cameraAnchor, double deltaSeconds,
     float movementSpeed) {
+    didStepThisFrame_ = false;
     if (!std::isfinite(deltaSeconds) || deltaSeconds < 0.0 ||
         !std::isfinite(cameraAnchor.x) || !std::isfinite(cameraAnchor.y) ||
         !std::isfinite(cameraAnchor.z) || !std::isfinite(movementSpeed)) {
         return;
     }
+    previousPosition_ = position_;
     const Vector3 offset = SubtractVectors(cameraAnchor, followedAnchor_);
     const float distanceSquared = DotVectors(offset, offset);
     if (distanceSquared >= FirstPersonTuning::kCameraFollowSnapDistance *
@@ -64,6 +68,7 @@ void FirstPersonCamera::Follow(const Vector3& cameraAnchor, double deltaSeconds,
         if (std::floor(stepBobPhase_ / std::numbers::pi_v<float>) != previousStep &&
             stepBobWeight_ > 0.2f) {
             stepImpactTimer_ = FirstPersonTuning::kStepImpactDuration;
+            didStepThisFrame_ = true;
         }
     }
     stepImpactTimer_ = std::max(0.0f, stepImpactTimer_ - stepSeconds);

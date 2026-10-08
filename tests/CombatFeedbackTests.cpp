@@ -31,6 +31,38 @@ int main(int argc, char** argv) {
     feedback.PlayPlayerHit(PlayerHitType::Projectile, false);
     feedback.PlayPlayerHit(PlayerHitType::Projectile, true);
     feedback.PlayPlayerHit(PlayerHitType::ChargeUnit, false);
+    for (const auto& [name, cue] : config.cues) {
+        if (name != "engineLoop") feedback.PlayCue(name);
+    }
+    feedback.SetEngineLoop(true);
+    feedback.UpdateMusic(1.0f / 60.0f);
+    if (!feedback.IsEngineLoopQueued()) {
+        std::puts("FAIL: engine loop did not queue audio");
+        return 1;
+    }
+    feedback.SetEngineLoop(false);
+    if (feedback.IsEngineLoopQueued()) {
+        std::puts("FAIL: engine loop did not stop");
+        return 1;
+    }
+    if (!feedback.InitializeFullGameAudio(soundDirectory, error)) {
+        std::printf("FAIL: full game audio: %s\n", error.c_str());
+        return 1;
+    }
+    feedback.SetMusic("elevator");
+    feedback.UpdateMusic(1.0f / 60.0f);
+    feedback.PlayTutorialVoice("personnel.wav");
+    if (feedback.GetCurrentMusic() != "elevator" ||
+        !feedback.IsTutorialVoicePlaying()) {
+        std::puts("FAIL: tutorial music or voice did not start");
+        return 1;
+    }
+    feedback.SetMusic("boss");
+    feedback.UpdateMusic(0.5f);
+    if (feedback.GetCurrentMusic() != "boss") {
+        std::puts("FAIL: battle music did not switch after fade");
+        return 1;
+    }
     SDL_Delay(50);
     feedback.Shutdown();
 
@@ -54,6 +86,17 @@ int main(int argc, char** argv) {
     std::filesystem::remove(invalidConfig);
     if (acceptedInvalidPath || error.find("line 1") == std::string::npos) {
         std::puts("FAIL: invalid WAV path must report its line");
+        return 1;
+    }
+    {
+        std::ofstream output(invalidConfig);
+        output << "cue landing ../outside.wav 0.5\n";
+    }
+    const bool acceptedInvalidCue = LoadCombatFeedbackConfig(
+        invalidConfig, config, error);
+    std::filesystem::remove(invalidConfig);
+    if (acceptedInvalidCue || error.find("line 1") == std::string::npos) {
+        std::puts("FAIL: invalid cue must report its line");
         return 1;
     }
     std::puts("PASS: WAV loading, SDL audio playback and missing-file diagnostics");

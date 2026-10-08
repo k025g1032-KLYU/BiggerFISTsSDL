@@ -101,6 +101,7 @@ void FirstPersonGame::Update(double deltaSeconds, const GameInput& input,
     if (!std::isfinite(deltaSeconds) || deltaSeconds < 0.0) {
         return;
     }
+    const bool wasSystemOffline = IsSystemOffline();
     events_ = {};
     camera_.UpdateLook(mouseDeltaX, mouseDeltaY);
     const float armDeltaTime = static_cast<float>(std::min(
@@ -218,6 +219,9 @@ void FirstPersonGame::Update(double deltaSeconds, const GameInput& input,
         finalPlayerPosition.y + FirstPersonTuning::kEyeHeight,
         finalPlayerPosition.z}, deltaSeconds,
         std::hypot(velocity.x, velocity.z));
+    events_.footstep = camera_.DidStepThisFrame();
+    events_.systemOfflineStarted = !wasSystemOffline && IsSystemOffline();
+    events_.systemRestarted |= wasSystemOffline && !IsSystemOffline();
     elapsedSeconds_ += deltaSeconds;
     if (input.changeBackground.pressed) {
         warmBackground_ = !warmBackground_;

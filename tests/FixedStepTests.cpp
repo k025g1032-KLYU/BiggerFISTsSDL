@@ -55,6 +55,12 @@ Result SimulateOneSecond(int renderedFrames) {
 
 int main() {
     bool success = true;
+    FixedStepClock renderClock;
+    success &= Expect(renderClock.Advance(1.0 / 120.0) == 0 &&
+        std::abs(renderClock.GetInterpolationAlpha() - 0.5) < 0.0001 &&
+        renderClock.Advance(1.0 / 120.0) == 1 &&
+        renderClock.GetInterpolationAlpha() < 0.0001,
+        "Render alpha tracks time between fixed updates");
     const Result thirtyFps = SimulateOneSecond(30);
     const Result sixtyFps = SimulateOneSecond(60);
     const Result oneHundredTwentyFps = SimulateOneSecond(120);

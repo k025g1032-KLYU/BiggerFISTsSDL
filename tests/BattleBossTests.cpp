@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <numbers>
 #include <vector>
 
 namespace {
@@ -38,6 +39,51 @@ int main(int argc, char** argv) {
         std::abs(initialPose.spikes[0].translation.z -
             config.boss.crystalHaloBackOffset) > 0.001f) {
         std::puts("FAIL: original Boss entrance, cone or crystal local pose changed");
+        return 1;
+    }
+    BattleBoss visualBoss(config.boss);
+    visualBoss.Reset({0.0f, config.boss.hoverHeight, 34.5f});
+    visualBoss.BeginBehavior(BossMode::Charge);
+    visualBoss.Update(kStep, player);
+    const float blendedCore = visualBoss.GetVisualPose().coreRotation.x;
+    const float drawMidCore = visualBoss.GetInterpolatedVisualPose(0.5f)
+        .coreRotation.x;
+    if (blendedCore <= 0.0f ||
+        blendedCore >= 1.570796327f ||
+        std::abs(drawMidCore - blendedCore * 0.5f) > 0.001f ||
+        std::abs(blendedCore - 1.570796327f *
+            kStep * config.boss.poseBlendSpeed) > 0.001f) {
+        std::puts("FAIL: Boss core skipped its fixed-step pose blend");
+        return 1;
+    }
+    visualBoss.BeginBehavior(BossMode::SpreadCounter);
+    const float spreadStartYaw = visualBoss.GetVisualPose().cones[0].rotation.y;
+    for (int step = 0; step < 7; ++step) {
+        visualBoss.Update(kStep, player);
+    }
+    const float spreadMidYaw = visualBoss.GetVisualPose().cones[0].rotation.y;
+    const float shortestTurn = std::remainder(-0.7f - spreadStartYaw,
+        2.0f * std::numbers::pi_v<float>);
+    const float expectedMidYaw = spreadStartYaw + shortestTurn *
+        (7.0f * kStep / config.boss.spreadWindupDuration);
+    if (std::abs(spreadMidYaw - expectedMidYaw) > 0.001f ||
+        std::abs(spreadMidYaw + 0.7f) < 0.1f) {
+        std::puts("FAIL: Boss spread windup skipped its midpoint pose");
+        return 1;
+    }
+    for (int step = 0; step < 70; ++step) {
+        visualBoss.Update(kStep, player);
+    }
+    if (std::abs(visualBoss.GetVisualPose().spreadSpin -
+            4.0f * std::numbers::pi_v<float>) > 0.001f) {
+        std::puts("FAIL: Boss spread pose snapped back after its spin");
+        return 1;
+    }
+    visualBoss.Reset({0.0f, config.boss.hoverHeight, 34.5f});
+    if (std::abs(visualBoss.GetVisualPose().cones[0].rotation.y -
+            initialPose.cones[0].rotation.y) > 0.001f ||
+        std::abs(visualBoss.GetVisualPose().coreRotation.x) > 0.001f) {
+        std::puts("FAIL: Boss visual pose did not reset");
         return 1;
     }
     for (int step = 0; step < 180; ++step) {

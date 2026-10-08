@@ -101,6 +101,23 @@ int main() {
         Near(initialRightFist->initialXDegrees, expectedFistPitch) &&
         Near(initialRightFist->initialZDegrees, -90.0f),
         "Idle right fist starts at the mirrored original shoulder-relative pose");
+    FirstPersonGame interpolationGame(GameConfig{}, scene.cameraPosition,
+        scene.models.front().position);
+    FirstPersonScenePresenter interpolationView(scene);
+    GameInput interpolationInput{};
+    interpolationInput.moveY = -1.0f;
+    interpolationGame.Update(1.0 / 60.0, interpolationInput, 0.0f, 0.0f);
+    interpolationView.Sync(interpolationGame, 0.5f);
+    const ModelInstance* halfFist = FindModelById(
+        interpolationView.GetScene(), "left_fist");
+    success &= Expect(halfFist != nullptr &&
+        Near(halfFist->position.z,
+            (interpolationGame.GetLeftArm().GetPreviousFistPosition().z +
+                interpolationGame.GetLeftArm().GetFistPosition().z) * 0.5f) &&
+        Near(interpolationView.GetScene().cameraPosition.z,
+            (interpolationGame.GetCamera().GetPreviousPosition().z +
+                interpolationGame.GetCamera().GetPosition().z) * 0.5f),
+        "Render interpolation blends the previous and current camera and fist poses");
     Matrix4x4 initialTransform{};
     success &= Expect(TryBuildModelTransform(game.GetScene(), 1280, 720, initialTransform),
         "Initial Target has a valid render transform");
