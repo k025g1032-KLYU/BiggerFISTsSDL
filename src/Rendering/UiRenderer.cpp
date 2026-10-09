@@ -40,6 +40,12 @@ void UiDrawList::Image(std::string_view name, float x, float y, float width,
 void UiDrawList::Rectangle(float x, float y, float width, float height, UiColor color) {
     Image("white1x1.png", x, y, width, height, color);
 }
+void UiDrawList::RotatedRectangle(float centerX, float centerY,
+    float width, float height, float radians, UiColor color) {
+    Image("white1x1.png", centerX - width * 0.5f,
+        centerY - height * 0.5f, width, height, color);
+    commands_.back().rotationRadians = radians;
+}
 void UiDrawList::ImageFrame(std::string_view name, float x, float y,
     float width, float height, int columns, int frame) {
     if (columns <= 0) return;
@@ -167,7 +173,8 @@ bool UiRenderer::Draw(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* backbuffer
             offsetX + command.x * scale, offsetY + command.y * scale,
             command.width * scale, command.height * scale,
             command.u, command.v, command.uSize, command.vSize,
-            static_cast<float>(width), static_cast<float>(height), 0.0f, 0.0f
+            static_cast<float>(width), static_cast<float>(height),
+            command.rotationRadians, 0.0f
         };
         const float tint[4]{command.color.r, command.color.g,
             command.color.b, command.color.a};

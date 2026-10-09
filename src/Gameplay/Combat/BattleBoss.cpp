@@ -44,6 +44,7 @@ void BattleBoss::Reset(const Vector3& position) {
     position_ = position;
     previousPosition_ = position;
     mode_ = BossMode::Entrance;
+    practiceNeedlePose_ = -1;
     modeTime_ = 0.0f;
     entranceRecovering_ = false;
     entranceRecoveryTime_ = 0.0f;
@@ -170,6 +171,14 @@ BossVisualPose BattleBoss::CalculateTargetVisualPose() const {
     BossVisualPose pose;
     pose.rootRotation.y = visualYaw_;
     pose.cones = cruise;
+    if (mode_ == BossMode::Idle && practiceNeedlePose_ >= 0) {
+        switch (practiceNeedlePose_) {
+        case 1: pose.cones = spread; break;
+        case 2: pose.cones = needle; break;
+        case 3: pose.cones = {}; pose.coreRotation.x = pi * 0.5f; break;
+        default: break;
+        }
+    }
     pose.crystalAngle = crystalAngle_;
     if (mode_ == BossMode::Entrance) {
         const float recoveryRatio = entranceRecovering_
@@ -289,6 +298,7 @@ void BattleBoss::BeginBehavior(BossMode mode) {
     if (mode == BossMode::SpreadCounter) {
         spreadStartCones_ = visualCones_;
     }
+    practiceNeedlePose_ = -1;
     mode_ = mode;
     modeTime_ = 0.0f;
     attackTimer_ = 0.0f;
@@ -308,6 +318,13 @@ void BattleBoss::BeginBehavior(BossMode mode) {
         needleImpactTime_ = 0.0f;
         needleImpactAttackId_ = 0;
     }
+}
+
+void BattleBoss::CyclePracticeNeedlePose() {
+    if (mode_ != BossMode::Idle && mode_ != BossMode::Cruise) return;
+    mode_ = BossMode::Idle;
+    modeTime_ = 0.0f;
+    practiceNeedlePose_ = (practiceNeedlePose_ + 1) % 4;
 }
 
 float BattleBoss::NextBehaviorRandom() {

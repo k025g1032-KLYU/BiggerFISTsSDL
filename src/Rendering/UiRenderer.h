@@ -16,6 +16,7 @@ struct UiCommand {
     float u = 0.0f, v = 0.0f, uSize = 1.0f, vSize = 1.0f;
     UiColor color{};
     bool cropStory = false;
+    float rotationRadians = 0.0f;
 };
 
 class UiDrawList {
@@ -26,6 +27,8 @@ public:
     void ImageFrame(std::string_view name, float x, float y, float width,
         float height, int columns, int frame);
     void Rectangle(float x, float y, float width, float height, UiColor color);
+    void RotatedRectangle(float centerX, float centerY, float width,
+        float height, float radians, UiColor color);
     void Text(std::string_view text, float x, float y, float scale = 1.0f,
         UiColor color = {});
     const std::vector<UiCommand>& GetCommands() const { return commands_; }

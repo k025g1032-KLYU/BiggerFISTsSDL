@@ -34,6 +34,7 @@ public:
     void PlayPlayerHit(PlayerHitType type, bool damagedHitPoints);
     void PlayBattleEvent(BattleFeedbackEvent event);
     void PlayCue(const std::string& name);
+    void StopCue(const std::string& name);
     void SetEngineLoop(bool enabled);
     bool IsEngineLoopQueued() const;
     void Shutdown();

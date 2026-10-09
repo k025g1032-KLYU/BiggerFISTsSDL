@@ -25,7 +25,9 @@ public:
     PlayerHitResult ReceiveHit(PlayerHitType type);
 
     int GetHitPoints() const { return hitPoints_; }
+    int GetMaximumHitPoints() const { return config_.maximumHitPoints; }
     int GetShieldLayers() const { return shieldLayers_; }
+    int GetMaximumShieldLayers() const { return config_.maximumShieldLayers; }
     float GetShieldRechargeRatio() const;
     bool IsDefeated() const { return hitPoints_ <= 0; }
 

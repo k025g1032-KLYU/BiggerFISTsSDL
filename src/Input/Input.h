@@ -10,6 +10,7 @@ public:
     void Update();
     bool IsKeyDown(SDL_Scancode key) const;
     bool IsKeyPressed(SDL_Scancode key) const;
+    SDL_Keymod GetPressModifiers(SDL_Scancode key) const;
     bool IsKeyReleased(SDL_Scancode key) const;
     bool IsMouseButtonDown(Uint8 button) const;
     float GetMouseDeltaX() const { return mouseDeltaX_; }
@@ -21,7 +22,9 @@ private:
     int keyCount_ = 0;
 
     std::array<bool, SDL_SCANCODE_COUNT> pressed_{};
+    std::array<SDL_Keymod, SDL_SCANCODE_COUNT> pressModifiers_{};
     std::array<bool, SDL_SCANCODE_COUNT> released_{};
+    std::array<bool, SDL_SCANCODE_COUNT> down_{};
     std::array<bool, 8> mouseButtonsDown_{};
     bool hasFocus_ = true;
     float mouseDeltaX_ = 0.0f;

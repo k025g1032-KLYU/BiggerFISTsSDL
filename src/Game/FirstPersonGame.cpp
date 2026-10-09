@@ -462,6 +462,14 @@ void FirstPersonGame::EndNeedleStun() {
     player_.ClearNeedleStun();
 }
 
+void FirstPersonGame::TriggerPracticeOffline() {
+    if (IsSystemOffline()) return;
+    needleShutdownDelay_ = 0.0f;
+    needleOfflineTimer_ = 3.0f;
+    leftArm_.Reset(player_.GetPosition(), player_.GetBodyYaw());
+    rightArm_.Reset(player_.GetPosition(), player_.GetBodyYaw());
+}
+
 void FirstPersonGame::ResetTarget() {
     targets_ = initialTargets_;
     events_.targetReset = true;

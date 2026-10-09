@@ -2,6 +2,7 @@
 
 void Input::BeginFrame() {
     pressed_.fill(false);
+    pressModifiers_.fill(SDL_KMOD_NONE);
     released_.fill(false);
     mouseDeltaX_ = 0.0f;
     mouseDeltaY_ = 0.0f;
@@ -19,7 +20,9 @@ void Input::ProcessEvent(const SDL_Event& event) {
         mouseDeltaX_ = 0.0f;
         mouseDeltaY_ = 0.0f;
         pressed_.fill(false);
+        pressModifiers_.fill(SDL_KMOD_NONE);
         released_.fill(false);
+        down_.fill(false);
         mouseButtonsDown_.fill(false);
         hasFocus_ = false;
         return;
@@ -49,9 +52,14 @@ void Input::ProcessEvent(const SDL_Event& event) {
 
     if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
         pressed_[index] = true;
+        pressModifiers_[index] = event.key.mod;
+    }
+    if (event.type == SDL_EVENT_KEY_DOWN) {
+        down_[index] = true;
     }
     else if (event.type == SDL_EVENT_KEY_UP) {
         released_[index] = true;
+        down_[index] = false;
     }
 }
 
@@ -62,10 +70,10 @@ void Input::Update() {
 bool Input::IsKeyDown(SDL_Scancode key) const {
     const int index = static_cast<int>(key);
 
-    return hasFocus_ && keyStates_ != nullptr &&
-           index > SDL_SCANCODE_UNKNOWN &&
-           index < keyCount_ &&
-           keyStates_[index];
+    return hasFocus_ && index > SDL_SCANCODE_UNKNOWN &&
+        index < SDL_SCANCODE_COUNT &&
+        (down_[index] || (keyStates_ != nullptr && index < keyCount_ &&
+            keyStates_[index]));
 }
 
 bool Input::IsMouseButtonDown(Uint8 button) const {
@@ -78,6 +86,13 @@ bool Input::IsKeyPressed(SDL_Scancode key) const {
     return hasFocus_ && index > SDL_SCANCODE_UNKNOWN &&
            index < SDL_SCANCODE_COUNT &&
            pressed_[index];
+}
+
+SDL_Keymod Input::GetPressModifiers(SDL_Scancode key) const {
+    const int index = static_cast<int>(key);
+    if (!hasFocus_ || index <= SDL_SCANCODE_UNKNOWN ||
+        index >= SDL_SCANCODE_COUNT) return SDL_KMOD_NONE;
+    return pressModifiers_[index];
 }
 
 bool Input::IsKeyReleased(SDL_Scancode key) const {

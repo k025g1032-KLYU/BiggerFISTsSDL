@@ -29,6 +29,7 @@ private:
     bool projectileHitPressed_ = false;
     bool chargeHitPressed_ = false;
     bool burstHitPressed_ = false;
+    PracticeCommand practiceCommand_ = PracticeCommand::None;
     float pendingMouseDeltaX_ = 0.0f;
     float pendingMouseDeltaY_ = 0.0f;
 };

@@ -34,6 +34,14 @@ public:
     int GetStepNumber() const;
     const char* GetTitle() const;
     const char* GetInstruction() const;
+    float GetLookAngle() const { return lookAngle_; }
+    float GetMoveDistance() const { return moveDistance_; }
+    bool HasLeftHit() const { return leftHit_; }
+    bool HasRightHit() const { return rightHit_; }
+    bool IsConfirming() const { return confirmation_ > 0.0f; }
+    bool ShowFreePracticeCaption() const {
+        return IsComplete() && freePracticeCaptionRemaining_ > 0.0f;
+    }
     const char* ConsumeVoiceCue();
 private:
     void Advance();
@@ -43,6 +51,7 @@ private:
     float confirmation_ = 0.0f;
     float lookAngle_ = 0.0f;
     float moveDistance_ = 0.0f;
+    float freePracticeCaptionRemaining_ = 0.0f;
     float previousYaw_ = 0.0f;
     float previousPitch_ = 0.0f;
     Vector3 previousPosition_{};

@@ -69,6 +69,9 @@ public:
         const Vector3& pushDirection = {0.0f, 0.0f, 1.0f});
     void StartNeedleStun();
     void EndNeedleStun();
+    void TriggerPracticeOffline();
+    float GetOfflineRemaining() const { return needleOfflineTimer_ > 0.0f
+        ? needleOfflineTimer_ : ultimateOfflineTimer_; }
     const PlayerMovement& GetPlayer() const { return player_; }
     const FirstPersonCamera& GetCamera() const { return camera_; }
     const PunchArm& GetLeftArm() const { return leftArm_; }

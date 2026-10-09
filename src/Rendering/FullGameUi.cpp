@@ -3,23 +3,22 @@
 #include "Game/FirstPersonGame.h"
 #include "Gameplay/Combat/CombatSession.h"
 #include "Gameplay/Tutorial/TutorialSession.h"
+#include "Gameplay/Cockpit/CockpitPresentation.h"
 #include "Rendering/UiRenderer.h"
+#include "Collision/Collision.h"
+#include "Gameplay/Player/FirstPersonTuning.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 namespace {
 constexpr UiColor kPanel{0.025f, 0.045f, 0.08f, 0.72f};
 constexpr UiColor kGreen{0.35f, 1.0f, 0.75f, 1.0f};
 constexpr UiColor kRed{1.0f, 0.35f, 0.3f, 1.0f};
 
-void Bar(UiDrawList& list, float x, float y, float width, float ratio,
-    UiColor color) {
-    list.Rectangle(x, y, width, 12.0f, {0.07f, 0.11f, 0.13f, 0.8f});
-    list.Rectangle(x, y, width * std::clamp(ratio, 0.0f, 1.0f), 12.0f, color);
-}
 void Segments(UiDrawList& list, float x, float y, int count, int filled,
     float width, UiColor color) {
     for (int index = 0; index < count; ++index) {
@@ -52,36 +51,61 @@ void TargetFrames(UiDrawList& list, const FirstPersonGame& player) {
     const Vector3 up{sineYaw * sinePitch, cosinePitch,
         cosineYaw * sinePitch};
     constexpr float focalLength = 623.538f; // 720 / (2 * tan(60 degrees / 2))
-    int sequence = 0;
-    for (const FirstPersonTarget& target : player.GetTargets()) {
-        if (target.hitPoints <= 0 || sequence >= 10) continue;
-        const Vector3 relative{target.position.x - eye.x,
-            target.position.y + 1.4f - eye.y, target.position.z - eye.z};
-        const float depth = relative.x * forward.x + relative.y * forward.y +
-            relative.z * forward.z;
-        if (depth <= 0.1f) continue;
-        const float x = 640.0f + focalLength *
-            (relative.x * right.x + relative.z * right.z) / depth;
-        const float y = 360.0f - focalLength *
-            (relative.x * up.x + relative.y * up.y + relative.z * up.z) / depth;
-        if (x < 32.0f || x > 1248.0f || y < 40.0f || y > 680.0f) continue;
-        const UiColor tint = sequence % 2 == 0 ?
-            UiColor{0.38f, 1.0f, 0.86f, 0.9f} :
+    const PunchArm* arms[]{&player.GetLeftArm(), &player.GetRightArm()};
+    for (int side = 0; side < 2; ++side) {
+        const RocketPreviewTrajectory trajectory = arms[side]->GetRocketPreviewTrajectory(
+            player.GetPlayer().GetPosition(), player.GetPlayer().GetBodyYaw());
+        if (trajectory.flightDistance <= 0.0f) continue;
+        const Vector3 end{
+            trajectory.start.x + trajectory.direction.x * trajectory.flightDistance,
+            trajectory.start.y + trajectory.direction.y * trajectory.flightDistance,
+            trajectory.start.z + trajectory.direction.z * trajectory.flightDistance};
+        struct LockCandidate {
+            const FirstPersonTarget* target;
+            float time;
+        };
+        std::vector<LockCandidate> candidates;
+        for (const FirstPersonTarget& target : player.GetTargets()) {
+            if (target.hitPoints <= 0) continue;
+            const Collision::SweepHit hit = Collision::SweepSphereAgainstSphere(
+                trajectory.start, end, FirstPersonTuning::kFistRadius,
+                {target.position, target.radius});
+            if (hit.didHit) candidates.push_back({&target, hit.time});
+        }
+        std::sort(candidates.begin(), candidates.end(),
+            [](const LockCandidate& a, const LockCandidate& b) {
+                return a.time < b.time;
+            });
+        const UiColor tint = side == 0 ? UiColor{0.38f, 1.0f, 0.86f, 0.9f} :
             UiColor{0.55f, 0.85f, 1.0f, 0.9f};
-        list.Rectangle(x - 32, y - 32, 64, 3, tint);
-        list.Rectangle(x - 32, y + 29, 64, 3, tint);
-        list.Rectangle(x - 32, y - 32, 3, 64, tint);
-        list.Rectangle(x + 29, y - 32, 3, 64, tint);
-        char label[24]{};
-        std::snprintf(label, sizeof(label), "%c LOCK %d",
-            sequence % 2 == 0 ? 'L' : 'R', sequence / 2 + 1);
-        list.Text(label, x - 30, y - 57, 0.8f, tint);
-        ++sequence;
+        for (std::size_t index = 0; index < candidates.size(); ++index) {
+            const FirstPersonTarget& target = *candidates[index].target;
+            const float targetHeight = target.id.starts_with("target_battle_boss") ||
+                target.id.starts_with("target_battle_enemy") ? 1.4f : 0.0f;
+            const Vector3 relative{target.position.x - eye.x,
+                target.position.y + targetHeight - eye.y, target.position.z - eye.z};
+            const float depth = relative.x * forward.x + relative.y * forward.y +
+                relative.z * forward.z;
+            if (depth <= 0.1f) continue;
+            const float x = 640.0f + focalLength *
+                (relative.x * right.x + relative.z * right.z) / depth;
+            const float y = 360.0f - focalLength *
+                (relative.x * up.x + relative.y * up.y + relative.z * up.z) / depth;
+            if (x < 32.0f || x > 1248.0f || y < 40.0f || y > 680.0f) continue;
+            list.Rectangle(x - 32, y - 32, 64, 3, tint);
+            list.Rectangle(x - 32, y + 29, 64, 3, tint);
+            list.Rectangle(x - 32, y - 32, 3, 64, tint);
+            list.Rectangle(x + 29, y - 32, 3, 64, tint);
+            char label[24]{};
+            std::snprintf(label, sizeof(label), "%c LOCK %u",
+                side == 0 ? 'L' : 'R', static_cast<unsigned>(index + 1));
+            list.Text(label, x - 30, y - 57, 0.8f, tint);
+        }
     }
 }
 void DrawHud(UiDrawList& list, const FirstPersonGame& player,
     const CombatSession* battle, const TutorialSession* tutorial,
-    float cockpitStartupRemaining) {
+    const CockpitPresentation& cockpit) {
     bool base = true;
     bool armor = !tutorial || tutorial->IsCockpitConnected();
     bool shields = !tutorial || tutorial->GetStep() >= TutorialStep::Defense;
@@ -89,85 +113,96 @@ void DrawHud(UiDrawList& list, const FirstPersonGame& player,
     bool rightArm = leftArm;
     bool dodge = !tutorial || tutorial->GetStep() >= TutorialStep::Dodge;
     bool targets = !tutorial || tutorial->GetStep() >= TutorialStep::RocketPunch;
-    if (!tutorial && cockpitStartupRemaining > 0.0f) {
-        const float elapsed = 4.8f - cockpitStartupRemaining;
-        const int visibleLines = std::clamp(
-            static_cast<int>(elapsed / 0.45f) + 1, 1, 6);
-        base = visibleLines >= 1;
-        armor = shields = visibleLines >= 2;
-        leftArm = visibleLines >= 3;
-        rightArm = visibleLines >= 4;
-        dodge = visibleLines >= 5;
-        targets = visibleLines >= 6;
+    if (cockpit.IsStartupActive()) {
+        const CockpitHudVisibility visible = cockpit.GetHudVisibility();
+        base = visible.base;
+        armor = visible.armor;
+        shields = visible.shield;
+        leftArm = visible.leftArm;
+        rightArm = visible.rightArm;
+        dodge = visible.dodge;
+        targets = visible.targets;
     }
     char line[128]{};
     if (targets) TargetFrames(list, player);
-    if (armor || shields) {
-        list.Rectangle(31.0f, shields ? 579.0f : 620.0f, 326.0f,
-            shields ? 116.0f : 73.0f, kPanel);
-    }
+    if (armor || shields) list.Rectangle(31.0f,
+        shields ? 579.0f : 620.0f, 326.0f,
+        shields ? 116.0f : 73.0f, kPanel);
     if (armor) {
-        std::snprintf(line, sizeof(line), "ARMOR  %d / 5",
-            player.GetVitality().GetHitPoints());
-        list.Text(line, 44, 627, 1.0f, kGreen);
+        const auto& vitality = player.GetVitality();
+        const float ratio = static_cast<float>(vitality.GetHitPoints()) /
+            std::max(1, vitality.GetMaximumHitPoints());
+        std::snprintf(line, sizeof(line), "%03d",
+            static_cast<int>(std::round(ratio * 100.0f)));
+        list.Text("ARMOR", 44, 628, 1.0f);
+        list.Text(line, 122, 628, 1.0f);
         Segments(list, 164, 635, 10,
-            player.GetVitality().GetHitPoints() * 2, 13, kGreen);
+            static_cast<int>(std::round(ratio * 10.0f)), 13,
+            {0.78f, 0.93f, 1.0f, 0.95f});
     }
     if (shields) {
         list.Text("SHIELD", 44, 590, 1.0f, kGreen);
         Segments(list, 132, 595, 3,
             player.GetVitality().GetShieldLayers(), 34,
-            {0.3f, 0.65f, 1.0f, 1.0f});
-        Bar(list, 132, 615, 189,
-            player.GetVitality().GetShieldRechargeRatio(),
-            {0.3f, 0.65f, 1.0f, 1.0f});
+            {0.36f, 0.88f, 1.0f, 0.95f});
+        const bool full = player.GetVitality().GetShieldLayers() >=
+            player.GetVitality().GetMaximumShieldLayers();
+        if (full) list.Text("FULL", 280, 590, 1.0f);
+        else {
+            std::snprintf(line, sizeof(line), "%d%%", static_cast<int>(
+                std::round(player.GetVitality().GetShieldRechargeRatio() * 100.0f)));
+            list.Text(line, 280, 590, 1.0f);
+        }
+        list.Rectangle(132, 613, 189, 6, {0.20f, 0.38f, 0.48f, 0.8f});
+        list.Rectangle(132, 613, 189 * (full ? 1.0f :
+            player.GetVitality().GetShieldRechargeRatio()), 6,
+            {0.36f, 0.88f, 1.0f, 0.95f});
     }
     if (base && (battle || tutorial)) {
         list.Rectangle(486, 8, 320, 92, kPanel);
-        if (const BattleBoss* boss = battle ? battle->GetBoss() : nullptr) {
-            std::snprintf(line, sizeof(line), "BOSS CORE %d / %d",
-                boss->GetHitPoints(), boss->GetMaximumHitPoints());
-            list.Text(line, 520, 22, 1.0f, kRed);
-            Bar(list, 500, 70, 292,
-                static_cast<float>(boss->GetHitPoints()) / boss->GetMaximumHitPoints(), kRed);
-        } else if (battle) {
-            std::snprintf(line, sizeof(line), "BASE HP %d  WAVE %d / %d",
-                battle->GetBaseHitPoints(), battle->GetWaveIndex() + 1,
-                battle->GetWaveCount());
-            list.Text(line, 530, 22, 0.95f, kGreen);
-            std::snprintf(line, sizeof(line), "ENEMIES %u   PROJECTILES %u",
-                static_cast<unsigned>(battle->GetEnemies().size()),
-                static_cast<unsigned>(battle->GetProjectiles().size()));
-            list.Text(line, 510, 53, 0.85f, kGreen);
-        } else {
-            list.Text("BASE HP 10", 570, 22, 0.95f, kGreen);
-        }
+        const int hp = battle ? battle->GetBaseHitPoints() : 10;
+        const int maximum = battle ? battle->GetBaseMaximumHitPoints() : 10;
+        const float ratio = static_cast<float>(hp) / std::max(1, maximum);
+        std::snprintf(line, sizeof(line), "%03d / 1000",
+            static_cast<int>(std::round(ratio * 1000.0f)));
+        list.Text("BASE HP", 600, 12, 1.2f);
+        list.Text(line, 570, 38, 1.2f);
+        Segments(list, 500, 68, 15,
+            static_cast<int>(std::round(ratio * 15.0f)), 16,
+            {0.42f, 1.0f, 0.62f, 0.95f});
     }
     if (leftArm || rightArm) {
-        list.Rectangle(414, 558, 452, 89, kPanel);
         if (leftArm) {
-            list.Text("L ARM", 440, 570, 1.0f, kGreen);
+            list.Text("L ARM", 440, 570, 1.3f);
             list.Text(ArmStatus(player.GetLeftArm().GetState()),
-                440, 597, 0.9f, kGreen);
-            Bar(list, 440, 625, 135,
-                player.GetLeftArm().GetChargeRatio(), kGreen);
+                440, 598, 1.3f);
+            list.RotatedRectangle(420, 608, 14, 14, 0.7853982f,
+                {0.02f, 0.05f, 0.08f, 0.92f});
+            list.RotatedRectangle(420, 608, 8, 8, 0.7853982f,
+                player.GetLeftArm().GetState() == PunchArmState::Ready
+                ? kGreen : UiColor{1.0f, 0.82f, 0.20f, 0.98f});
         }
         if (rightArm) {
-            list.Text("R ARM", 780, 570, 1.0f, kGreen);
+            list.Text("R ARM", 780, 570, 1.3f);
             list.Text(ArmStatus(player.GetRightArm().GetState()),
-                780, 597, 0.9f, kGreen);
-            Bar(list, 700, 625, 135,
-                player.GetRightArm().GetChargeRatio(), kGreen);
+                780, 598, 1.3f);
+            list.RotatedRectangle(760, 608, 14, 14, 0.7853982f,
+                {0.02f, 0.05f, 0.08f, 0.92f});
+            list.RotatedRectangle(760, 608, 8, 8, 0.7853982f,
+                player.GetRightArm().GetState() == PunchArmState::Ready
+                ? kGreen : UiColor{1.0f, 0.82f, 0.20f, 0.98f});
         }
-        list.Rectangle(631, 356, 18, 2, kGreen);
-        list.Rectangle(639, 348, 2, 18, kGreen);
     }
     if (dodge) {
-        std::snprintf(line, sizeof(line), "DODGE %s",
-            player.GetPlayer().GetDodgeCooldownRemaining() <= 0.0f ? "READY" : "COOLING");
-        list.Text(line, 600, 660, 0.9f, kGreen);
+        const bool ready = player.GetPlayer().GetDodgeCooldownRemaining() <= 0.0f;
+        list.Text("DODGE", 600, 610, 1.3f);
+        list.Text(ready ? "READY" : "RECHARGING", 600, 638, 1.3f);
+        list.RotatedRectangle(580, 648, 14, 14, 0.7853982f,
+            {0.02f, 0.05f, 0.08f, 0.92f});
+        list.RotatedRectangle(580, 648, 8, 8, 0.7853982f,
+            ready ? kGreen : kRed);
     }
-    if (battle) {
+    if (battle && !battle->IsPractice()) {
         if (battle->GetPhase() == BattlePhase::Ready) {
             list.Rectangle(400, 270, 480, 120, kPanel);
             list.Text("READY - PRESS ENTER / START", 458, 310, 1.1f, kGreen);
@@ -185,7 +220,8 @@ void DrawHud(UiDrawList& list, const FirstPersonGame& player,
 
 void BuildFullGameUi(const FlowScreenState& flow, const TutorialSession* tutorial,
     const CombatSession* battle, const FirstPersonGame& player,
-    double elapsedSeconds, float cockpitStartupRemaining, UiDrawList& list) {
+    double elapsedSeconds, const CockpitPresentation& cockpit,
+    bool practiceDataVisible, UiDrawList& list) {
     list.Clear();
     if (flow.phase == FlowPhase::Title && flow.presentation != FlowPresentation::Story) {
         list.Image("title.png", 0, 0, 1280, 720);
@@ -204,16 +240,62 @@ void BuildFullGameUi(const FlowScreenState& flow, const TutorialSession* tutoria
             480, 670, 0.85f);
     } else if (flow.phase == FlowPhase::Tutorial || flow.phase == FlowPhase::Day1 ||
         flow.phase == FlowPhase::Day2 || flow.phase == FlowPhase::Boss) {
-        DrawHud(list, player, battle, tutorial, cockpitStartupRemaining);
-        if (flow.phase == FlowPhase::Tutorial && tutorial) {
-            list.Rectangle(348, 100, 585, 132, kPanel);
+        DrawHud(list, player, battle, tutorial, cockpit);
+        if (flow.phase == FlowPhase::Tutorial && tutorial &&
+            !cockpit.IsActive() &&
+            (!tutorial->IsComplete() || tutorial->ShowFreePracticeCaption())) {
+            list.Rectangle(348, 100, 585, 134, kPanel);
             char line[96]{};
-            std::snprintf(line, sizeof(line), "PILOT OPERATION VERIFICATION %02d / 06",
+            std::snprintf(line, sizeof(line), "PILOT OPERATION VERIFICATION  %02d / 06",
                 tutorial->GetStepNumber());
-            list.Text(line, 360, 112, 0.95f, kGreen);
-            list.Text(tutorial->GetTitle(), 360, 140, 1.2f);
-            list.Text(tutorial->GetInstruction(), 360, 175, 0.85f);
-            if (tutorial->IsComplete()) list.Text("ENTER / START: CONTINUE", 995, 687, 0.8f);
+            list.Text(line, 360, 112, 1.0f);
+            list.Text(tutorial->GetTitle(), 360, 140, 1.25f);
+            if (tutorial->IsConfirming()) {
+                list.Text("RESPONSE CONFIRMED  /  CHECK PASSED", 360, 168);
+            } else if (tutorial->GetStep() == TutorialStep::VisualLink &&
+                tutorial->GetLookAngle() < 1.5707963f) {
+                std::snprintf(line, sizeof(line),
+                    "RIGHT STICK / MOUSE: VISUAL SWEEP  %03d%%",
+                    static_cast<int>(std::round(std::clamp(
+                        tutorial->GetLookAngle() / 1.5707963f, 0.0f, 1.0f) * 100.0f)));
+                list.Text(line, 360, 168);
+            } else if (tutorial->GetStep() == TutorialStep::Mobility) {
+                std::snprintf(line, sizeof(line), "MOVE %.1f / 5.0   VIEW %03d%%",
+                    tutorial->GetMoveDistance(), static_cast<int>(std::round(
+                        std::clamp(tutorial->GetLookAngle() / 0.5235988f,
+                            0.0f, 1.0f) * 100.0f)));
+                list.Text(line, 360, 168);
+                list.Text("LEFT STICK / WASD: MOVE   RIGHT STICK / MOUSE: LOOK",
+                    360, 190);
+            } else if (tutorial->GetStep() == TutorialStep::Punch ||
+                tutorial->GetStep() == TutorialStep::RocketPunch) {
+                std::snprintf(line, sizeof(line), "L %s   R %s",
+                    tutorial->HasLeftHit() ? "PASS" : "WAIT",
+                    tutorial->HasRightHit() ? "PASS" : "WAIT");
+                list.Text(tutorial->GetInstruction(), 360, 168);
+                list.Text(line, 360, 190);
+            } else {
+                list.Text(tutorial->GetInstruction(), 360, 168);
+                if (tutorial->IsComplete())
+                    list.Text("FREE PRACTICE - ALL FUNCTIONS UNLOCKED", 360, 190);
+            }
+            if (tutorial->IsComplete())
+                list.Text("ENTER / START: CONTINUE", 995, 687, 0.8f);
+        }
+        if (battle && battle->IsPractice() && practiceDataVisible) {
+            char line[160]{};
+            list.Rectangle(6, 7, 468, 128, kPanel);
+            list.Text("F1 CAMERA  F2 MODEL  F3 DATA", 16, 16, 0.8f);
+            list.Text("F5 FULL  F6 QUICK  F7 BOSS  F8 REBOOT", 16, 37, 0.8f);
+            list.Text("1-7 ENEMY  SHIFT+1-4 PROJECTILES", 16, 58, 0.8f);
+            list.Text("0/8/9/B/C/N/M BOSS  R RESET", 16, 79, 0.8f);
+            std::snprintf(line, sizeof(line), "Enemy %u | Projectile %u | Pattern %s | HP %d | Shield %d",
+                static_cast<unsigned>(battle->GetEnemies().size()),
+                static_cast<unsigned>(battle->GetProjectiles().size()),
+                battle->GetPracticePatternName(),
+                player.GetVitality().GetHitPoints(),
+                player.GetVitality().GetShieldLayers());
+            list.Text(line, 16, 105, 0.7f);
         }
         list.Text("F4: SKIP PHASE", 1040, 18, 0.85f);
     }
@@ -221,16 +303,36 @@ void BuildFullGameUi(const FlowScreenState& flow, const TutorialSession* tutoria
         flow.presentation == FlowPresentation::Opening) {
         list.Rectangle(0, 0, 1280, 720, {0, 0, 0, flow.curtainAmount});
     }
-    if (cockpitStartupRemaining > 0.0f &&
-        flow.presentation == FlowPresentation::Normal) {
-        const float progress = 1.0f - cockpitStartupRemaining / 4.8f;
-        list.Rectangle(0, 0, 1280, 720, {0.01f, 0.025f, 0.04f,
-            0.94f * (1.0f - progress)});
-        if (cockpitStartupRemaining > 1.0f) {
-            list.Rectangle(300, 240, 680, 150, kPanel);
-            list.Text("SYSTEM STARTUP", 505, 268, 1.4f, kGreen);
-            list.Text("COCKPIT LINK / ACTUATORS / TARGET SYSTEM", 356, 310, 0.9f);
-            Bar(list, 356, 345, 566, progress, kGreen);
+    if (cockpit.IsActive() && flow.presentation == FlowPresentation::Normal) {
+        list.Rectangle(0, 0, 1280, 720,
+            {0.0f, 0.0f, 0.0f, cockpit.GetOverlayAlpha()});
+        if (cockpit.IsStartupActive()) {
+            list.Text(cockpit.GetTitle(), 460, 152, 1.2f);
+            for (int index = 0; index < cockpit.GetVisibleLineCount(); ++index)
+                list.Text(cockpit.GetLine(index), 430, 220 + index * 32.0f);
+            if (cockpit.IsAllGreenVisible()) {
+                list.Text("SYSTEM ALL GREEN", 470, 465, 1.8f);
+                if (cockpit.GetMode() == CockpitMode::FullStartup) {
+                    list.Text("SUPER ROBOT BEAST G", 450, 530, 1.4f);
+                    list.Text("START UP", 550, 570, 1.5f);
+                }
+            }
+        } else if (cockpit.GetMode() == CockpitMode::EmergencyReboot) {
+            if (cockpit.GetElapsed() < 0.5f) {
+                list.Text("WARNING", 560, 260, 1.8f);
+                list.Text("SYSTEM OVERLOAD", 490, 315, 2.0f);
+            } else if (cockpit.IsAllGreenVisible()) {
+                list.Text("REBOOTING...", 525, 230, 1.6f);
+                list.Text("MAIN POWER      OK", 470, 310, 1.1f);
+                list.Text("CONTROL         OK", 470, 345, 1.1f);
+                list.Text("ARM SYSTEM      OK", 470, 380, 1.1f);
+                list.Text("SYSTEM ALL GREEN", 470, 465, 1.8f);
+            } else {
+                list.Text("SYSTEM OFFLINE", 500, 280, 2.0f);
+                list.Text("MAIN POWER      --", 470, 350, 1.1f);
+                list.Text("CONTROL         LOST", 470, 385, 1.1f);
+                list.Text("ARM SYSTEM      OFFLINE", 470, 420, 1.1f);
+            }
         }
     }
 }

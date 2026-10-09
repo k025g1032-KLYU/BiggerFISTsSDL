@@ -18,7 +18,7 @@ public:
     explicit WindowSettings(SDL_Window* window);
 
     bool Apply(const DisplaySettings& settings);
-    void ProcessEvent(const SDL_Event& event);
+    void ProcessEvent(const SDL_Event& event, bool practiceActive = false);
     bool ApplyPending();
     void UpdateOutputSize(Uint32 width, Uint32 height);
 

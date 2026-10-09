@@ -8,6 +8,7 @@ class FirstPersonGame;
 class PunchArm;
 class CombatSession;
 class BattleAssetCatalog;
+struct CockpitActivation;
 struct BattleVisualEvent;
 enum class BattleVisualEffect;
 
@@ -23,7 +24,9 @@ public:
         bool showTargets);
     void ClearDynamic();
     void SyncCockpit(const FirstPersonGame& game, const BattleAssetCatalog& assets,
-        bool visible, float startupRemainingRatio);
+        bool visible, const CockpitActivation& activation,
+        int practiceModelMode = 0);
+    void SetPracticeThirdPerson(const FirstPersonGame& game, bool enabled);
     const ModelScene& GetScene() const { return scene_; }
 
 private:

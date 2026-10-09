@@ -120,6 +120,8 @@ add_executable(BiggerFISTsSDL
     src/Gameplay/Combat/CombatSession.h
     src/Gameplay/Tutorial/TutorialSession.cpp
     src/Gameplay/Tutorial/TutorialSession.h
+    src/Gameplay/Cockpit/CockpitPresentation.cpp
+    src/Gameplay/Cockpit/CockpitPresentation.h
     src/Gameplay/Combat/BattleBoss.cpp
     src/Gameplay/Combat/BattleBoss.h
     src/Data/BattleCombatConfig.cpp
@@ -525,6 +527,13 @@ add_executable(TutorialSessionTests EXCLUDE_FROM_ALL
 target_include_directories(TutorialSessionTests PRIVATE src)
 add_test(NAME TutorialSessionTests COMMAND TutorialSessionTests)
 
+add_executable(CockpitPresentationTests EXCLUDE_FROM_ALL
+    tests/CockpitPresentationTests.cpp
+    src/Gameplay/Cockpit/CockpitPresentation.cpp
+)
+target_include_directories(CockpitPresentationTests PRIVATE src)
+add_test(NAME CockpitPresentationTests COMMAND CockpitPresentationTests)
+
 add_executable(FullGameIntegrationTests EXCLUDE_FROM_ALL
     tests/FullGameIntegrationTests.cpp
     src/Game/GameFlow.cpp
@@ -571,6 +580,7 @@ if(MSVC)
     target_compile_options(BattleReplayTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(GameFlowTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(TutorialSessionTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(CockpitPresentationTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(FullGameIntegrationTests PRIVATE /W4 /utf-8 /EHsc)
 endif()
 

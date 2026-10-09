@@ -63,6 +63,7 @@ public:
     bool ReceiveHit(int damage);
     bool RegisterNeedleStrikeHit(std::uint64_t attackId);
     void BeginBehavior(BossMode mode);
+    void CyclePracticeNeedlePose();
 
     BossMode GetMode() const { return mode_; }
     const Vector3& GetPosition() const { return position_; }
@@ -166,5 +167,6 @@ private:
     std::array<BossPartPose, 3> visualCones_{};
     std::array<BossPartPose, 3> spreadStartCones_{};
     Vector3 visualCoreRotation_{};
+    int practiceNeedlePose_ = -1;
     BossVisualPose previousVisualPose_{};
 };

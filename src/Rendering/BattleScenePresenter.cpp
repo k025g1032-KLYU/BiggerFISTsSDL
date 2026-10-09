@@ -2,6 +2,7 @@
 
 #include "Data/BattleAssetCatalog.h"
 #include "Gameplay/Combat/CombatSession.h"
+#include "Gameplay/Cockpit/CockpitPresentation.h"
 
 #include <algorithm>
 #include <array>
@@ -128,18 +129,22 @@ void FirstPersonScenePresenter::SyncEnvironment(const FirstPersonGame& game,
 
 void FirstPersonScenePresenter::SyncCockpit(const FirstPersonGame& game,
     const BattleAssetCatalog& assets, bool visible,
-    float startupRemainingRatio) {
+    const CockpitActivation& activation, int practiceModelMode) {
     std::erase_if(scene_.models, [](const ModelInstance& model) {
         return model.id == "fullgame_cockpit" || model.id == "fullgame_helmet";
     });
-    if (!visible) return;
+    if (!visible || practiceModelMode == 3) return;
+    const float cameraSink = 0.3f * (1.0f - activation.camera);
+    scene_.cameraPosition.y -= cameraSink;
+    scene_.cameraTarget.y -= cameraSink;
     if (ModelInstance* body = FindModelById(scene_, "fullgame_body"))
-        body->position.y -= 2.6f * startupRemainingRatio;
-    for (const char* id : {"left_fist", "right_fist",
-            "left_upper_arm", "right_upper_arm"}) {
+        body->position.y -= 2.6f * (1.0f - activation.body);
+    for (const char* id : {"left_fist", "left_upper_arm"})
         if (ModelInstance* arm = FindModelById(scene_, id))
-            arm->position.y -= 2.8f * startupRemainingRatio;
-    }
+            arm->position.y -= 2.8f * (1.0f - activation.leftArm);
+    for (const char* id : {"right_fist", "right_upper_arm"})
+        if (ModelInstance* arm = FindModelById(scene_, id))
+            arm->position.y -= 2.8f * (1.0f - activation.rightArm);
     const ModelInstance* prototype = assets.Find("cockpit");
     if (!prototype) return;
     ModelInstance cockpit = *prototype;
@@ -148,7 +153,7 @@ void FirstPersonScenePresenter::SyncCockpit(const FirstPersonGame& game,
         game.GetPlayer().GetPreviousPosition(),
         game.GetPlayer().GetPosition(), interpolationAlpha_);
     cockpit.position = {player.x, player.y + 4.15f -
-        startupRemainingRatio * 2.9f,
+        (1.0f - activation.body) * 2.9f,
         player.z};
     cockpit.scale = 1.0f;
     cockpit.opacity = 1.0f;
@@ -156,18 +161,32 @@ void FirstPersonScenePresenter::SyncCockpit(const FirstPersonGame& game,
     cockpit.initialXDegrees = 0.0f;
     cockpit.initialYDegrees = game.GetPlayer().GetBodyYaw() * 57.2957795f;
     cockpit.initialZDegrees = 0.0f;
-    scene_.models.push_back(std::move(cockpit));
-    if (const ModelInstance* helmetPrototype = assets.Find("helmet")) {
+    if (practiceModelMode != 1) scene_.models.push_back(std::move(cockpit));
+    if (practiceModelMode != 2) if (const ModelInstance* helmetPrototype = assets.Find("helmet")) {
         ModelInstance helmet = *helmetPrototype;
         helmet.id = "fullgame_helmet";
         helmet.position = scene_.cameraPosition;
-        helmet.position.y -= 0.3f * startupRemainingRatio;
+        helmet.position.y -= 0.3f * (1.0f - activation.camera);
         helmet.opacity = 0.45f;
         helmet.transparent = true;
         Rotate(helmet, {game.GetCamera().GetPitch(),
             game.GetCamera().GetYaw(), 0.0f});
         scene_.models.push_back(std::move(helmet));
     }
+}
+
+void FirstPersonScenePresenter::SetPracticeThirdPerson(
+    const FirstPersonGame& game, bool enabled) {
+    if (!enabled) return;
+    const float yaw = game.GetCamera().GetYaw();
+    const float pitch = std::clamp(game.GetCamera().GetPitch() + 0.28f,
+        0.12f, 0.75f);
+    const float horizontalDistance = std::cos(pitch) * 10.0f;
+    const Vector3 player = game.GetPlayer().GetPosition();
+    scene_.cameraTarget = {player.x, player.y + 1.8f, player.z};
+    scene_.cameraPosition = {player.x - std::sin(yaw) * horizontalDistance,
+        player.y + 1.8f + std::sin(pitch) * 10.0f,
+        player.z - std::cos(yaw) * horizontalDistance};
 }
 
 void FirstPersonScenePresenter::SyncTutorial(const FirstPersonGame& game,
@@ -177,10 +196,10 @@ void FirstPersonScenePresenter::SyncTutorial(const FirstPersonGame& game,
     });
     SyncEnvironment(game, assets, true);
     SyncRocketFlames(game, assets);
-    if (!showTargets) return;
     for (const FirstPersonTarget& target : game.GetTargets()) {
         if (target.hitPoints <= 0) continue;
         const bool missile = target.id == "target_tutorial_missile";
+        if (!missile && !showTargets) continue;
         const ModelInstance* prototype = assets.Find(missile ? "missile" : "tutorial_target");
         if (!prototype) continue;
         ModelInstance instance = *prototype;
@@ -240,8 +259,20 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
     std::erase_if(scene_.models, [](const ModelInstance& model) {
         return model.id.starts_with("battle_") || model.id.starts_with("tutorial_");
     });
-    SyncEnvironment(battle.GetPlayerGame(), assets, false);
+    SyncEnvironment(battle.GetPlayerGame(), assets, battle.IsPractice());
     SyncRocketFlames(battle.GetPlayerGame(), assets);
+    if (battle.IsPractice()) {
+        if (const ModelInstance* prototype = assets.Find("tutorial_target")) {
+            for (const FirstPersonTarget& target : battle.GetPlayerGame().GetTargets()) {
+                if (!target.id.starts_with("target_tutorial_") ||
+                    target.hitPoints <= 0) continue;
+                ModelInstance instance = *prototype;
+                instance.id = "tutorial_" + target.id;
+                instance.position = Add(target.position, prototype->position);
+                scene_.models.push_back(std::move(instance));
+            }
+        }
+    }
     const auto add = [&](const std::string& id, std::string_view key,
         const Vector3& position, float scale, Vector3 tint) {
         const ModelInstance* prototype = assets.Find(key);

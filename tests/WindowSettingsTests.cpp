@@ -84,6 +84,16 @@ int main(int, char**) {
     controls.ProcessEvent(KeyEvent(window, SDL_SCANCODE_F2, true));
     success &= Expect(controls.ApplyPending() && controls.GetSettings().windowWidth == 640,
         "Repeated key events must not resize the window");
+    controls.ProcessEvent(KeyEvent(window, SDL_SCANCODE_F2), true);
+    success &= Expect(controls.ApplyPending() && controls.GetSettings().windowWidth == 640,
+        "Practice F2 must not change the display size");
+    SDL_Event practiceResize = KeyEvent(window, SDL_SCANCODE_F2);
+    practiceResize.key.mod = SDL_KMOD_CTRL;
+    controls.ProcessEvent(practiceResize, true);
+    success &= Expect(controls.ApplyPending() &&
+        controls.GetSettings().windowWidth > 640,
+        "Ctrl+F2 must resize during practice");
+    success &= Expect(controls.Apply(baseline), "Restore after practice shortcut");
     SDL_Event foreign = KeyEvent(window, SDL_SCANCODE_F2);
     foreign.key.windowID += 1;
     controls.ProcessEvent(foreign);

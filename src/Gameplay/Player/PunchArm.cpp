@@ -134,8 +134,9 @@ Vector3 PunchArm::CalculateRocketDockPosition(const Vector3& playerPosition,
 
 RocketPreviewTrajectory PunchArm::GetRocketPreviewTrajectory(
     const Vector3& playerPosition, float bodyYaw) const {
-    if (state_ != PunchArmState::Charged ||
-        attackType_ != PunchArmAttackType::RocketPunch) {
+    if (state_ != PunchArmState::Ready &&
+        !((state_ == PunchArmState::Charging || state_ == PunchArmState::Charged) &&
+            attackType_ == PunchArmAttackType::RocketPunch)) {
         return {};
     }
     const Vector3 start = CalculateRocketDockPosition(playerPosition, bodyYaw);

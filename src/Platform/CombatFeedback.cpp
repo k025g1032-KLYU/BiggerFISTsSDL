@@ -294,6 +294,13 @@ void CombatFeedback::PlayCue(const std::string& name) {
     }
 }
 
+void CombatFeedback::StopCue(const std::string& name) {
+    const auto found = cues_.find(name);
+    if (found == cues_.end()) return;
+    for (SDL_AudioStream* voice : found->second.voices)
+        SDL_ClearAudioStream(voice);
+}
+
 void CombatFeedback::SetEngineLoop(bool enabled) {
     if (engineRequested_ == enabled) return;
     engineRequested_ = enabled;

@@ -85,6 +85,7 @@ public:
 
     BattlePhase GetPhase() const { return phase_; }
     int GetBaseHitPoints() const { return baseHitPoints_; }
+    int GetBaseMaximumHitPoints() const { return baseMaximumHitPoints_; }
     int GetWaveIndex() const { return director_.GetWaveIndex(); }
     int GetWaveCount() const { return director_.GetWaveCount(); }
     const std::vector<BattleEnemy>& GetEnemies() const { return enemies_; }
@@ -98,10 +99,13 @@ public:
     const std::vector<BattleVisualEvent>& GetVisualEvents() const {
         return visualEvents_;
     }
+    bool IsPractice() const { return kind_ == BattlePreviewKind::Practice; }
+    const char* GetPracticePatternName() const;
 
 private:
     void BeginPlaying();
-    bool SpawnEnemy(const EnemySpawnPlan& plan);
+    bool SpawnEnemy(const EnemySpawnPlan& plan, float attackDelayOffset = 0.0f,
+        std::optional<float> initialBomberRotation = std::nullopt);
     void SpawnProjectile(BattleProjectileType type, const Vector3& position,
         const Vector3& direction = {0.0f, 0.0f, -1.0f}, float phase = 0.0f);
     void UpdateEnemies(float seconds);
@@ -116,6 +120,10 @@ private:
         const Vector3& pushDirection = {0.0f, 0.0f, 1.0f});
     std::array<int, 3> CountActiveEnemies() const;
     std::string NextTargetId();
+    void ApplyPracticeCommand(PracticeCommand command);
+    void UpdatePracticePattern(float seconds);
+    void AdvancePracticePattern(PracticeCommand pattern, float seconds,
+        float& timer, int& index);
 
     BattlePreviewKind kind_ = BattlePreviewKind::None;
     FirstPersonGame& player_;
@@ -129,9 +137,18 @@ private:
     std::mt19937 random_{0xB16F157u};
     float countdown_ = 0.0f;
     int baseHitPoints_ = 10;
+    int baseMaximumHitPoints_ = 10;
     std::unordered_set<std::string> ultimateHitIds_;
     std::unordered_set<std::uint64_t> bossAttackHits_;
     std::uint64_t lastBossStrikeCueId_ = 0;
     std::vector<BattleFeedbackEvent> feedbackEvents_;
     std::vector<BattleVisualEvent> visualEvents_;
+    PracticeCommand practicePattern_ = PracticeCommand::None;
+    PracticeCommand enemyPattern_ = PracticeCommand::None;
+    PracticeCommand projectilePattern_ = PracticeCommand::None;
+    float enemyPatternTimer_ = 0.0f;
+    float projectilePatternTimer_ = 0.0f;
+    int enemyPatternIndex_ = 0;
+    int projectilePatternIndex_ = 0;
+    int practiceLaneCursor_ = 2;
 };

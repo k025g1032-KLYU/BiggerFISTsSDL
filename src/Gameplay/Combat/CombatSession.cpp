@@ -7,12 +7,16 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <numbers>
 #include <utility>
 
 namespace {
 constexpr float kBaseRadius = 7.0f;
 constexpr Vector3 kBasePosition{0.0f, 0.0f, -16.0f};
 constexpr std::string_view kBossTargetId = "target_boss_core";
+constexpr float kEnemyPatternSpawnInterval = 0.35f;
+constexpr float kProjectilePatternSpawnInterval = 0.45f;
+constexpr float kEnemyAttackDelayOffset = 0.45f;
 
 }
 
@@ -47,9 +51,172 @@ void CombatSession::Reset() {
     random_.seed(0xB16F157u);
     baseHitPoints_ = kind_ == BattlePreviewKind::Day2
         ? config_.enemy.day2BaseHitPoints : config_.enemy.baseHitPoints;
+    baseMaximumHitPoints_ = baseHitPoints_;
     phase_ = BattlePhase::Ready;
     countdown_ = 0.0f;
-    player_.ResetCombatState();
+    practicePattern_ = PracticeCommand::None;
+    enemyPattern_ = projectilePattern_ = PracticeCommand::None;
+    enemyPatternTimer_ = projectilePatternTimer_ = 0.0f;
+    enemyPatternIndex_ = projectilePatternIndex_ = 0;
+    practiceLaneCursor_ = 2;
+    if (!IsPractice()) player_.ResetCombatState();
+}
+
+const char* CombatSession::GetPracticePatternName() const {
+    switch (practicePattern_) {
+    case PracticeCommand::MissileUnits: return "MISSILE UNIT TEST";
+    case PracticeCommand::Bombers: return "BOMBER TEST";
+    case PracticeCommand::ChargeUnits: return "CHARGE UNIT TEST";
+    case PracticeCommand::MixedEnemies: return "MIXED ENEMY TEST";
+    case PracticeCommand::SingleMissile: return "SINGLE MISSILE";
+    case PracticeCommand::MissileLine: return "MISSILE LINE";
+    case PracticeCommand::FloatingBombs: return "FLOATING BOMBS";
+    case PracticeCommand::MixedProjectiles: return "MIXED PROJECTILES";
+    default: return "NONE";
+    }
+}
+
+void CombatSession::ApplyPracticeCommand(PracticeCommand command) {
+    if (!IsPractice()) return;
+    switch (command) {
+    case PracticeCommand::MissileUnit:
+    case PracticeCommand::Bomber:
+    case PracticeCommand::ChargeUnit: {
+        const BattleEnemyType type = command == PracticeCommand::MissileUnit
+            ? BattleEnemyType::MissileUnit : command == PracticeCommand::Bomber
+            ? BattleEnemyType::Bomber : BattleEnemyType::ChargeUnit;
+        const int lane = practiceLaneCursor_++;
+        SpawnEnemy({type, 1, 1, lane}, 0.0f,
+            type == BattleEnemyType::Bomber
+            ? std::optional<float>{lane * std::numbers::pi_v<float>}
+            : std::nullopt);
+        break;
+    }
+    case PracticeCommand::MissileUnits:
+    case PracticeCommand::Bombers:
+    case PracticeCommand::ChargeUnits:
+    case PracticeCommand::MixedEnemies:
+    case PracticeCommand::SingleMissile:
+    case PracticeCommand::MissileLine:
+    case PracticeCommand::FloatingBombs:
+    case PracticeCommand::MixedProjectiles:
+        if (command == PracticeCommand::MissileUnits ||
+            command == PracticeCommand::Bombers ||
+            command == PracticeCommand::ChargeUnits ||
+            command == PracticeCommand::MixedEnemies) {
+            for (const BattleEnemy& enemy : enemies_) player_.RemoveTarget(enemy.id);
+            enemies_.clear();
+            for (const BattleProjectile& projectile : projectiles_)
+                player_.RemoveTarget(projectile.id);
+            projectiles_.clear();
+            projectilePattern_ = PracticeCommand::None;
+            projectilePatternIndex_ = 0;
+            projectilePatternTimer_ = 0.0f;
+            enemyPattern_ = command;
+            enemyPatternIndex_ = 0;
+            enemyPatternTimer_ = 0.0f;
+        } else {
+            for (const BattleProjectile& projectile : projectiles_)
+                player_.RemoveTarget(projectile.id);
+            projectiles_.clear();
+            projectilePattern_ = command;
+            projectilePatternIndex_ = 0;
+            projectilePatternTimer_ = 0.0f;
+        }
+        practicePattern_ = command;
+        break;
+    case PracticeCommand::BossSpawn:
+        if (boss_) player_.RemoveTarget(kBossTargetId);
+        boss_.emplace(config_.boss);
+        player_.SpawnTarget({std::string(kBossTargetId), boss_->GetPosition(),
+            1000000, {}, false, config_.boss.coreRadius});
+        break;
+    case PracticeCommand::BossConeCharge:
+        if (boss_ && boss_->GetMode() != BossMode::Entrance)
+            boss_->BeginBehavior(BossMode::Charge);
+        break;
+    case PracticeCommand::BossBoxer:
+        if (boss_ && boss_->GetMode() != BossMode::Entrance)
+            boss_->BeginBehavior(boss_->GetMode() == BossMode::Boxer
+                ? BossMode::Idle : BossMode::Boxer);
+        break;
+    case PracticeCommand::BossNeedleCombo:
+        if (boss_ && boss_->GetMode() != BossMode::Entrance)
+            boss_->BeginBehavior(BossMode::NeedleCombo);
+        break;
+    case PracticeCommand::BossFullBarrage:
+        if (boss_ && boss_->GetMode() != BossMode::Entrance)
+            boss_->BeginBehavior(BossMode::FullBarrage);
+        break;
+    case PracticeCommand::BossSpreadBurst:
+        if (boss_ && boss_->GetMode() != BossMode::Entrance)
+            boss_->BeginBehavior(BossMode::SpreadCounter);
+        break;
+    case PracticeCommand::BossCycleNeedles:
+        if (boss_) boss_->CyclePracticeNeedlePose();
+        break;
+    default: break;
+    }
+}
+
+void CombatSession::UpdatePracticePattern(float seconds) {
+    AdvancePracticePattern(enemyPattern_, seconds,
+        enemyPatternTimer_, enemyPatternIndex_);
+    AdvancePracticePattern(projectilePattern_, seconds,
+        projectilePatternTimer_, projectilePatternIndex_);
+}
+
+void CombatSession::AdvancePracticePattern(PracticeCommand pattern, float seconds,
+    float& timer, int& nextIndex) {
+    if (pattern == PracticeCommand::None) return;
+    const bool projectile = pattern == PracticeCommand::SingleMissile ||
+        pattern == PracticeCommand::MissileLine ||
+        pattern == PracticeCommand::FloatingBombs ||
+        pattern == PracticeCommand::MixedProjectiles;
+    const int count = pattern == PracticeCommand::MixedEnemies ? 4 :
+        pattern == PracticeCommand::SingleMissile ? 1 :
+        pattern == PracticeCommand::MissileLine ||
+        pattern == PracticeCommand::FloatingBombs ? 5 :
+        pattern == PracticeCommand::MixedProjectiles ? 8 : 2;
+    if (nextIndex >= count) return;
+    timer -= seconds;
+    if (timer > 0.0f) return;
+    const int index = nextIndex++;
+    if (projectile) {
+        const float lane = pattern == PracticeCommand::MissileLine
+            ? 1.55f : index % 2 == 0 ? -1.55f : 1.55f;
+        const float height = config_.enemy.combatHeightMinimum +
+            (config_.enemy.combatHeightMaximum - config_.enemy.combatHeightMinimum) *
+            (index % 3) * 0.5f;
+        const bool bomb = pattern == PracticeCommand::FloatingBombs ||
+            (pattern == PracticeCommand::MixedProjectiles && index % 2 != 0);
+        const float projectileHeight = pattern == PracticeCommand::SingleMissile ||
+            pattern == PracticeCommand::MissileLine
+            ? (config_.enemy.combatHeightMinimum +
+                config_.enemy.combatHeightMaximum) * 0.5f : height;
+        SpawnProjectile(bomb ? BattleProjectileType::FloatingBomb :
+            BattleProjectileType::Missile, {lane, projectileHeight, 19.0f});
+    } else {
+        BattleEnemyType type = BattleEnemyType::MissileUnit;
+        if (pattern == PracticeCommand::Bombers ||
+            (pattern == PracticeCommand::MixedEnemies && index == 2))
+            type = BattleEnemyType::Bomber;
+        if (pattern == PracticeCommand::ChargeUnits ||
+            (pattern == PracticeCommand::MixedEnemies && index == 3))
+            type = BattleEnemyType::ChargeUnit;
+        const int lane = pattern == PracticeCommand::MixedEnemies
+            ? (index == 2 ? 2 : index == 3 ? 4 : index == 0 ? 1 : 3)
+            : index == 0 ? 1 : 3;
+        const float attackDelay = type == BattleEnemyType::ChargeUnit
+            ? 0.0f : index * kEnemyAttackDelayOffset;
+        const std::optional<float> bomberRotation = type == BattleEnemyType::Bomber
+            ? std::optional<float>{(pattern == PracticeCommand::MixedEnemies
+                ? 1.0f : static_cast<float>(index)) * std::numbers::pi_v<float>}
+            : std::nullopt;
+        SpawnEnemy({type, 1, 1, lane}, attackDelay, bomberRotation);
+    }
+    timer = projectile ? kProjectilePatternSpawnInterval :
+        kEnemyPatternSpawnInterval;
 }
 
 void CombatSession::Start(bool skipCountdown) {
@@ -80,15 +247,16 @@ std::string CombatSession::NextTargetId() {
     return "target_battle_" + std::to_string(nextId_++);
 }
 
-bool CombatSession::SpawnEnemy(const EnemySpawnPlan& plan) {
+bool CombatSession::SpawnEnemy(const EnemySpawnPlan& plan,
+    float attackDelayOffset, std::optional<float> initialBomberRotation) {
     BattleEnemy enemy;
     enemy.id = NextTargetId();
     enemy.type = plan.type;
-    enemy.lane = plan.lane;
+    enemy.lane = std::clamp(plan.lane, 0, 4);
     const float laneWidth = (config_.enemy.deploymentMaximumX -
         config_.enemy.deploymentMinimumX) / 5.0f;
     const float laneStart = config_.enemy.deploymentMinimumX +
-        static_cast<float>(plan.lane) * laneWidth;
+        static_cast<float>(enemy.lane) * laneWidth;
     std::uniform_real_distribution<float> xDistribution(laneStart,
         laneStart + laneWidth);
     std::uniform_real_distribution<float> zDistribution(
@@ -130,6 +298,8 @@ bool CombatSession::SpawnEnemy(const EnemySpawnPlan& plan) {
     enemy.attackTimer = plan.type == BattleEnemyType::MissileUnit
         ? config_.enemy.missileInitialFireDelay
         : config_.enemy.bomberInitialFireDelay;
+    if (plan.type != BattleEnemyType::ChargeUnit)
+        enemy.attackTimer += attackDelayOffset;
     enemy.velocity.x = enemy.position.x <= 0.0f ? 1.0f : -1.0f;
     if (plan.type == BattleEnemyType::Bomber) {
         std::uniform_real_distribution<float> speedDistribution(
@@ -139,7 +309,8 @@ bool CombatSession::SpawnEnemy(const EnemySpawnPlan& plan) {
         enemy.velocity.x = speedDistribution(random_) *
             (directionDistribution(random_) == 0 ? -1.0f : 1.0f);
         std::uniform_real_distribution<float> phaseDistribution(0.0f, 6.2831853f);
-        enemy.rotation = phaseDistribution(random_);
+        enemy.rotation = initialBomberRotation
+            ? *initialBomberRotation : phaseDistribution(random_);
     }
     if (!player_.SpawnTarget({enemy.id, enemy.position, 1, {}, false,
             config_.enemy.radius, 1.35f})) {
@@ -877,6 +1048,20 @@ void CombatSession::Update(float seconds, const GameInput& input,
     visualEvents_.clear();
     if (input.resetTarget.pressed) {
         Reset();
+        return;
+    }
+    if (IsPractice()) {
+        ApplyPracticeCommand(input.practiceCommand);
+        player_.Update(seconds, input, mouseX, mouseY, true);
+        UpdatePracticePattern(seconds);
+        UpdateEnemies(seconds);
+        UpdateBoss(seconds);
+        UpdateProjectiles(seconds);
+        ProcessUltimateHits();
+        player_.ResolveTargetHits();
+        ProcessPlayerHits();
+        ResolveProjectileImpacts();
+        ResolveChargeImpacts();
         return;
     }
     if (phase_ == BattlePhase::GameOver && input.battleStart.pressed) {

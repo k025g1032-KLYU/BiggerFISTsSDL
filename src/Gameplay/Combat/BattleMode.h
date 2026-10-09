@@ -8,4 +8,5 @@ enum class BattlePreviewKind {
     Day1,
     Day2,
     Boss,
+    Practice,
 };

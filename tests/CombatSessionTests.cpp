@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <string>
+#include <utility>
 
 namespace {
 constexpr float kStep = 1.0f / 60.0f;
@@ -396,6 +397,79 @@ int main(int argc, char** argv) {
     }
     if (!launchedFromSlot) {
         std::puts("FAIL: Boss crystal did not spawn above halo and fly downward");
+        return 1;
+    }
+    const auto practiceSnapshot = [&](int fps) {
+        FirstPersonGame practicePlayer(GameConfig{}, {0.0f, 5.85f, 0.0f},
+            std::vector<FirstPersonTarget>{});
+        CombatSession practice(BattlePreviewKind::Practice, practicePlayer,
+            {}, combat);
+        FixedStepClock clock;
+        FixedStepInputBuffer buffer;
+        for (int frame = 0; frame < fps * 2; ++frame) {
+            GameInput input{};
+            if (frame == 0) input.practiceCommand = PracticeCommand::MissileUnits;
+            buffer.QueueFrame(input, 0.0f, 0.0f);
+            const int steps = clock.Advance(1.0 / fps);
+            for (int step = 0; step < steps; ++step) {
+                const SimulationStepInput fixed = buffer.ConsumeStep(steps - step);
+                practice.Update(kStep, fixed.game, 0.0f, 0.0f);
+            }
+        }
+        return std::pair{practice.GetEnemies().size(), practice.GetPhase()};
+    };
+    const auto practice30 = practiceSnapshot(30);
+    const auto practice60 = practiceSnapshot(60);
+    const auto practice120 = practiceSnapshot(120);
+    if (practice30 != practice60 || practice60 != practice120 ||
+        practice30.first != 2 || practice30.second != BattlePhase::Ready) {
+        std::puts("FAIL: practice pattern differs by rendered FPS or entered battle flow");
+        return 1;
+    }
+    FirstPersonGame practiceBomberPlayer(GameConfig{}, {0.0f, 5.85f, 0.0f},
+        std::vector<FirstPersonTarget>{});
+    CombatSession bomberPractice(BattlePreviewKind::Practice, practiceBomberPlayer, {}, combat);
+    GameInput bomberInput{};
+    bomberInput.practiceCommand = PracticeCommand::Bombers;
+    bomberPractice.Update(kStep, bomberInput, 0.0f, 0.0f);
+    for (int index = 0; index < 24; ++index)
+        bomberPractice.Update(kStep, {}, 0.0f, 0.0f);
+    const auto& practiceBombers = bomberPractice.GetEnemies();
+    if (practiceBombers.size() != 2 ||
+        std::abs(practiceBombers[0].rotation) > 0.0001f ||
+        std::abs(practiceBombers[1].rotation - 3.14159265f) > 0.0001f ||
+        practiceBombers[1].attackTimer <= practiceBombers[0].attackTimer) {
+        std::puts("FAIL: Bomber practice rotation or staggered attack timing differs");
+        return 1;
+    }
+    FirstPersonGame practicePlayer(GameConfig{}, {0.0f, 5.85f, 0.0f},
+        std::vector<FirstPersonTarget>{});
+    CombatSession practice(BattlePreviewKind::Practice, practicePlayer, {}, combat);
+    GameInput practiceInput{};
+    practiceInput.practiceCommand = PracticeCommand::MissileUnits;
+    practice.Update(kStep, practiceInput, 0.0f, 0.0f);
+    practiceInput.practiceCommand = PracticeCommand::MixedProjectiles;
+    practice.Update(kStep, practiceInput, 0.0f, 0.0f);
+    for (int index = 0; index < 60; ++index)
+        practice.Update(kStep, {}, 0.0f, 0.0f);
+    if (practice.GetEnemies().size() != 2 || practice.GetProjectiles().empty() ||
+        practice.GetPhase() != BattlePhase::Ready) {
+        std::puts("FAIL: enemy and projectile practice patterns did not coexist");
+        return 1;
+    }
+    practiceInput.practiceCommand = PracticeCommand::BossSpawn;
+    practice.Update(kStep, practiceInput, 0.0f, 0.0f);
+    if (!practice.GetBoss()) {
+        std::puts("FAIL: practice Boss did not spawn");
+        return 1;
+    }
+    practiceInput = {};
+    practiceInput.resetTarget.pressed = true;
+    practice.Update(kStep, practiceInput, 0.0f, 0.0f);
+    if (practice.GetBoss() || !practice.GetEnemies().empty() ||
+        !practice.GetProjectiles().empty() ||
+        practice.GetPhase() != BattlePhase::Ready) {
+        std::puts("FAIL: practice reset retained test objects or changed flow");
         return 1;
     }
     std::puts("PASS: fixed timing, Day1/Day2/Boss Clear, reset/countdown, Charge impact, Missile windup and Bomber");

@@ -53,7 +53,9 @@ void TutorialSession::Advance() {
     case TutorialStep::Punch: step_ = TutorialStep::RocketPunch; break;
     case TutorialStep::RocketPunch: step_ = TutorialStep::Defense; break;
     case TutorialStep::Defense: step_ = TutorialStep::Dodge; break;
-    case TutorialStep::Dodge: step_ = TutorialStep::Complete; cue_ = "system/system_all_green.wav"; break;
+    case TutorialStep::Dodge: step_ = TutorialStep::Complete;
+        freePracticeCaptionRemaining_ = 10.0f;
+        cue_ = "system/system_all_green.wav"; break;
     case TutorialStep::Complete: break;
     }
     gate_ = 0.5f;
@@ -65,6 +67,8 @@ void TutorialSession::Advance() {
 
 void TutorialSession::Update(float seconds, const GameInput& input,
     const TutorialObservation& player) {
+    if (IsComplete()) freePracticeCaptionRemaining_ =
+        std::max(0.0f, freePracticeCaptionRemaining_ - seconds);
     gate_ = std::max(0.0f, gate_ - seconds);
     const float yaw = player.cameraYaw;
     const float pitch = player.cameraPitch;
@@ -115,12 +119,13 @@ void TutorialSession::SkipToFreePractice() {
     step_ = TutorialStep::Complete;
     confirmation_ = gate_ = 0.0f;
     cockpitConnected_ = true;
+    freePracticeCaptionRemaining_ = 10.0f;
     cue_ = "system/system_all_green.wav";
 }
 
 bool TutorialSession::ShouldShowTargets() const {
     return step_ == TutorialStep::Punch || step_ == TutorialStep::RocketPunch ||
-        step_ == TutorialStep::Defense || IsComplete();
+        IsComplete();
 }
 
 int TutorialSession::GetStepNumber() const {

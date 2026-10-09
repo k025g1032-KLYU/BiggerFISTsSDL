@@ -113,6 +113,69 @@ int main(int, char**) {
     input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_DOWN, SDL_SCANCODE_R));
     success &= Expect(defaults.Evaluate(input).resetTarget.pressed,
         "R must trigger the Target reset action");
+    input.BeginFrame();
+    input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_DOWN, SDL_SCANCODE_F1));
+    success &= Expect(defaults.Evaluate(input).practiceCommand ==
+        PracticeCommand::ThirdPerson, "F1 must map to the practice camera command");
+    input.BeginFrame();
+    input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_DOWN, SDL_SCANCODE_7));
+    success &= Expect(defaults.Evaluate(input).practiceCommand ==
+        PracticeCommand::MixedEnemies, "7 must map to the mixed enemy command");
+    input.BeginFrame();
+    input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_DOWN, SDL_SCANCODE_B));
+    success &= Expect(defaults.Evaluate(input).practiceCommand ==
+        PracticeCommand::BossBoxer, "B must map to the Boss Boxer command");
+    input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_UP, SDL_SCANCODE_F1));
+    const auto checkPracticeKey = [&](SDL_Scancode key, PracticeCommand expected) {
+        input.BeginFrame();
+        input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_DOWN, key));
+        const bool matched = defaults.Evaluate(input).practiceCommand == expected;
+        input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_UP, key));
+        return matched;
+    };
+    success &= Expect(checkPracticeKey(SDL_SCANCODE_F2, PracticeCommand::CycleCockpitModel) &&
+        checkPracticeKey(SDL_SCANCODE_F3, PracticeCommand::ToggleData) &&
+        checkPracticeKey(SDL_SCANCODE_F5, PracticeCommand::FullStartup) &&
+        checkPracticeKey(SDL_SCANCODE_F6, PracticeCommand::QuickStartup) &&
+        checkPracticeKey(SDL_SCANCODE_F7, PracticeCommand::BossStartup) &&
+        checkPracticeKey(SDL_SCANCODE_F8, PracticeCommand::SystemOffline),
+        "F2, F3 and F5-F8 must map to distinct practice commands");
+    success &= Expect(checkPracticeKey(SDL_SCANCODE_0, PracticeCommand::BossSpawn) &&
+        checkPracticeKey(SDL_SCANCODE_KP_0, PracticeCommand::BossSpawn) &&
+        checkPracticeKey(SDL_SCANCODE_8, PracticeCommand::BossCycleNeedles) &&
+        checkPracticeKey(SDL_SCANCODE_9, PracticeCommand::BossConeCharge) &&
+        checkPracticeKey(SDL_SCANCODE_C, PracticeCommand::BossNeedleCombo) &&
+        checkPracticeKey(SDL_SCANCODE_N, PracticeCommand::BossFullBarrage) &&
+        checkPracticeKey(SDL_SCANCODE_M, PracticeCommand::BossSpreadBurst),
+        "Boss practice keys must retain their original mapping");
+    input.BeginFrame();
+    input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_DOWN, SDL_SCANCODE_LSHIFT));
+    success &= Expect(checkPracticeKey(SDL_SCANCODE_1, PracticeCommand::SingleMissile) &&
+        checkPracticeKey(SDL_SCANCODE_2, PracticeCommand::MissileLine) &&
+        checkPracticeKey(SDL_SCANCODE_3, PracticeCommand::FloatingBombs) &&
+        checkPracticeKey(SDL_SCANCODE_4, PracticeCommand::MixedProjectiles),
+        "Shift+1-4 must select projectile patterns");
+    input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_UP, SDL_SCANCODE_LSHIFT));
+    input.BeginFrame();
+    input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_DOWN, SDL_SCANCODE_LCTRL));
+    success &= Expect(checkPracticeKey(SDL_SCANCODE_F1, PracticeCommand::None),
+        "Ctrl+F1 must remain a display shortcut");
+    input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_UP, SDL_SCANCODE_LCTRL));
+    input.BeginFrame();
+    SDL_Event quickShift = KeyEvent(SDL_EVENT_KEY_DOWN, SDL_SCANCODE_1);
+    quickShift.key.mod = SDL_KMOD_SHIFT;
+    input.ProcessEvent(quickShift);
+    success &= Expect(defaults.Evaluate(input).practiceCommand ==
+        PracticeCommand::SingleMissile,
+        "A Shift+1 tap must survive a modifier released in the same frame");
+    input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_UP, SDL_SCANCODE_1));
+    input.BeginFrame();
+    SDL_Event quickCtrl = KeyEvent(SDL_EVENT_KEY_DOWN, SDL_SCANCODE_F1);
+    quickCtrl.key.mod = SDL_KMOD_CTRL;
+    input.ProcessEvent(quickCtrl);
+    success &= Expect(defaults.Evaluate(input).practiceCommand == PracticeCommand::None,
+        "A Ctrl+F1 tap must never trigger the practice camera");
+    input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_UP, SDL_SCANCODE_F1));
 
     const SDL_Scancode invalidKeys[] = {
         SDL_SCANCODE_UNKNOWN,
