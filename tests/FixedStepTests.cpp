@@ -51,6 +51,39 @@ Result SimulateOneSecond(int renderedFrames) {
     result.shieldLayers = game.GetVitality().GetShieldLayers();
     return result;
 }
+
+struct MousePunchResult {
+    int simulationSteps = 0;
+    int punches = 0;
+    int rockets = 0;
+    PunchArmState finalState = PunchArmState::Ready;
+};
+
+MousePunchResult SimulateTutorialMousePunch(int renderedFrames) {
+    FirstPersonGame game(GameConfig{}, {0.0f, 5.85f, 0.0f},
+        {0.0f, 4.55f, 8.0f});
+    FixedStepClock clock;
+    FixedStepInputBuffer inputBuffer;
+    MousePunchResult result{};
+    for (int frame = 0; frame < renderedFrames; ++frame) {
+        GameInput input{};
+        input.leftMouseDown = frame < renderedFrames * 2 / 3;
+        input.shiftDown = frame < renderedFrames / 6;
+        input.allowRocketCharge = false;
+        inputBuffer.QueueFrame(input, 0.0f, 0.0f);
+        const int steps = clock.Advance(1.0 / renderedFrames);
+        for (int step = 0; step < steps; ++step) {
+            const SimulationStepInput stepInput = inputBuffer.ConsumeStep(steps - step);
+            game.Update(FixedStepClock::kStepSeconds, stepInput.game,
+                stepInput.mouseDeltaX, stepInput.mouseDeltaY);
+            result.punches += game.GetLeftArm().DidBeginPunchThisFrame() ? 1 : 0;
+            result.rockets += game.GetLeftArm().DidLaunchRocketThisFrame() ? 1 : 0;
+            ++result.simulationSteps;
+        }
+    }
+    result.finalState = game.GetLeftArm().GetState();
+    return result;
+}
 }
 
 int main() {
@@ -76,6 +109,12 @@ int main() {
         oneHundredTwentyFps.shieldLayers == 2 &&
         std::abs(thirtyFps.elapsedSeconds - 1.0) < 0.0001,
         "Movement, look and charge state agree across render frame rates");
+    for (const int renderedFrames : {30, 60, 120}) {
+        const MousePunchResult punch = SimulateTutorialMousePunch(renderedFrames);
+        success &= Expect(punch.simulationSteps == 60 && punch.punches == 1 &&
+            punch.rockets == 0 && punch.finalState == PunchArmState::Recovery,
+            "Shift+mouse tutorial Punch produces one Punch at 30/60/120 FPS");
+    }
 
     GameConfig shortCap{};
     shortCap.maxMovementDeltaTime = 0.001f;
@@ -90,14 +129,23 @@ int main() {
     GameInput press{};
     press.resetTarget.pressed = true;
     press.testChargeHit.pressed = true;
+    press.toggleThirdPerson.pressed = true;
+    press.cycleCockpitModel.pressed = true;
+    press.toggleCombatData.pressed = true;
     inputBuffer.QueueFrame(press, 12.0f, -6.0f);
     inputBuffer.QueueFrame({}, 0.0f, 0.0f);
     const SimulationStepInput first = inputBuffer.ConsumeStep(2);
     const SimulationStepInput second = inputBuffer.ConsumeStep(1);
     success &= Expect(first.game.resetTarget.pressed &&
         first.game.testChargeHit.pressed &&
+        first.game.toggleThirdPerson.pressed &&
+        first.game.cycleCockpitModel.pressed &&
+        first.game.toggleCombatData.pressed &&
         !second.game.resetTarget.pressed &&
         !second.game.testChargeHit.pressed &&
+        !second.game.toggleThirdPerson.pressed &&
+        !second.game.cycleCockpitModel.pressed &&
+        !second.game.toggleCombatData.pressed &&
         std::abs(first.mouseDeltaX - 6.0f) < 0.0001f &&
         std::abs(second.mouseDeltaX - 6.0f) < 0.0001f &&
         std::abs(first.mouseDeltaY + 3.0f) < 0.0001f &&

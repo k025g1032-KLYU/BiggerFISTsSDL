@@ -16,7 +16,7 @@
 
 namespace {
 static_assert(std::is_standard_layout_v<MeshVertex>);
-static_assert(sizeof(MeshVertex) == sizeof(float) * 5);
+static_assert(sizeof(MeshVertex) == sizeof(float) * 8);
 
 SDL_GPUBuffer* CreateUploadedBuffer(
     SDL_GPUDevice* device,
@@ -180,7 +180,7 @@ SDL_GPUGraphicsPipeline* CreatePipeline(
     SDL_GPUDevice* device,
     SDL_Window* window,
     SDL_GPUTextureFormat depthFormat,
-    bool depthWrite
+    bool depthWrite, bool depthTest = true, bool additive = false
 ) {
     SDL_GPUShader* vertexShader = LoadShader(
         device,
@@ -212,7 +212,8 @@ SDL_GPUGraphicsPipeline* CreatePipeline(
         SDL_GetGPUSwapchainTextureFormat(device, window);
     colorTarget.blend_state.enable_blend = true;
     colorTarget.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
-    colorTarget.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+    colorTarget.blend_state.dst_color_blendfactor = additive
+        ? SDL_GPU_BLENDFACTOR_ONE : SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
     colorTarget.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
     colorTarget.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
     colorTarget.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
@@ -247,7 +248,7 @@ SDL_GPUGraphicsPipeline* CreatePipeline(
     info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
     info.rasterizer_state.enable_depth_clip = true;
     info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
-    info.depth_stencil_state.enable_depth_test = true;
+    info.depth_stencil_state.enable_depth_test = depthTest;
     info.depth_stencil_state.enable_depth_write = depthWrite;
     info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS;
     info.target_info.color_target_descriptions = &colorTarget;
@@ -356,7 +357,10 @@ bool MeshRenderer::Initialize(SDL_Window* window, std::span<const MeshData> mesh
     }
     pipeline_ = CreatePipeline(device_, window_, depthFormat, true);
     transparentPipeline_ = CreatePipeline(device_, window_, depthFormat, false);
-    if (pipeline_ == nullptr || transparentPipeline_ == nullptr) {
+    additivePipeline_ = CreatePipeline(device_, window_, depthFormat, false, true, true);
+    firstPersonPipeline_ = CreatePipeline(device_, window_, depthFormat, false, false);
+    if (pipeline_ == nullptr || transparentPipeline_ == nullptr ||
+        additivePipeline_ == nullptr || firstPersonPipeline_ == nullptr) {
         Shutdown();
         return false;
     }
@@ -406,7 +410,8 @@ bool MeshRenderer::Initialize(SDL_Window* window, std::span<const MeshData> mesh
                 loadedPaths.push_back(group.texturePath);
                 gpuMesh.textures.push_back(texture);
             }
-            gpuMesh.drawRanges.push_back({group.firstIndex, group.indexCount, textureIndex});
+            gpuMesh.drawRanges.push_back({group.firstIndex, group.indexCount,
+                textureIndex, group.material});
         }
     }
     depthBuffer_ = std::make_unique<DepthBuffer>(device_, depthFormat);
@@ -415,7 +420,8 @@ bool MeshRenderer::Initialize(SDL_Window* window, std::span<const MeshData> mesh
 }
 
 bool MeshRenderer::Render(const ModelScene& scene, WindowSettings& windowSettings,
-    bool* frameRendered, UiRenderer* uiRenderer, const UiDrawList* uiDrawList) {
+    bool* frameRendered, UiRenderer* uiRenderer, const UiDrawList* uiDrawList,
+    const char* capturePath) {
     if (frameRendered != nullptr) {
         *frameRendered = false;
     }
@@ -502,12 +508,8 @@ bool MeshRenderer::Render(const ModelScene& scene, WindowSettings& windowSetting
     const auto drawModel = [&](std::size_t i) {
         const GpuMesh& mesh = meshes_[scene.models[i].meshIndex];
         const Vector3& tint = scene.models[i].colorTint;
-        const float colorUniform[4]{tint.x, tint.y, tint.z,
-            scene.models[i].opacity};
         SDL_PushGPUVertexUniformData(commands, 0, &transformScratch_[i],
             static_cast<Uint32>(sizeof(Matrix4x4)));
-        SDL_PushGPUFragmentUniformData(commands, 0, colorUniform,
-            static_cast<Uint32>(sizeof(colorUniform)));
         SDL_GPUBufferBinding vertexBinding{};
         vertexBinding.buffer = mesh.vertexBuffer;
         SDL_BindGPUVertexBuffers(pass, 0, &vertexBinding, 1);
@@ -516,6 +518,12 @@ bool MeshRenderer::Render(const ModelScene& scene, WindowSettings& windowSetting
         indexBinding.buffer = mesh.indexBuffer;
         SDL_BindGPUIndexBuffer(pass, &indexBinding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
         for (const GpuDrawRange& draw : mesh.drawRanges) {
+            const float colorUniform[8]{tint.x, tint.y, tint.z,
+                scene.models[i].opacity,
+                draw.material.ambient[0], draw.material.ambient[1],
+                draw.material.ambient[2], draw.material.opacity};
+            SDL_PushGPUFragmentUniformData(commands, 0, colorUniform,
+                static_cast<Uint32>(sizeof(colorUniform)));
             SDL_GPUTextureSamplerBinding textureBinding{};
             textureBinding.texture = mesh.textures[draw.textureIndex];
             textureBinding.sampler = sampler_;
@@ -523,16 +531,26 @@ bool MeshRenderer::Render(const ModelScene& scene, WindowSettings& windowSetting
             SDL_DrawGPUIndexedPrimitives(pass, draw.indexCount, 1, draw.firstIndex, 0, 0);
         }
     };
-    SDL_BindGPUGraphicsPipeline(pass, pipeline_);
     std::vector<std::size_t> transparentIndices;
+    std::vector<std::size_t> effectIndices;
+    std::vector<std::size_t> backgroundIndices;
+    std::vector<std::size_t> firstPersonIndices;
+    SDL_BindGPUGraphicsPipeline(pass, pipeline_);
     for (std::size_t i = 0; i < scene.models.size(); ++i) {
-        if (scene.models[i].transparent || scene.models[i].opacity < 0.999f)
+        if (scene.models[i].renderLayer == ModelRenderLayer::FirstPerson)
+            firstPersonIndices.push_back(i);
+        else if (scene.models[i].renderLayer == ModelRenderLayer::TransparentBackground)
+            backgroundIndices.push_back(i);
+        else if (scene.models[i].renderLayer == ModelRenderLayer::AdditiveEffect)
+            effectIndices.push_back(i);
+        else if (scene.models[i].transparent || scene.models[i].opacity < 0.999f)
             transparentIndices.push_back(i);
         else
             drawModel(i);
     }
-    std::stable_sort(transparentIndices.begin(), transparentIndices.end(),
-        [&](std::size_t first, std::size_t second) {
+    const auto sortFarToNear = [&](std::vector<std::size_t>& indices) {
+        std::stable_sort(indices.begin(), indices.end(),
+            [&](std::size_t first, std::size_t second) {
             const auto distanceSquared = [&](std::size_t index) {
                 const Vector3& position = scene.models[index].position;
                 const float x = position.x - scene.cameraPosition.x;
@@ -542,8 +560,17 @@ bool MeshRenderer::Render(const ModelScene& scene, WindowSettings& windowSetting
             };
             return distanceSquared(first) > distanceSquared(second);
         });
+    };
+    sortFarToNear(transparentIndices);
+    sortFarToNear(backgroundIndices);
     SDL_BindGPUGraphicsPipeline(pass, transparentPipeline_);
     for (std::size_t index : transparentIndices) drawModel(index);
+    SDL_BindGPUGraphicsPipeline(pass, additivePipeline_);
+    for (std::size_t index : effectIndices) drawModel(index);
+    SDL_BindGPUGraphicsPipeline(pass, transparentPipeline_);
+    for (std::size_t index : backgroundIndices) drawModel(index);
+    SDL_BindGPUGraphicsPipeline(pass, firstPersonPipeline_);
+    for (std::size_t index : firstPersonIndices) drawModel(index);
     SDL_EndGPURenderPass(pass);
 
     if (uiRenderer && uiDrawList &&
@@ -553,7 +580,71 @@ bool MeshRenderer::Render(const ModelScene& scene, WindowSettings& windowSetting
         return false;
     }
 
-    if (!SDL_SubmitGPUCommandBuffer(commands)) {
+    SDL_GPUTransferBuffer* captureBuffer = nullptr;
+    if (capturePath != nullptr) {
+        const Uint64 byteCount = static_cast<Uint64>(outputWidth) *
+            outputHeight * 4;
+        const SDL_PixelFormat pixelFormat =
+            SDL_GetPixelFormatFromGPUTextureFormat(
+                SDL_GetGPUSwapchainTextureFormat(device_, window_));
+        if (byteCount > std::numeric_limits<Uint32>::max() ||
+            outputWidth > static_cast<Uint32>(std::numeric_limits<int>::max() / 4) ||
+            outputHeight > static_cast<Uint32>(std::numeric_limits<int>::max()) ||
+            pixelFormat == SDL_PIXELFORMAT_UNKNOWN) {
+            SDL_Log("Unsupported presentation capture format or size");
+            SDL_SubmitGPUCommandBuffer(commands);
+            return false;
+        }
+        SDL_GPUTransferBufferCreateInfo transferInfo{};
+        transferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
+        transferInfo.size = static_cast<Uint32>(byteCount);
+        captureBuffer = SDL_CreateGPUTransferBuffer(device_, &transferInfo);
+        if (captureBuffer == nullptr) {
+            SDL_Log("Could not allocate presentation capture: %s", SDL_GetError());
+            SDL_SubmitGPUCommandBuffer(commands);
+            return false;
+        }
+        SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
+        if (copy == nullptr) {
+            SDL_Log("Could not begin presentation capture: %s", SDL_GetError());
+            SDL_ReleaseGPUTransferBuffer(device_, captureBuffer);
+            SDL_SubmitGPUCommandBuffer(commands);
+            return false;
+        }
+        SDL_GPUTextureRegion source{};
+        source.texture = backbuffer;
+        source.w = outputWidth;
+        source.h = outputHeight;
+        source.d = 1;
+        SDL_GPUTextureTransferInfo destination{};
+        destination.transfer_buffer = captureBuffer;
+        SDL_DownloadFromGPUTexture(copy, &source, &destination);
+        SDL_EndGPUCopyPass(copy);
+        SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(commands);
+        if (fence == nullptr || !SDL_WaitForGPUFences(device_, true, &fence, 1)) {
+            SDL_Log("Presentation capture GPU wait failed: %s", SDL_GetError());
+            if (fence != nullptr) SDL_ReleaseGPUFence(device_, fence);
+            SDL_ReleaseGPUTransferBuffer(device_, captureBuffer);
+            return false;
+        }
+        void* pixels = SDL_MapGPUTransferBuffer(device_, captureBuffer, false);
+        SDL_Surface* surface = pixels == nullptr ? nullptr :
+            SDL_CreateSurfaceFrom(static_cast<int>(outputWidth),
+                static_cast<int>(outputHeight), pixelFormat, pixels,
+                static_cast<int>(outputWidth * 4));
+        const bool saved = surface != nullptr &&
+            SDL_SaveBMP(surface, capturePath);
+        if (surface != nullptr) SDL_DestroySurface(surface);
+        if (pixels != nullptr) SDL_UnmapGPUTransferBuffer(device_, captureBuffer);
+        SDL_ReleaseGPUFence(device_, fence);
+        SDL_ReleaseGPUTransferBuffer(device_, captureBuffer);
+        if (!saved) {
+            SDL_Log("Could not save presentation capture '%s': %s",
+                capturePath, SDL_GetError());
+            return false;
+        }
+        SDL_Log("Saved presentation capture: %s", capturePath);
+    } else if (!SDL_SubmitGPUCommandBuffer(commands)) {
         SDL_Log("SDL_SubmitGPUCommandBuffer failed: %s", SDL_GetError());
         return false;
     }
@@ -591,6 +682,14 @@ void MeshRenderer::Shutdown() {
     if (pipeline_ != nullptr) {
         SDL_ReleaseGPUGraphicsPipeline(device_, pipeline_);
         pipeline_ = nullptr;
+    }
+    if (additivePipeline_ != nullptr) {
+        SDL_ReleaseGPUGraphicsPipeline(device_, additivePipeline_);
+        additivePipeline_ = nullptr;
+    }
+    if (firstPersonPipeline_ != nullptr) {
+        SDL_ReleaseGPUGraphicsPipeline(device_, firstPersonPipeline_);
+        firstPersonPipeline_ = nullptr;
     }
     if (transparentPipeline_ != nullptr) {
         SDL_ReleaseGPUGraphicsPipeline(device_, transparentPipeline_);

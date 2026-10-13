@@ -100,6 +100,21 @@ void PlayerMovement::StartBurstImpact(const Vector3& direction) {
         impactDirection_.z * impactInitialSpeed_};
 }
 
+void PlayerMovement::StartBossBodyPush(const Vector3& direction) {
+    const float length = std::hypot(direction.x, direction.z);
+    impactDirection_ = std::isfinite(length) && length > 0.00001f
+        ? Vector3{direction.x / length, 0.0f, direction.z / length}
+        : Vector3{std::sin(bodyYaw_), 0.0f, std::cos(bodyYaw_)};
+    impactState_ = PlayerImpactState::Knockback;
+    impactTimer_ = 0.0f;
+    impactInitialSpeed_ = config_.bossBodyPushSpeed;
+    impactDuration_ = config_.bossBodyPushDuration;
+    velocity_ = {impactDirection_.x * impactInitialSpeed_, 0.0f,
+        impactDirection_.z * impactInitialSpeed_};
+    dodgeState_ = PlayerDodgeState::Recovery;
+    dodgeTimer_ = 0.0f;
+}
+
 void PlayerMovement::StartNeedleStun() {
     impactState_ = PlayerImpactState::NeedleStun;
     impactTimer_ = 0.0f;

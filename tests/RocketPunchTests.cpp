@@ -31,6 +31,8 @@ int main() {
     bool success = true;
     PunchArm left(PunchArmSide::Left);
     left.Reset(kPlayerPosition, 0.0f);
+    success &= Expect(left.GetRocketFlameScale() == 0.0f,
+        "A ready fist has no rocket flame");
     left.Update(kStep, kPlayerPosition, 0.0f, {false, true});
     success &= Expect(left.GetState() == PunchArmState::Charging &&
         left.GetAttackType() == PunchArmAttackType::RocketPunch,
@@ -48,7 +50,8 @@ int main() {
     left.Update(kStep, kPlayerPosition, 0.0f, {});
     success &= Expect(left.GetState() == PunchArmState::RocketFlying &&
         left.DidLaunchRocketThisFrame() && left.IsFistAway() &&
-        !left.IsRocketDamageActiveThisFrame(),
+        !left.IsRocketDamageActiveThisFrame() &&
+        std::abs(left.GetRocketFlameScale() - 1.0f) < 0.0001f,
         "Release commits the attack and launches the entire fist");
 
     const float launchZ = left.GetFistPosition().z;
@@ -72,7 +75,8 @@ int main() {
     success &= Expect(reachedReturn &&
         left.GetRocketTravelDistance() <= left.GetRocketMaximumRange() + 0.001f &&
         left.GetFistPosition().z <= FirstPersonTuning::kBattlefieldMaximumZ +
-            FirstPersonTuning::kRocketBattlefieldExitMargin + 0.001f,
+            FirstPersonTuning::kRocketBattlefieldExitMargin + 0.001f &&
+        std::abs(left.GetRocketFlameScale() - 0.15f) < 0.0001f,
         "The rocket reaches its clipped battlefield range and begins returning");
 
     bool reconnected = false;
@@ -82,6 +86,7 @@ int main() {
     }
     success &= Expect(reconnected && left.GetState() == PunchArmState::Recovery &&
         !left.IsFistAway() &&
+        left.GetRocketFlameScale() == 0.0f &&
         std::abs(left.GetFistPosition().z -
             FirstPersonTuning::kReadyFistForwardOffset) < 0.001f,
         "The rocket ascends, returns, docks and enters Recovery");

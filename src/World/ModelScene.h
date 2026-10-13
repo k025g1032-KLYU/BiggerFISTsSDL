@@ -11,6 +11,13 @@
 
 struct MeshData;
 
+enum class ModelRenderLayer {
+    World,
+    AdditiveEffect,
+    TransparentBackground,
+    FirstPerson
+};
+
 struct ModelInstance {
     std::string id;
     std::size_t meshIndex = 0;
@@ -21,6 +28,7 @@ struct ModelInstance {
     Vector3 colorTint{ 1.0f, 1.0f, 1.0f };
     float opacity = 1.0f;
     bool transparent = false;
+    ModelRenderLayer renderLayer = ModelRenderLayer::World;
     float initialXDegrees = 20.0f;
     float initialYDegrees = 30.0f;
     float initialZDegrees = 0.0f;
@@ -37,6 +45,7 @@ struct ModelBounds {
 struct ModelScene {
     std::vector<ModelInstance> models{ ModelInstance{} };
     double elapsedSeconds = 0.0;
+    float interpolationAlpha = 1.0f;
     bool warmBackground = false;
     Vector3 cameraPosition{ 0.0f, 0.0f, -3.0f };
     Vector3 cameraTarget{ 0.0f, 0.0f, 0.0f };

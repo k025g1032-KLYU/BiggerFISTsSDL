@@ -103,7 +103,10 @@ void FirstPersonGame::Update(double deltaSeconds, const GameInput& input,
     }
     const bool wasSystemOffline = IsSystemOffline();
     events_ = {};
+    if (input.switchView.pressed)
+        camera_.ToggleObservationMode(player_.GetBodyYaw());
     camera_.UpdateLook(mouseDeltaX, mouseDeltaY);
+    camera_.UpdateControl(static_cast<float>(deltaSeconds), player_.GetBodyYaw());
     const float armDeltaTime = static_cast<float>(std::min(
         deltaSeconds, static_cast<double>(maxArmDeltaTime_)));
     if (needleShutdownDelay_ > 0.0f) {
@@ -131,11 +134,12 @@ void FirstPersonGame::Update(double deltaSeconds, const GameInput& input,
         ultimateState_ == UltimateState::Returning ||
         ultimateState_ == UltimateState::Offline;
     player_.Update(deltaSeconds, systemOffline ? 0.0f : input.moveX,
-        systemOffline ? 0.0f : -input.moveY, camera_.GetYaw());
+        systemOffline ? 0.0f : -input.moveY,
+        camera_.ShouldBodyFollowCamera() ? camera_.GetYaw() : player_.GetBodyYaw());
     const Vector3 playerPosition = player_.GetPosition();
     const float bodyYaw = player_.GetBodyYaw();
     const auto armInput = [&](const PunchArm& arm, bool keyPunchHeld,
-        bool mouseHeld) {
+        bool mouseHeld, bool gamepadRocketHeld) {
         PunchArmInput result{};
         result.punchHeld = keyPunchHeld;
         if (mouseHeld) {
@@ -143,10 +147,12 @@ void FirstPersonGame::Update(double deltaSeconds, const GameInput& input,
                 ? arm.GetAttackType() == PunchArmAttackType::Punch : input.shiftDown;
             if (continuePunch) {
                 result.punchHeld = true;
-            } else {
+            } else if (input.allowRocketCharge) {
                 result.rocketHeld = true;
             }
         }
+        if (gamepadRocketHeld && input.allowRocketCharge)
+            result.rocketHeld = true;
         return result;
     };
     const bool leftWasActive = leftArm_.IsPunchDamageActiveThisFrame() ||
@@ -154,9 +160,9 @@ void FirstPersonGame::Update(double deltaSeconds, const GameInput& input,
     const bool rightWasActive = rightArm_.IsPunchDamageActiveThisFrame() ||
         rightArm_.IsRocketDamageActiveThisFrame();
     const PunchArmInput leftInput = armInput(leftArm_, input.leftPunchKeyDown,
-        input.leftMouseDown);
+        input.leftMouseDown, input.leftGamepadRocketDown);
     const PunchArmInput rightInput = armInput(rightArm_, input.rightPunchKeyDown,
-        input.rightMouseDown);
+        input.rightMouseDown, input.rightGamepadRocketDown);
     bool lockArms = false;
     UpdateUltimate(armDeltaTime, input, leftInput, rightInput, lockArms);
     lockArms |= needleOffline ||
@@ -239,7 +245,8 @@ void FirstPersonGame::ResetCombatState() {
     ultimateState_ = UltimateState::Idle;
     ultimateChargeTimer_ = 0.0f;
     ultimateTravel_ = 0.0f;
-    ultimateReturnTimer_ = 0.0f;
+    ultimateRecoilTimer_ = 0.0f;
+    ultimateShutdown_ = false;
     ultimateOfflineTimer_ = 0.0f;
     needleShutdownDelay_ = 0.0f;
     needleOfflineTimer_ = 0.0f;
@@ -295,7 +302,9 @@ void FirstPersonGame::UpdateUltimate(float seconds, const GameInput&,
                 position.z + ultimateDirection_.z * 4.0f};
             previousUltimatePosition_ = ultimatePosition_;
             ultimateTravel_ = 0.0f;
-            ultimateOfflineTimer_ = combatConfig_.ultimateSystemOfflineDuration;
+            ultimateOfflineTimer_ = 0.0f;
+            ultimateRecoilTimer_ = 0.0f;
+            ultimateShutdown_ = false;
             ultimateState_ = UltimateState::Flying;
             player_.StartUltimateRecoil();
             events_.ultimateLaunched = true;
@@ -306,7 +315,19 @@ void FirstPersonGame::UpdateUltimate(float seconds, const GameInput&,
         return;
     }
     lockArms = true;
-    ultimateOfflineTimer_ = std::max(0.0f, ultimateOfflineTimer_ - seconds);
+    if (!ultimateShutdown_) {
+        ultimateRecoilTimer_ += seconds;
+        if (ultimateRecoilTimer_ >= combatConfig_.ultimateRecoilDuration) {
+            ultimateShutdown_ = true;
+            ultimateOfflineTimer_ = combatConfig_.ultimateSystemOfflineDuration;
+        }
+    } else {
+        ultimateOfflineTimer_ = std::max(0.0f, ultimateOfflineTimer_ - seconds);
+        if (ultimateState_ != UltimateState::Offline) {
+            ultimateOfflineTimer_ = std::max(ultimateOfflineTimer_,
+                1.0f + combatConfig_.ultimateReturnPostDockPause);
+        }
+    }
     if (ultimateState_ == UltimateState::Flying) {
         const float distance = std::min(combatConfig_.ultimateSpeed * seconds,
             combatConfig_.ultimateMaximumRange - ultimateTravel_);
@@ -316,17 +337,30 @@ void FirstPersonGame::UpdateUltimate(float seconds, const GameInput&,
         ultimateDamageActiveThisFrame_ = true;
         if (ultimateTravel_ >= combatConfig_.ultimateMaximumRange) {
             ultimateState_ = UltimateState::Returning;
-            ultimateSplitPosition_ = ultimatePosition_;
-            ultimateReturnTimer_ = 0.0f;
+            const Vector3 splitRight{ultimateDirection_.z, 0.0f,
+                -ultimateDirection_.x};
+            const float halfWidth = combatConfig_.ultimateReturnSplitHalfWidth;
+            leftArm_.BeginUltimateReturn({
+                    ultimatePosition_.x - splitRight.x * halfWidth,
+                    ultimatePosition_.y,
+                    ultimatePosition_.z - splitRight.z * halfWidth},
+                ultimateDirection_, player_.GetBodyYaw());
+            rightArm_.BeginUltimateReturn({
+                    ultimatePosition_.x + splitRight.x * halfWidth,
+                    ultimatePosition_.y,
+                    ultimatePosition_.z + splitRight.z * halfWidth},
+                ultimateDirection_, player_.GetBodyYaw());
         }
     } else if (ultimateState_ == UltimateState::Returning) {
-        ultimateReturnTimer_ += seconds;
-        if (ultimateReturnTimer_ >= combatConfig_.ultimateReturnDuration) {
+        if (!leftArm_.IsFistAway() && !rightArm_.IsFistAway()) {
             ultimateState_ = UltimateState::Offline;
+            ultimateOfflineTimer_ = std::max(ultimateOfflineTimer_,
+                1.0f + combatConfig_.ultimateReturnPostDockPause);
             events_.ultimateReturned = true;
         }
-    } else if (ultimateOfflineTimer_ <= 0.0f) {
+    } else if (ultimateShutdown_ && ultimateOfflineTimer_ <= 0.0f) {
         ultimateState_ = UltimateState::Idle;
+        ultimateShutdown_ = false;
         events_.systemRestarted = true;
         ultimateChargeTimer_ = 0.0f;
         leftArm_.Reset(player_.GetPosition(), player_.GetBodyYaw());
@@ -338,24 +372,8 @@ void FirstPersonGame::UpdateUltimate(float seconds, const GameInput&,
 }
 
 Vector3 FirstPersonGame::GetUltimateReturnFistPosition(PunchArmSide side) const {
-    const float sideSign = side == PunchArmSide::Left ? -1.0f : 1.0f;
-    const float yaw = player_.GetBodyYaw();
-    const Vector3& playerPosition = player_.GetPosition();
-    const Vector3 home{playerPosition.x + std::cos(yaw) * sideSign *
-            FirstPersonTuning::kShoulderHalfWidth + std::sin(yaw) *
-            FirstPersonTuning::kReadyFistForwardOffset,
-        playerPosition.y + FirstPersonTuning::kShoulderHeight,
-        playerPosition.z - std::sin(yaw) * sideSign *
-            FirstPersonTuning::kShoulderHalfWidth + std::cos(yaw) *
-            FirstPersonTuning::kReadyFistForwardOffset};
-    const Vector3 start{ultimateSplitPosition_.x + std::cos(yaw) * sideSign * 1.8f,
-        ultimateSplitPosition_.y, ultimateSplitPosition_.z -
-            std::sin(yaw) * sideSign * 1.8f};
-    const float ratio = std::clamp(ultimateReturnTimer_ /
-        combatConfig_.ultimateReturnDuration, 0.0f, 1.0f);
-    return {start.x + (home.x - start.x) * ratio,
-        start.y + (home.y - start.y) * ratio,
-        start.z + (home.z - start.z) * ratio};
+    return side == PunchArmSide::Left ? leftArm_.GetFistPosition() :
+        rightArm_.GetFistPosition();
 }
 
 Vector3 FirstPersonGame::GetUltimateFormationPosition() const {
@@ -365,6 +383,13 @@ Vector3 FirstPersonGame::GetUltimateFormationPosition() const {
     return {(left.x + right.x) * 0.5f + std::sin(yaw) * 0.8f,
         (left.y + right.y) * 0.5f,
         (left.z + right.z) * 0.5f + std::cos(yaw) * 0.8f};
+}
+
+float FirstPersonGame::GetUltimateChargeRatio() const {
+    if (ultimateState_ == UltimateState::Ready) return 1.0f;
+    if (ultimateState_ != UltimateState::Forming) return 0.0f;
+    return std::clamp(ultimateChargeTimer_ /
+        std::max(0.001f, combatConfig_.ultimateChargeTime), 0.0f, 1.0f);
 }
 
 float FirstPersonGame::GetUltimateFormationRatio() const {
@@ -413,11 +438,13 @@ void FirstPersonGame::ProcessTargetHits() {
 }
 
 PlayerHitResult FirstPersonGame::ReceivePlayerHit(PlayerHitType type,
-    const Vector3& pushDirection) {
+    const Vector3& pushDirection, bool bossNeedleHit) {
     const PlayerHitResult result = vitality_.ReceiveHit(type);
     events_.playerHit = result.wasApplied;
     events_.playerHitType = type;
+    events_.playerHitWasBossNeedle = bossNeedleHit;
     events_.playerHitResult = result;
+    events_.playerHits.push_back({type, result, bossNeedleHit});
     events_.playerDefeated |= vitality_.IsDefeated();
     if (type == PlayerHitType::ChargeUnit) {
         player_.StartChargeImpact(pushDirection, result.shieldLayersLost > 0);
@@ -445,6 +472,14 @@ PlayerHitResult FirstPersonGame::ReceivePlayerHit(PlayerHitType type,
             combatConfig_.chargeHitShakeDuration);
     }
     return result;
+}
+
+void FirstPersonGame::StartBossBodyPush(const Vector3& direction) {
+    if (!vitality_.IsDefeated() &&
+        ultimateState_ != UltimateState::Offline &&
+        needleOfflineTimer_ <= 0.0f) {
+        player_.StartBossBodyPush(direction);
+    }
 }
 
 void FirstPersonGame::StartNeedleStun() {

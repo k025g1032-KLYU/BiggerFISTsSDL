@@ -270,13 +270,20 @@ void CombatFeedback::PlayRocketReconnect() {
     PlayClip(rocketReconnect_, config_.rocketReconnectGain);
 }
 
-void CombatFeedback::PlayPlayerHit(PlayerHitType type, bool damagedHitPoints) {
-    if (type == PlayerHitType::ChargeUnit || type == PlayerHitType::BossSpreadBurst) {
+void CombatFeedback::PlayPlayerHit(PlayerHitType type,
+    bool damagedHitPoints, bool bossNeedleHit) {
+    if (type == PlayerHitType::ChargeUnit ||
+        type == PlayerHitType::BossSpreadBurst ||
+        type == PlayerHitType::NeedleFinisher) {
         PlayClip(chargeHit_, config_.chargeHitGain);
         Rumble(config_.chargeHitRumbleLow, config_.chargeHitRumbleHigh,
             config_.chargeHitRumbleMs, 3);
     } else {
-        PlayCue(damagedHitPoints ? "playerHealth" : "playerShield");
+        if (bossNeedleHit) {
+            PlayClip(bossSharpHit_, damagedHitPoints
+                ? config_.bossSharpHitPointGain
+                : config_.bossSharpShieldHitGain);
+        }
         Rumble(damagedHitPoints ? config_.projectileHitPointRumbleLow
                 : config_.projectileShieldRumbleLow,
             damagedHitPoints ? config_.projectileHitPointRumbleHigh
@@ -301,6 +308,33 @@ void CombatFeedback::StopCue(const std::string& name) {
         SDL_ClearAudioStream(voice);
 }
 
+void CombatFeedback::SetCueGain(const std::string& name, float gain) {
+    const auto found = cues_.find(name);
+    if (found == cues_.end()) return;
+    for (SDL_AudioStream* voice : found->second.voices)
+        SDL_SetAudioStreamGain(voice, std::clamp(gain, 0.0f, 2.0f));
+}
+
+void CombatFeedback::SetRocketLaunchGain(float gain) {
+    for (SDL_AudioStream* voice : rocketLaunch_.voices)
+        SDL_SetAudioStreamGain(voice, std::clamp(gain, 0.0f, 2.0f));
+}
+
+void CombatFeedback::StopBattleAudio() {
+    for (Clip* clip : {&impact_, &rocketLaunch_, &punchSwing_,
+            &rocketReconnect_, &chargeHit_, &dodge_, &bossChangeMode_,
+            &bossSharpHit_, &bossRiser_, &battleExplosion_}) {
+        for (SDL_AudioStream* voice : clip->voices)
+            SDL_ClearAudioStream(voice);
+    }
+    for (auto& [name, clip] : cues_) {
+        for (SDL_AudioStream* voice : clip.voices)
+            SDL_ClearAudioStream(voice);
+    }
+    engineRequested_ = false;
+    engineFadeRemaining_ = 0.0f;
+}
+
 void CombatFeedback::SetEngineLoop(bool enabled) {
     if (engineRequested_ == enabled) return;
     engineRequested_ = enabled;
@@ -320,22 +354,32 @@ bool CombatFeedback::IsEngineLoopQueued() const {
 void CombatFeedback::PlayBattleEvent(BattleFeedbackEvent event) {
     switch (event) {
     case BattleFeedbackEvent::EnemyDefeated:
+        PlayClip(impact_, 0.9f);
+        Rumble(config_.punchRumbleLow, config_.punchRumbleHigh,
+            config_.punchRumbleMs, 2);
+        break;
+    case BattleFeedbackEvent::EnemyExploded:
+        PlayCue("projectileExplosion");
+        break;
+    case BattleFeedbackEvent::BossDefeatSmallExplosion:
+        PlayClip(battleExplosion_, config_.bossSmallExplosionGain);
+        break;
     case BattleFeedbackEvent::BossDefeated:
-        PlayClip(battleExplosion_, config_.battleCueGain);
+        PlayClip(battleExplosion_, config_.bossFinalExplosionGain);
         Rumble(config_.punchRumbleLow, config_.punchRumbleHigh,
             config_.punchRumbleMs, 2);
         break;
     case BattleFeedbackEvent::ProjectileLaunched:
         PlayCue("missileLaunch");
         break;
-    case BattleFeedbackEvent::BossModeChanged:
+    case BattleFeedbackEvent::BossNeedlePoseChanged:
         PlayClip(bossChangeMode_, config_.battleCueGain);
         break;
     case BattleFeedbackEvent::BossCrystalLaunched:
         PlayClip(bossRiser_, config_.battleCueGain);
         break;
     case BattleFeedbackEvent::BossDamaged:
-        PlayClip(bossSharpHit_, config_.battleCueGain);
+        PlayClip(impact_, config_.rocketImpactGain);
         Rumble(config_.punchRumbleLow, config_.punchRumbleHigh,
             config_.punchRumbleMs, 2);
         break;
@@ -354,6 +398,9 @@ void CombatFeedback::PlayBattleEvent(BattleFeedbackEvent event) {
     case BattleFeedbackEvent::ChargeDashing:
         PlayCue("chargeDash");
         break;
+    case BattleFeedbackEvent::ChargeWallImpact:
+        PlayClip(chargeHit_, config_.chargeHitGain);
+        break;
     case BattleFeedbackEvent::BossDodged:
         PlayCue("bossDash");
         break;
@@ -365,6 +412,10 @@ void CombatFeedback::PlayBattleEvent(BattleFeedbackEvent event) {
         break;
     case BattleFeedbackEvent::BossBarrageStarted:
         PlayCue("bossBarrage");
+        PlayClip(rocketLaunch_, config_.rocketLaunchGain);
+        break;
+    case BattleFeedbackEvent::BossChargeLaunched:
+        PlayClip(rocketLaunch_, config_.rocketLaunchGain);
         break;
     case BattleFeedbackEvent::ProjectileExploded:
         PlayCue("projectileExplosion");
@@ -423,11 +474,25 @@ void CombatFeedback::PlayTutorialVoice(const std::string& name) {
         tutorialCheckPending_ = true;
 }
 
+void CombatFeedback::StopTutorialVoice() {
+    if (const auto found = tutorialVoices_.find(currentVoice_);
+        found != tutorialVoices_.end()) {
+        for (SDL_AudioStream* stream : found->second.voices)
+            SDL_ClearAudioStream(stream);
+    }
+    currentVoice_.clear();
+    tutorialCheckPending_ = false;
+}
+
 bool CombatFeedback::IsTutorialVoicePlaying() const {
     if (currentVoice_.empty()) return false;
     const auto found = tutorialVoices_.find(currentVoice_);
     return found != tutorialVoices_.end() && !found->second.voices.empty() &&
         SDL_GetAudioStreamQueued(found->second.voices.front()) > 0;
+}
+
+bool CombatFeedback::IsTutorialSystemVoicePlaying() const {
+    return currentVoice_.starts_with("system/") && IsTutorialVoicePlaying();
 }
 
 void CombatFeedback::UpdateMusic(float seconds) {
@@ -442,7 +507,8 @@ void CombatFeedback::UpdateMusic(float seconds) {
             const float gain = 0.55f + (config_.cues.at("engineLoop").gain -
                 0.55f) * (1.0f - engineFadeRemaining_ / 2.0f);
             SDL_SetAudioStreamGain(stream, gain);
-            if (SDL_GetAudioStreamQueued(stream) <= 0) {
+            if (SDL_GetAudioStreamQueued(stream) <=
+                    static_cast<int>(clip.samples.size() / 4)) {
                 SDL_PutAudioStreamData(stream, clip.samples.data(),
                     static_cast<int>(clip.samples.size()));
                 SDL_FlushAudioStream(stream);
@@ -475,7 +541,8 @@ void CombatFeedback::UpdateMusic(float seconds) {
         : currentMusic_ == "boss" ? 0.48f
         : currentMusic_ == "win" ? 0.50f : 0.45f;
     if (musicFadeRemaining_ <= 0.0f) SDL_SetAudioStreamGain(stream, gain);
-    if (SDL_GetAudioStreamQueued(stream) <= 0) {
+    if (SDL_GetAudioStreamQueued(stream) <=
+            static_cast<int>(clip.samples.size() / 4)) {
         if (!SDL_PutAudioStreamData(stream, clip.samples.data(),
                 static_cast<int>(clip.samples.size())) || !SDL_FlushAudioStream(stream)) {
             SDL_Log("Could not loop music %s: %s", currentMusic_.c_str(), SDL_GetError());

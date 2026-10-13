@@ -1,0 +1,24 @@
+# Font readability pass
+
+## Scope and implementation
+
+- The original 128 x 128 `debugfont.png` atlas and its 9 x 18 glyph cells are unchanged. The SDL and original copies have the same SHA-256: `8B26FF77A9233DC08C530CD8D8891F4D3A01CEDB3B7B295E9F1FBBF724876272`.
+- `UiRenderer` uses nearest filtering when a glyph maps to an integer number of output pixels per source pixel. Fractional glyph scales use linear coverage sampling to avoid alternating one- and two-pixel strokes. Story art and every other UI image retain linear filtering.
+- The font shader samples only atlas alpha as glyph coverage, then applies the requested text color. The atlas has transparent black pixels, so multiplying linearly sampled RGB and alpha would darken edges twice. Font UVs are clamped to the selected glyph cell to prevent adjacent glyphs from bleeding in.
+- Each glyph's four output edges are rounded to physical pixels after the 1280 x 720 design-space transform. Glyph UVs, advances, text contents, and the overall layout are unchanged.
+- The tutorial's bottom-right skip and continue prompts use 1.0 scale. A 0.85-scale comparison was captured, then the user chose to keep 1.0. Their right edges remain inside the 1280-wide design area.
+- No text shadow, outline, panel, SDL_ttf, or new library was added.
+
+## Captures and checks
+
+Captures are in the ignored `build/` directory. `font-before-boot-1280.bmp`, `font-before-tutorial-1280.bmp`, and `font-before-practice-1280.bmp` were recorded before the sampler change. Matching `font-after-*` images were recorded afterwards. The tutorial capture is from the startup interval, so it is not evidence for all six tutorial instructions.
+
+Post-change captures include Title, Prologue image and prompt, startup, Tutorial Visual Link, free practice with F3 data, Day1 HUD, Game Over, and Ending at 1280 x 720. Prologue, startup, Tutorial Visual Link, free practice, Day1 HUD, and Ending were also captured at 1600 x 900. Relevant files include `font-after-story-image-1280.bmp`, `font-after-story-image-1600.bmp`, `font-after-boot-1280.bmp`, `font-after-boot-1600.bmp`, `font-after-visual-link-1280.bmp`, `font-after-visual-link-1600.bmp`, `font-after-practice-1280.bmp`, `font-after-practice-1600.bmp`, `font-after-hud-1280.bmp`, `font-after-hud-1600.bmp`, `font-after-gameover-1280.bmp`, and `font-after-ending-1600.bmp`. The `font-after-visual-link-*` and `font-after-practice-*` images show the selected 1.0-scale prompts. The discarded 0.85-scale comparison remains in `font-085-visual-link-{1280,1600}.bmp` and `font-085-practice-{1280,1600}.bmp`. The 1600 x 900 captures used a temporary build-local display setting that was restored afterwards.
+
+The startup before/after pair shows the thin strokes no longer blended with neighboring atlas pixels. At both resolutions, HUD and tutorial corner text remain inside the screen. Story illustrations and Title art still use linear sampling. The 9 x 18 source cells remain visibly pixelated when enlarged; those square pixels are an atlas-resolution limit rather than blur from filtering. The original F3 practice data can still cross bright scenery and other UI because it intentionally has no backing or shadow. This pass does not change its layout.
+
+## Stroke-weight follow-up
+
+The 9 x 18 atlas is binary alpha: 1,959 opaque white pixels and 14,425 transparent black pixels. At noninteger output scales, nearest filtering maps equal one-pixel source strokes to different one- or two-pixel output widths, depending on their position. The new mixed sampler uses alpha coverage at fractional scales. Side-by-side GPU captures are `font-after-hud-1280.bmp` versus `font-coverage-hud-1280.bmp` and `font-after-visual-link-1600.bmp` versus `font-coverage-visual-link-1600.bmp`; an intermediate linear test without alpha-only sampling is retained as `font-hybrid-*` and was rejected because its edges were too faint. This reduces the scale-induced weight variation while preserving nearest filtering for exactly aligned integer scales. The original glyph shapes have some different stroke patterns, which a sampler cannot make identical without changing the atlas.
+
+`FullGameUiTests` checks glyph atlas cells and character advance, the current corner prompt sizes and bounds, and the six tutorial-step UI commands. Debug and Release builds and all 27 CTests pass with 1.0 scale. The full game replay rendered 600 GPU frames for each of the four 0.85-scale comparison captures. Nine GPU smoke modes per configuration passed after the initial sampler change. Full-game replay captures verify a normal Day1 HUD and Game Over after the sampler change. Side-by-side original-executable captures of all six tutorial steps, every story page, and both output resolutions remain to be collected before claiming complete pixel parity with the original game.

@@ -3,6 +3,7 @@
 #include "Data/BattleAssetCatalog.h"
 #include "Gameplay/Combat/CombatSession.h"
 #include "Gameplay/Cockpit/CockpitPresentation.h"
+#include "Gameplay/Player/FirstPersonTuning.h"
 
 #include <algorithm>
 #include <array>
@@ -23,6 +24,11 @@ Vector3 Interpolate(const Vector3& previous, const Vector3& current,
     return {previous.x + (current.x - previous.x) * alpha,
         previous.y + (current.y - previous.y) * alpha,
         previous.z + (current.z - previous.z) * alpha};
+}
+
+float InterpolateAngle(float previous, float current, float alpha) {
+    return previous + std::remainder(current - previous,
+        2.0f * std::numbers::pi_v<float>) * alpha;
 }
 
 void Rotate(ModelInstance& model, const Vector3& radians) {
@@ -46,7 +52,7 @@ void FirstPersonScenePresenter::QueueVisualEvents(
     const std::vector<BattleVisualEvent>& events) {
     for (const BattleVisualEvent& event : events) {
         visualEffects_.push_back({nextVisualEffectId_++, event.effect,
-            event.position, event.scale, event.shieldLayers, visualTime_});
+            event.position, event.scale, event.shieldImpact, visualTime_});
     }
 }
 
@@ -75,6 +81,7 @@ void FirstPersonScenePresenter::SyncEnvironment(const FirstPersonGame& game,
             ModelInstance banner = *prototype;
             banner.id = "fullgame_banner";
             banner.transparent = true;
+            banner.renderLayer = ModelRenderLayer::TransparentBackground;
             banner.position = {0.0f, 12.0f, 41.85f};
             Rotate(banner, {0.0f, std::numbers::pi_v<float>, 0.0f});
             scene_.models.push_back(std::move(banner));
@@ -119,6 +126,7 @@ void FirstPersonScenePresenter::SyncEnvironment(const FirstPersonGame& game,
             ModelInstance cloud = *prototype;
             cloud.id = "fullgame_cloud_" + std::to_string(index);
             cloud.transparent = true;
+            cloud.renderLayer = ModelRenderLayer::TransparentBackground;
             cloud.position = clouds_[index].position;
             cloud.scaleAxes = clouds_[index].scale;
             Rotate(cloud, {0.0f, clouds_[index].yaw, 0.0f});
@@ -129,22 +137,34 @@ void FirstPersonScenePresenter::SyncEnvironment(const FirstPersonGame& game,
 
 void FirstPersonScenePresenter::SyncCockpit(const FirstPersonGame& game,
     const BattleAssetCatalog& assets, bool visible,
-    const CockpitActivation& activation, int practiceModelMode) {
+    const CockpitActivation& activation, int practiceModelMode,
+    bool emergency) {
     std::erase_if(scene_.models, [](const ModelInstance& model) {
         return model.id == "fullgame_cockpit" || model.id == "fullgame_helmet";
     });
-    if (!visible || practiceModelMode == 3) return;
-    const float cameraSink = 0.3f * (1.0f - activation.camera);
-    scene_.cameraPosition.y -= cameraSink;
-    scene_.cameraTarget.y -= cameraSink;
+    const float bodySinkDistance = emergency
+        ? FirstPersonTuning::kSystemOfflineBodySinkDistance
+        : FirstPersonTuning::kCockpitStartupBodySinkDistance;
+    const float cameraSinkDistance = emergency
+        ? FirstPersonTuning::kSystemOfflineCameraSinkDistance
+        : FirstPersonTuning::kCockpitStartupCameraSinkDistance;
+    const float armSinkDistance = emergency
+        ? FirstPersonTuning::kSystemOfflineArmSinkDistance
+        : FirstPersonTuning::kCockpitStartupArmSinkDistance;
+    const float bodySink = bodySinkDistance * (1.0f - activation.body);
+    const float cameraSink = cameraSinkDistance * (1.0f - activation.camera);
+    const float mountSink = bodySink + cameraSink;
+    scene_.cameraPosition.y -= mountSink;
+    scene_.cameraTarget.y -= mountSink;
     if (ModelInstance* body = FindModelById(scene_, "fullgame_body"))
-        body->position.y -= 2.6f * (1.0f - activation.body);
+        body->position.y -= bodySink;
     for (const char* id : {"left_fist", "left_upper_arm"})
         if (ModelInstance* arm = FindModelById(scene_, id))
-            arm->position.y -= 2.8f * (1.0f - activation.leftArm);
+            arm->position.y -= armSinkDistance * (1.0f - activation.leftArm);
     for (const char* id : {"right_fist", "right_upper_arm"})
         if (ModelInstance* arm = FindModelById(scene_, id))
-            arm->position.y -= 2.8f * (1.0f - activation.rightArm);
+            arm->position.y -= armSinkDistance * (1.0f - activation.rightArm);
+    if (!visible || practiceModelMode == 3) return;
     const ModelInstance* prototype = assets.Find("cockpit");
     if (!prototype) return;
     ModelInstance cockpit = *prototype;
@@ -152,12 +172,13 @@ void FirstPersonScenePresenter::SyncCockpit(const FirstPersonGame& game,
     const Vector3 player = Interpolate(
         game.GetPlayer().GetPreviousPosition(),
         game.GetPlayer().GetPosition(), interpolationAlpha_);
-    cockpit.position = {player.x, player.y + 4.15f -
-        (1.0f - activation.body) * 2.9f,
+    cockpit.position = {player.x, player.y + FirstPersonTuning::kEyeHeight -
+        mountSink,
         player.z};
     cockpit.scale = 1.0f;
     cockpit.opacity = 1.0f;
     cockpit.transparent = true;
+    cockpit.renderLayer = ModelRenderLayer::FirstPerson;
     cockpit.initialXDegrees = 0.0f;
     cockpit.initialYDegrees = game.GetPlayer().GetBodyYaw() * 57.2957795f;
     cockpit.initialZDegrees = 0.0f;
@@ -166,16 +187,16 @@ void FirstPersonScenePresenter::SyncCockpit(const FirstPersonGame& game,
         ModelInstance helmet = *helmetPrototype;
         helmet.id = "fullgame_helmet";
         helmet.position = scene_.cameraPosition;
-        helmet.position.y -= 0.3f * (1.0f - activation.camera);
         helmet.opacity = 0.45f;
         helmet.transparent = true;
+        helmet.renderLayer = ModelRenderLayer::FirstPerson;
         Rotate(helmet, {game.GetCamera().GetPitch(),
             game.GetCamera().GetYaw(), 0.0f});
         scene_.models.push_back(std::move(helmet));
     }
 }
 
-void FirstPersonScenePresenter::SetPracticeThirdPerson(
+void FirstPersonScenePresenter::SetCombatThirdPerson(
     const FirstPersonGame& game, bool enabled) {
     if (!enabled) return;
     const float yaw = game.GetCamera().GetYaw();
@@ -196,17 +217,41 @@ void FirstPersonScenePresenter::SyncTutorial(const FirstPersonGame& game,
     });
     SyncEnvironment(game, assets, true);
     SyncRocketFlames(game, assets);
+    SyncVisualEffects(game, assets);
     for (const FirstPersonTarget& target : game.GetTargets()) {
         if (target.hitPoints <= 0) continue;
         const bool missile = target.id == "target_tutorial_missile";
         if (!missile && !showTargets) continue;
-        const ModelInstance* prototype = assets.Find(missile ? "missile" : "tutorial_target");
+        const ModelInstance* prototype = assets.Find("tutorial_target");
         if (!prototype) continue;
         ModelInstance instance = *prototype;
         instance.id = "tutorial_" + target.id;
         instance.position = Add(target.position, prototype->position);
-        instance.scale = missile ? 0.8f : 1.0f;
+        instance.scale = missile ? target.radius / 1.25f : 1.0f;
         scene_.models.push_back(std::move(instance));
+        if (missile) {
+            const ModelInstance* flamePrototype = assets.Find("flame");
+            if (!flamePrototype) continue;
+            const Vector3 movement{
+                target.position.x - target.previousPosition.x,
+                0.0f, target.position.z - target.previousPosition.z};
+            const float length = std::hypot(movement.x, movement.z);
+            const Vector3 tailDirection = length > 0.00001f
+                ? Vector3{-movement.x / length, 0.0f,
+                    -movement.z / length} : Vector3{0.0f, 0.0f, 1.0f};
+            ModelInstance flame = *flamePrototype;
+            flame.id = "tutorial_missile_tail";
+            flame.position = Add(target.position, {
+                tailDirection.x * (target.radius + 0.213f),
+                0.0f,
+                tailDirection.z * (target.radius + 0.213f)});
+            flame.scaleAxes = {0.12f, 0.213f, 0.12f};
+            flame.transparent = true;
+            flame.renderLayer = ModelRenderLayer::AdditiveEffect;
+            Rotate(flame, {std::numbers::pi_v<float> * 0.5f,
+                std::atan2(tailDirection.x, tailDirection.z), 0.0f});
+            scene_.models.push_back(std::move(flame));
+        }
     }
 }
 
@@ -222,16 +267,7 @@ void FirstPersonScenePresenter::SyncRocketFlames(
         const float cosPitch = std::cos(pitch);
         const Vector3 backward{-std::sin(yaw) * cosPitch,
             std::sin(pitch), -std::cos(yaw) * cosPitch};
-        float flameScale = arm.GetState() == PunchArmState::RocketFlying
-            ? 1.0f : 0.5f;
-        if (arm.GetState() == PunchArmState::RocketFlying) {
-            const float remaining = std::max(0.0f,
-                arm.GetRocketMaximumRange() - arm.GetRocketTravelDistance());
-            const float progress = std::clamp(1.0f - remaining / 2.0f,
-                0.0f, 1.0f);
-            flameScale += (0.15f - flameScale) *
-                progress * progress * (3.0f - 2.0f * progress);
-        }
+        const float flameScale = arm.GetRocketFlameScale();
         const float length = flameScale;
         const float distance = 0.55f + 1.5f + length;
         const Vector3 fist = Interpolate(arm.GetPreviousFistPosition(),
@@ -243,14 +279,83 @@ void FirstPersonScenePresenter::SyncRocketFlames(
             fist.z + backward.z * distance};
         flame.scaleAxes = {0.45f * flameScale, length,
             0.45f * flameScale};
-        Rotate(flame, {std::numbers::pi_v<float> * 0.5f - pitch,
-            yaw + std::numbers::pi_v<float>, 0.0f});
-        flame.colorTint = {1.0f, 0.55f, 0.15f};
+        Rotate(flame, arm.IsUltimateDocking()
+            ? Vector3{std::numbers::pi_v<float>, 0.0f, 0.0f}
+            : Vector3{std::numbers::pi_v<float> * 0.5f - pitch,
+                yaw + std::numbers::pi_v<float>, 0.0f});
+        flame.colorTint = {1.0f, 1.0f, 1.0f};
         flame.transparent = true;
+        flame.renderLayer = ModelRenderLayer::AdditiveEffect;
         scene_.models.push_back(std::move(flame));
     };
     addFlame(game.GetLeftArm(), "left");
     addFlame(game.GetRightArm(), "right");
+}
+
+void FirstPersonScenePresenter::SyncVisualEffects(
+    const FirstPersonGame& game, const BattleAssetCatalog& assets) {
+    const auto add = [&](const std::string& id, std::string_view key,
+        const Vector3& position, float scale, Vector3 tint) {
+        const ModelInstance* prototype = assets.Find(key);
+        if (!prototype) return;
+        ModelInstance model = *prototype;
+        model.id = "battle_" + id;
+        model.position = Add(position, prototype->position);
+        model.scale = scale;
+        model.colorTint = tint;
+        scene_.models.push_back(std::move(model));
+    };
+    std::erase_if(visualEffects_, [&](const ActiveVisualEffect& effect) {
+        return visualTime_ - effect.startTime >=
+            BattleVisualEffectDuration(effect.kind);
+    });
+    for (const ActiveVisualEffect& effect : visualEffects_) {
+        const float age = static_cast<float>(std::max(0.0,
+            visualTime_ - effect.startTime));
+        const std::string id = "effect_" + std::to_string(effect.id);
+        if (effect.kind == BattleVisualEffect::ShieldHit) {
+            const std::string_view key =
+                effect.shieldImpact == ShieldImpactState::TwoOrMoreRemaining
+                    ? "shield_three" :
+                effect.shieldImpact == ShieldImpactState::OneRemaining
+                    ? "shield_two" : "shield_one";
+            Vector3 shieldCenter = game.GetPlayer().GetPosition();
+            shieldCenter.y += 4.15f;
+            add(id, key, shieldCenter,
+                effect.scale * (0.25f + 0.83f *
+                    std::clamp(age / 0.10f, 0.0f, 1.0f)),
+                {1.0f, 1.0f, 1.0f});
+            if (ModelInstance* model = FindModelById(scene_, "battle_" + id)) {
+                model->opacity = 1.0f - std::clamp((age - 0.26f) /
+                    0.20f, 0.0f, 1.0f);
+                model->transparent = true;
+                model->renderLayer = ModelRenderLayer::AdditiveEffect;
+            }
+        } else {
+            const auto component = [&](std::string_view suffix,
+                std::string_view key, float duration, float delay,
+                float initialScale, float finalScale, Vector3 tint,
+                float maximumOpacity) {
+                if (age < delay || age >= delay + duration) return;
+                const float progress = (age - delay) / duration;
+                add(id + std::string(suffix), key, effect.position,
+                    effect.scale * (initialScale +
+                        (finalScale - initialScale) * progress), tint);
+                if (ModelInstance* model = FindModelById(scene_,
+                        "battle_" + id + std::string(suffix))) {
+                    model->opacity = maximumOpacity * (1.0f - progress);
+                    model->transparent = true;
+                    model->renderLayer = ModelRenderLayer::AdditiveEffect;
+                }
+            };
+            component("_flash", "explosion_flash", 0.12f, 0.0f,
+                0.55f, 1.35f, {1.0f, 0.78f, 0.32f}, 1.0f);
+            component("_fire", "explosion_fire", 0.38f, 0.0f,
+                0.45f, 1.45f, {1.0f, 0.44f, 0.08f}, 1.0f);
+            component("_smoke", "explosion_smoke", 0.85f, 0.12f,
+                0.55f, 1.70f, {0.42f, 0.42f, 0.42f}, 0.72f);
+        }
+    }
 }
 
 void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
@@ -261,6 +366,7 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
     });
     SyncEnvironment(battle.GetPlayerGame(), assets, battle.IsPractice());
     SyncRocketFlames(battle.GetPlayerGame(), assets);
+    SyncVisualEffects(battle.GetPlayerGame(), assets);
     if (battle.IsPractice()) {
         if (const ModelInstance* prototype = assets.Find("tutorial_target")) {
             for (const FirstPersonTarget& target : battle.GetPlayerGame().GetTargets()) {
@@ -286,52 +392,6 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
         model.colorTint = tint;
         scene_.models.push_back(std::move(model));
     };
-    std::erase_if(visualEffects_, [&](const ActiveVisualEffect& effect) {
-        const double lifetime = effect.kind == BattleVisualEffect::ShieldHit
-            ? 0.46 : 0.97;
-        return visualTime_ - effect.startTime >= lifetime;
-    });
-    for (const ActiveVisualEffect& effect : visualEffects_) {
-        const float age = static_cast<float>(std::max(0.0,
-            visualTime_ - effect.startTime));
-        const std::string id = "effect_" + std::to_string(effect.id);
-        if (effect.kind == BattleVisualEffect::ShieldHit) {
-            const std::string_view key = effect.shieldLayers >= 3
-                ? "shield_three" : effect.shieldLayers == 2
-                ? "shield_two" : "shield_one";
-            add(id, key, effect.position,
-                effect.scale * (0.25f + 0.83f *
-                    std::clamp(age / 0.10f, 0.0f, 1.0f)),
-                {1.0f, 1.0f, 1.0f});
-            if (ModelInstance* model = FindModelById(scene_, "battle_" + id)) {
-                model->opacity = 1.0f - std::clamp((age - 0.26f) /
-                    0.20f, 0.0f, 1.0f);
-                model->transparent = true;
-            }
-        } else {
-            const auto component = [&](std::string_view suffix,
-                std::string_view key, float duration, float delay,
-                float initialScale, float finalScale, Vector3 tint,
-                float maximumOpacity) {
-                if (age < delay || age >= delay + duration) return;
-                const float progress = (age - delay) / duration;
-                add(id + std::string(suffix), key, effect.position,
-                    effect.scale * (initialScale +
-                        (finalScale - initialScale) * progress), tint);
-                if (ModelInstance* model = FindModelById(scene_,
-                        "battle_" + id + std::string(suffix))) {
-                    model->opacity = maximumOpacity * (1.0f - progress);
-                    model->transparent = true;
-                }
-            };
-            component("_flash", "explosion_flash", 0.12f, 0.0f,
-                0.55f, 1.35f, {1.0f, 0.78f, 0.32f}, 1.0f);
-            component("_fire", "explosion_fire", 0.38f, 0.0f,
-                0.45f, 1.45f, {1.0f, 0.44f, 0.08f}, 1.0f);
-            component("_smoke", "explosion_smoke", 0.85f, 0.12f,
-                0.55f, 1.70f, {0.42f, 0.42f, 0.42f}, 0.72f);
-        }
-    }
     for (const BattleEnemy& enemy : battle.GetEnemies()) {
         const Vector3 displayPosition = Interpolate(enemy.previousPosition,
             enemy.position, interpolationAlpha);
@@ -339,17 +399,12 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
             ? "missile_unit" : enemy.type == BattleEnemyType::Bomber
             ? "bomber" : "charge_unit";
         const float scale = 1.0f;
-        const bool chargeWarning = enemy.type == BattleEnemyType::ChargeUnit &&
-            (enemy.chargeState == BattleEnemy::ChargeState::Preparing ||
-                enemy.chargeState == BattleEnemy::ChargeState::Charging);
         add(enemy.id, key, displayPosition, scale,
-            enemy.defeated ? Vector3{1.0f, 0.35f, 0.25f} :
-                chargeWarning ? Vector3{1.0f, 0.55f, 0.3f} :
-                Vector3{1.0f, 1.0f, 1.0f});
+            {1.0f, 1.0f, 1.0f});
         if (ModelInstance* model = FindModelById(scene_, "battle_" + enemy.id)) {
             if (enemy.defeated) {
-                Rotate(*model, {enemy.stateTimer * 10.0f,
-                    enemy.stateTimer * 13.0f, enemy.stateTimer * 8.0f});
+                Rotate(*model, Interpolate(enemy.previousDefeatRotation,
+                    enemy.defeatRotation, interpolationAlpha));
             } else if (enemy.type == BattleEnemyType::MissileUnit) {
                 if (enemy.deploymentState == BattleEnemy::DeploymentState::Dropping ||
                     enemy.deploymentState == BattleEnemy::DeploymentState::Landed) {
@@ -360,12 +415,15 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
                     Rotate(*model, {-std::numbers::pi_v<float> * 0.5f *
                         (1.0f - progress), 0.0f, 0.0f});
                 } else {
-                    Rotate(*model, {0.0f, enemy.velocity.x > 0.0f
-                        ? -std::numbers::pi_v<float> * 0.5f
-                        : std::numbers::pi_v<float> * 0.5f, 0.0f});
+                    Rotate(*model, {0.0f, InterpolateAngle(
+                        enemy.previousVisualYaw, enemy.visualYaw,
+                        interpolationAlpha), 0.0f});
                 }
             } else if (enemy.type == BattleEnemyType::Bomber) {
-                Rotate(*model, {0.0f, 0.0f, enemy.visualAge * 5.0f});
+                const float age = enemy.previousVisualAge +
+                    (enemy.visualAge - enemy.previousVisualAge) *
+                    interpolationAlpha;
+                Rotate(*model, {0.0f, 0.0f, age * 5.0f});
             } else {
                 if (enemy.deploymentState ==
                         BattleEnemy::DeploymentState::Dropping ||
@@ -382,7 +440,9 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
                         std::numbers::pi_v<float> * 1.5f * progress,
                         std::numbers::pi_v<float> * 0.5f * (1.0f - progress)});
                 } else {
-                    Rotate(*model, {0.0f, enemy.visualYaw, 0.0f});
+                    Rotate(*model, {0.0f, InterpolateAngle(
+                        enemy.previousVisualYaw, enemy.visualYaw,
+                        interpolationAlpha), 0.0f});
                 }
             }
         }
@@ -390,7 +450,20 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
             enemy.chargeState == BattleEnemy::ChargeState::Preparing) {
             if (ModelInstance* model = FindModelById(scene_, "battle_" + enemy.id)) {
                 const float pulse = 1.0f + std::sin(enemy.chargeTimer * 14.0f) * 0.16f;
-                model->scaleAxes = {pulse, pulse, 1.0f / pulse};
+                model->scaleAxes = {model->scaleAxes.x * pulse,
+                    model->scaleAxes.y * pulse,
+                    model->scaleAxes.z / pulse};
+            }
+        }
+        if (enemy.type == BattleEnemyType::ChargeUnit && !enemy.defeated &&
+            enemy.chargeState == BattleEnemy::ChargeState::Impact) {
+            if (ModelInstance* model = FindModelById(scene_,
+                    "battle_" + enemy.id)) {
+                const auto& tuning = battle.GetConfig().enemy;
+                model->scaleAxes = {
+                    model->scaleAxes.x * tuning.chargeImpactWidthScale,
+                    model->scaleAxes.y * tuning.chargeImpactHeightScale,
+                    model->scaleAxes.z * tuning.chargeImpactDepthScale};
             }
         }
         if (enemy.type == BattleEnemyType::ChargeUnit &&
@@ -399,11 +472,12 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
                 {displayPosition.x - enemy.chargeDirection.x * 1.2f,
                     displayPosition.y,
                     displayPosition.z - enemy.chargeDirection.z * 1.2f},
-                1.0f, {1.0f, 0.7f, 0.3f});
+                1.0f, {1.0f, 1.0f, 1.0f});
             if (ModelInstance* flame = FindModelById(scene_,
                     "battle_" + enemy.id + "_flame")) {
                 flame->scaleAxes = {0.5f, 1.15f, 0.5f};
                 flame->transparent = true;
+                flame->renderLayer = ModelRenderLayer::AdditiveEffect;
                 Rotate(*flame, {std::numbers::pi_v<float> * 0.5f,
                     std::atan2(-enemy.chargeDirection.x,
                         -enemy.chargeDirection.z), 0.0f});
@@ -413,12 +487,14 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
             enemy.deployed) {
             add(enemy.id + "_carried_bomb", "floating_bomb",
                 displayPosition, 1.0f,
-                enemy.attackTimer < 1.0f ? Vector3{1.0f, 0.55f, 0.25f}
-                    : Vector3{1.0f, 1.0f, 1.0f});
+                {1.0f, 1.0f, 1.0f});
             if (ModelInstance* bomb = FindModelById(scene_,
                     "battle_" + enemy.id + "_carried_bomb")) {
                 bomb->scale = enemy.carriedBombScale;
-                Rotate(*bomb, {0.0f, enemy.visualAge * 5.0f, 0.0f});
+                const float age = enemy.previousVisualAge +
+                    (enemy.visualAge - enemy.previousVisualAge) *
+                    interpolationAlpha;
+                Rotate(*bomb, {0.0f, age * 5.0f, 0.0f});
             }
         }
     }
@@ -434,7 +510,11 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
             1.0f,
             {1.0f, 1.0f, 1.0f});
         if (ModelInstance* model = FindModelById(scene_, "battle_" + projectile.id)) {
-            const Vector3& direction = projectile.direction;
+            const Vector3 direction = Interpolate(
+                projectile.previousDirection, projectile.direction,
+                interpolationAlpha);
+            const float age = projectile.previousAge +
+                (projectile.age - projectile.previousAge) * interpolationAlpha;
             if (projectile.type == BattleProjectileType::Missile)
                 Rotate(*model, {0.0f,
                     std::atan2(direction.x, direction.z) +
@@ -443,30 +523,33 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
                 Rotate(*model, {std::numbers::pi_v<float> * 0.5f,
                     std::atan2(direction.x, direction.z), 0.0f});
             else if (projectile.type == BattleProjectileType::CrystalCube)
-                Rotate(*model, {projectile.age * 4.1f,
-                    projectile.age * 5.7f, projectile.age * 3.3f});
+                Rotate(*model, {age * 4.1f,
+                    age * 5.7f, age * 3.3f});
             else
-                Rotate(*model, {projectile.age * 6.5f,
-                    projectile.age * 5.1f, projectile.age * 3.8f});
+                Rotate(*model, {age * 6.5f,
+                    age * 5.1f, age * 3.8f});
         }
         if (projectile.type == BattleProjectileType::Missile) {
-            const Vector3 tail{-projectile.direction.x,
-                -projectile.direction.y, -projectile.direction.z};
+            const Vector3 direction = Interpolate(projectile.previousDirection,
+                projectile.direction, interpolationAlpha);
+            const Vector3 tail{-direction.x, -direction.y, -direction.z};
             add(projectile.id + "_tail", "flame", {
                 displayPosition.x + tail.x * 0.663f,
                 displayPosition.y + tail.y * 0.663f,
                 displayPosition.z + tail.z * 0.663f},
-                1.0f, {1.0f, 0.65f, 0.25f});
+                1.0f, {1.0f, 1.0f, 1.0f});
             if (ModelInstance* flame = FindModelById(scene_,
                     "battle_" + projectile.id + "_tail")) {
                 flame->scaleAxes = {0.12f, 0.213f, 0.12f};
                 flame->transparent = true;
+                flame->renderLayer = ModelRenderLayer::AdditiveEffect;
                 Rotate(*flame, {std::numbers::pi_v<float> * 0.5f,
                     std::atan2(tail.x, tail.z), 0.0f});
             }
         }
     }
-    if (const BattleBoss* boss = battle.GetBoss()) {
+    if (const BattleBoss* boss = battle.GetBoss();
+        boss && boss->GetMode() != BossMode::Defeated) {
         const Vector3 position{
             boss->GetPreviousPosition().x +
                 (boss->GetPosition().x - boss->GetPreviousPosition().x) *
@@ -488,15 +571,13 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
         Rotate(root, pose.rootRotation);
         Matrix4x4 rootWorld{};
         const bool hasRoot = TryBuildModelWorldTransform(scene_, root, rootWorld);
-        const bool warning = boss->GetMode() == BossMode::Charge ||
-            boss->GetMode() == BossMode::SpreadCounter;
-        const Vector3 tint = boss->GetMode() == BossMode::Defeating
-            ? Vector3{1.0f, 0.35f, 0.25f}
-            : boss->IsRocketDodging() ? Vector3{0.50f, 0.85f, 1.0f}
-            : warning ? Vector3{1.0f, 0.55f, 0.45f}
-            : Vector3{1.0f, 1.0f, 1.0f};
         if (hasRoot) {
-            add("boss_core", "boss_core", {}, 1.0f, tint);
+            add("boss_core", "boss_core", {}, 1.0f,
+                boss->GetMode() == BossMode::Defeating
+                    ? Vector3{1.0f, 0.35f, 0.35f}
+                    : boss->GetCoreHitFlashRemaining() > 0.0f
+                    ? Vector3{1.0f, 0.15f, 0.15f}
+                    : Vector3{1.0f, 1.0f, 1.0f});
             if (ModelInstance* core = FindModelById(scene_, "battle_boss_core")) {
                 core->parentWorld = rootWorld;
                 Rotate(*core, pose.coreRotation);
@@ -510,7 +591,8 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
                     MakeRotationZMatrix(pose.spreadSpin), rootWorld);
             for (std::size_t index = 0; index < keys.size(); ++index) {
                 add(std::string(names[index]), keys[index],
-                    pose.cones[index].translation, 1.0f, tint);
+                    pose.cones[index].translation, 1.0f,
+                    {1.0f, 1.0f, 1.0f});
                 if (ModelInstance* cone = FindModelById(scene_,
                         "battle_" + std::string(names[index]))) {
                     const Vector3& angle = pose.cones[index].rotation;
@@ -534,8 +616,7 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
             if (!slot.consumed && slot.reloadTime <= 0.0f) {
                 add("boss_spike_slot_" + std::to_string(index),
                     "boss_crystal_spike", pose.spikes[index].translation, 1.0f,
-                    slot.launchTime > 0.0f ? Vector3{1.0f, 0.8f, 0.5f}
-                        : Vector3{0.65f, 0.85f, 1.0f});
+                    {1.0f, 1.0f, 1.0f});
                 if (ModelInstance* crystal = FindModelById(scene_,
                         "battle_boss_spike_slot_" + std::to_string(index))) {
                     if (hasRoot) crystal->parentWorld = rootWorld;
@@ -549,8 +630,7 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
             if (!slot.consumed && slot.reloadTime <= 0.0f) {
                 add("boss_cube_slot_" + std::to_string(index),
                     "boss_crystal_cube", pose.cubes[index].translation, 1.0f,
-                    slot.launchTime > 0.0f ? Vector3{1.0f, 0.8f, 0.5f}
-                        : Vector3{0.65f, 0.85f, 1.0f});
+                    {1.0f, 1.0f, 1.0f});
                 if (ModelInstance* crystal = FindModelById(scene_,
                         "battle_boss_cube_slot_" + std::to_string(index))) {
                     if (hasRoot) crystal->parentWorld = rootWorld;
@@ -560,20 +640,6 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
         }
     }
     const FirstPersonGame& player = battle.GetPlayerGame();
-    if (player.GetUltimateState() == UltimateState::Forming) {
-        const float ratio = player.GetUltimateFormationRatio();
-        const Vector3 formation = player.GetUltimateFormationPosition();
-        for (const auto& [id, sideSign] :
-                {std::pair{"left_fist", -1.0f},
-                    std::pair{"right_fist", 1.0f}}) {
-            if (ModelInstance* fist = FindModelById(scene_, id)) {
-                fist->position.x += (formation.x - fist->position.x) * ratio;
-                fist->position.y += (formation.y - fist->position.y) * ratio;
-                fist->position.z += (formation.z - fist->position.z) * ratio;
-                fist->initialZDegrees = -sideSign * 90.0f * ratio;
-            }
-        }
-    }
     if (player.GetUltimateState() == UltimateState::Ready ||
         player.GetUltimateState() == UltimateState::Flying) {
         for (const char* id : {"left_fist", "right_fist"}) {
@@ -600,7 +666,7 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
             center.z += std::sin(phase * 1.29f + 1.6f) * 0.064f;
         }
         add("ultimate", "ultimate_fist", center, 1.0f,
-            {1.0f, 0.8f, 0.35f});
+            {1.0f, 1.0f, 1.0f});
         if (ModelInstance* fist = FindModelById(scene_, "battle_ultimate")) {
             const Vector3& direction = player.GetUltimateDirection();
             const float yaw = flying ? std::atan2(direction.x, direction.z) :
@@ -618,17 +684,11 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
                 flame.scaleAxes = {1.0f, 2.0f, 1.0f};
                 Rotate(flame, {std::numbers::pi_v<float> * 0.5f,
                     std::atan2(-direction.x, -direction.z), 0.0f});
-                flame.colorTint = {1.0f, 0.55f, 0.15f};
+                flame.colorTint = {1.0f, 1.0f, 1.0f};
                 flame.transparent = true;
+                flame.renderLayer = ModelRenderLayer::AdditiveEffect;
                 scene_.models.push_back(std::move(flame));
             }
-        }
-    } else if (player.GetUltimateState() == UltimateState::Returning) {
-        if (ModelInstance* fist = FindModelById(scene_, "left_fist")) {
-            fist->position = player.GetUltimateReturnFistPosition(PunchArmSide::Left);
-        }
-        if (ModelInstance* fist = FindModelById(scene_, "right_fist")) {
-            fist->position = player.GetUltimateReturnFistPosition(PunchArmSide::Right);
         }
     }
 }

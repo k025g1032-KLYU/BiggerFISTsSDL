@@ -45,6 +45,10 @@ PlayerHitResult PlayerVitality::ReceiveHit(PlayerHitType type) {
             --shieldLayers_;
         }
         result.shieldLayersLost = result.shieldLayersBeforeHit - shieldLayers_;
+        result.shieldImpact = shieldLayers_ == 0
+            ? ShieldImpactState::Broken : shieldLayers_ == 1
+            ? ShieldImpactState::OneRemaining
+            : ShieldImpactState::TwoOrMoreRemaining;
     } else if (hitPoints_ > 0) {
         --hitPoints_;
         result.didDamageHitPoints = true;

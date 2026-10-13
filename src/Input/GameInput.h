@@ -11,7 +11,7 @@ enum class PracticeCommand {
     ChargeUnits, MixedEnemies, BossSpawn, BossCycleNeedles,
     BossConeCharge, BossBoxer, BossNeedleCombo, BossFullBarrage,
     BossSpreadBurst, SingleMissile, MissileLine, FloatingBombs,
-    MixedProjectiles, ThirdPerson, CycleCockpitModel, ToggleData,
+    MixedProjectiles,
     FullStartup, QuickStartup, BossStartup, SystemOffline
 };
 
@@ -27,6 +27,9 @@ struct GameInput {
     ActionState skip{};
     ActionState skipPhase{};
     ActionState switchView{};
+    ActionState toggleThirdPerson{};
+    ActionState cycleCockpitModel{};
+    ActionState toggleCombatData{};
     ActionState dodge{};
     ActionState testProjectileHit{};
     ActionState testChargeHit{};
@@ -36,7 +39,10 @@ struct GameInput {
     bool rightPunchKeyDown = false;
     bool leftMouseDown = false;
     bool rightMouseDown = false;
+    bool leftGamepadRocketDown = false;
+    bool rightGamepadRocketDown = false;
     bool shiftDown = false;
+    bool allowRocketCharge = true;
     float lookX = 0.0f;
     float lookY = 0.0f;
 };

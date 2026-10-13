@@ -1,0 +1,47 @@
+# Fixed-tick UI walkthrough: Title, Tutorial, Day1, Day2, Boss, Ending, Title.
+# Pressing all three keys every 60 ticks exercises the original skip routes.
+# Capture frame 870 to inspect EndingHold; frame 900 confirms the return to Title.
+press 0 confirm
+press 60 skip
+press 60 skipPhase
+press 60 start
+press 120 skip
+press 120 skipPhase
+press 120 start
+press 180 skip
+press 180 skipPhase
+press 180 start
+press 240 skip
+press 240 skipPhase
+press 240 start
+press 300 skip
+press 300 skipPhase
+press 300 start
+press 360 skip
+press 360 skipPhase
+press 360 start
+press 420 skip
+press 420 skipPhase
+press 420 start
+press 480 skip
+press 480 skipPhase
+press 480 start
+press 540 skip
+press 540 skipPhase
+press 540 start
+press 600 skip
+press 600 skipPhase
+press 600 start
+press 660 skip
+press 660 skipPhase
+press 660 start
+press 720 skip
+press 720 skipPhase
+press 720 start
+press 780 skip
+press 780 skipPhase
+press 780 start
+press 840 skip
+press 840 skipPhase
+press 840 start
+press 900 confirm

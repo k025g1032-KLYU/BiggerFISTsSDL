@@ -11,6 +11,7 @@ class BattleAssetCatalog;
 struct CockpitActivation;
 struct BattleVisualEvent;
 enum class BattleVisualEffect;
+enum class ShieldImpactState;
 
 class FirstPersonScenePresenter {
 public:
@@ -25,14 +26,16 @@ public:
     void ClearDynamic();
     void SyncCockpit(const FirstPersonGame& game, const BattleAssetCatalog& assets,
         bool visible, const CockpitActivation& activation,
-        int practiceModelMode = 0);
-    void SetPracticeThirdPerson(const FirstPersonGame& game, bool enabled);
+        int practiceModelMode = 0, bool emergency = false);
+    void SetCombatThirdPerson(const FirstPersonGame& game, bool enabled);
     const ModelScene& GetScene() const { return scene_; }
 
 private:
     void SyncEnvironment(const FirstPersonGame& game,
         const BattleAssetCatalog& assets, bool tutorial);
     void SyncRocketFlames(const FirstPersonGame& game,
+        const BattleAssetCatalog& assets);
+    void SyncVisualEffects(const FirstPersonGame& game,
         const BattleAssetCatalog& assets);
     void UpdateFistPose(const char* id, float sideSign,
         const FirstPersonGame& game, const PunchArm& arm);
@@ -47,7 +50,7 @@ private:
         BattleVisualEffect kind;
         Vector3 position{};
         float scale = 1.0f;
-        int shieldLayers = 0;
+        ShieldImpactState shieldImpact{};
         double startTime = 0.0;
     };
     std::vector<ActiveVisualEffect> visualEffects_;

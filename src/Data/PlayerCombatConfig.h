@@ -39,6 +39,8 @@ struct PlayerCombatConfig {
     float unshieldedChargeDuration = 1.0f;
     float burstKnockbackSpeed = 28.0f;
     float burstKnockbackDuration = 0.75f;
+    float bossBodyPushSpeed = 10.0f;
+    float bossBodyPushDuration = 0.35f;
     float needleFinisherKnockbackSpeed = 26.0f;
     float needleFinisherKnockbackDuration = 0.75f;
     float needleFinisherShutdownDelay = 0.82f;
@@ -63,7 +65,10 @@ struct PlayerCombatConfig {
     float ultimateSpeed = 30.0f;
     float ultimateMaximumRange = 42.0f;
     float ultimateRadius = 10.0f;
-    float ultimateReturnDuration = 1.0f;
+    float ultimateReturnSplitHalfWidth = 1.8f;
+    float ultimateReturnEntryHeightAboveShoulder = 7.0f;
+    float ultimateDockDuration = 0.75f;
+    float ultimateReturnPostDockPause = 0.4f;
     float ultimateSystemOfflineDuration = 4.0f;
     float ultimateRecoilSpeed = 25.0f;
     float ultimateRecoilDuration = 0.6f;

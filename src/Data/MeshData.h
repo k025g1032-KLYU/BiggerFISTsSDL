@@ -7,6 +7,14 @@
 struct MeshVertex {
     float position[3];
     float uv[2];
+    float normal[3]{0.0f, 1.0f, 0.0f};
+};
+
+struct MeshMaterial {
+    float ambient[3]{1.0f, 1.0f, 1.0f};
+    float diffuse[3]{1.0f, 1.0f, 1.0f};
+    float specular[3]{0.0f, 0.0f, 0.0f};
+    float opacity = 1.0f;
 };
 
 struct MeshSubmesh {
@@ -14,6 +22,7 @@ struct MeshSubmesh {
     std::uint32_t firstIndex = 0;
     std::uint32_t indexCount = 0;
     std::filesystem::path texturePath;
+    MeshMaterial material{};
 };
 
 struct MeshData {

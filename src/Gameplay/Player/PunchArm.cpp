@@ -92,10 +92,37 @@ void PunchArm::Reset(const Vector3& playerPosition, float bodyYaw) {
     returnAscentDistance_ = 0.0f;
     returnPhaseStartPosition_ = fistPosition_;
     rocketReturnPhase_ = RocketReturnPhase::TurnUp;
+    ultimateReturn_ = false;
 }
 
 float PunchArm::GetChargeRatio() const {
     return std::clamp(chargeTimer_ / config_.chargeTime, 0.0f, 1.0f);
+}
+
+float PunchArm::GetRocketFlameScale() const {
+    if (!IsFistAway() || attackType_ != PunchArmAttackType::RocketPunch)
+        return 0.0f;
+    if (state_ == PunchArmState::RocketFlying) {
+        const float remaining = std::max(0.0f,
+            std::min(rocketMaximumRange_, rocketBaseAvoidanceDistance_) -
+                rocketTravelDistance_);
+        return 1.0f + (0.15f - 1.0f) *
+            SmoothStep(1.0f - remaining / 2.0f);
+    }
+    if (rocketReturnPhase_ == RocketReturnPhase::TurnUp)
+        return 0.15f;
+    if (rocketReturnPhase_ == RocketReturnPhase::Ascend) {
+        const float ascended = std::max(0.0f,
+            fistPosition_.y - returnPhaseStartPosition_.y);
+        return 0.15f + (0.5f - 0.15f) *
+            SmoothStep(ascended / 3.0f);
+    }
+    return 0.5f;
+}
+
+bool PunchArm::IsUltimateDocking() const {
+    return state_ == PunchArmState::Returning &&
+        rocketReturnPhase_ == RocketReturnPhase::UltimateDock;
 }
 
 Vector3 PunchArm::GetChargedVisualOffset() const {
@@ -158,7 +185,9 @@ Vector3 PunchArm::CalculateChargePosition(const Vector3& playerPosition,
 Vector3 PunchArm::CalculateReturnEntryPosition(const Vector3& playerPosition,
     float bodyYaw) const {
     return Add(CalculateHomePosition(playerPosition, bodyYaw),
-        {0.0f, config_.rocketReturnEntryHeightAboveShoulder, 0.0f});
+        {0.0f, ultimateReturn_ ?
+            config_.ultimateReturnEntryHeightAboveShoulder :
+            config_.rocketReturnEntryHeightAboveShoulder, 0.0f});
 }
 
 float PunchArm::CalculateRocketMaximumRange(const Vector3& start,
@@ -233,6 +262,7 @@ void PunchArm::BeginPunch(const Vector3& playerPosition, float bodyYaw) {
 }
 
 void PunchArm::BeginRocket(const Vector3& playerPosition, float bodyYaw) {
+    ultimateReturn_ = false;
     punchDirection_ = {std::sin(bodyYaw), 0.0f, std::cos(bodyYaw)};
     fistPosition_ = CalculateRocketDockPosition(playerPosition, bodyYaw);
     rocketPosePitch_ = 0.0f;
@@ -244,6 +274,17 @@ void PunchArm::BeginRocket(const Vector3& playerPosition, float bodyYaw) {
     stateTimer_ = 0.0f;
     state_ = PunchArmState::RocketFlying;
     didLaunchRocketThisFrame_ = true;
+}
+
+void PunchArm::BeginUltimateReturn(const Vector3& splitPosition,
+    const Vector3& flightDirection, float bodyYaw) {
+    fistPosition_ = splitPosition;
+    previousFistPosition_ = splitPosition;
+    attackType_ = PunchArmAttackType::RocketPunch;
+    rocketPosePitch_ = FlightPitch(flightDirection);
+    rocketPoseYaw_ = FlightYaw(flightDirection, bodyYaw);
+    BeginRocketReturn(false);
+    ultimateReturn_ = true;
 }
 
 void PunchArm::BeginRocketReturn(bool avoidBase) {
@@ -349,21 +390,29 @@ void PunchArm::UpdateRocketReturn(float deltaTime,
             (-std::numbers::pi_v<float> * 0.5f - returnPhaseStartPitch_) * progress;
         if (stateTimer_ >= config_.rocketReturnAlignDuration) {
             rocketPosePitch_ = -std::numbers::pi_v<float> * 0.5f;
-            AdvanceRocketReturnPhase(RocketReturnPhase::Dock);
+            AdvanceRocketReturnPhase(ultimateReturn_
+                ? RocketReturnPhase::UltimateDock : RocketReturnPhase::Dock);
         }
         break;
     }
-    case RocketReturnPhase::Dock: {
+    case RocketReturnPhase::Dock:
+    case RocketReturnPhase::UltimateDock: {
         stateTimer_ += deltaTime;
+        const float duration = ultimateReturn_ ? config_.ultimateDockDuration :
+            config_.rocketReturnDockDuration;
         const float progress = SmoothStep(stateTimer_ /
-            config_.rocketReturnDockDuration);
+            duration);
         const Vector3 home = CalculateHomePosition(playerPosition, bodyYaw);
         fistPosition_ = Lerp(returnPhaseStartPosition_, home, progress);
-        rocketPosePitch_ = -std::numbers::pi_v<float> * 0.5f;
-        if (stateTimer_ >= config_.rocketReturnDockDuration) {
+        rocketPosePitch_ = ultimateReturn_ ?
+            returnPhaseStartPitch_ + (-std::numbers::pi_v<float> * 0.5f -
+                returnPhaseStartPitch_) * progress :
+            -std::numbers::pi_v<float> * 0.5f;
+        if (stateTimer_ >= duration) {
             fistPosition_ = home;
             didReconnectThisFrame_ = true;
             attackType_ = PunchArmAttackType::None;
+            ultimateReturn_ = false;
             state_ = PunchArmState::Recovery;
             stateTimer_ = 0.0f;
         }

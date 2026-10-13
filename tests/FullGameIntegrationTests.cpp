@@ -19,11 +19,11 @@ constexpr float kStep = 1.0f / 60.0f;
 
 void AimAtBattle(CombatSession& session, FirstPersonGame& player,
     GameInput& input, float& mouseX, std::string& selectedId,
-    bool& dodgeWasDown, int& attacks, int steps) {
+    bool& dodgeWasDown, int& attacks, int steps, int boxerWindupSteps) {
     const BattleBoss* boss = session.GetBoss();
     if (session.GetPhase() != BattlePhase::Playing) return;
     if (boss || session.GetWaveCount() > 0) {
-        input.moveX = (steps / 180) % 2 == 0 ? 1.0f : -1.0f;
+        input.moveX = (steps / 120) % 2 == 0 ? 1.0f : -1.0f;
         bool threat = false;
         for (const BattleEnemy& enemy : session.GetEnemies()) {
             if (!enemy.defeated && enemy.type == BattleEnemyType::ChargeUnit &&
@@ -35,15 +35,21 @@ void AimAtBattle(CombatSession& session, FirstPersonGame& player,
         }
         if (boss) {
             const Vector3& position = player.GetPlayer().GetPosition();
+            if (boss->GetMode() == BossMode::Boxer ||
+                boss->GetMode() == BossMode::NeedleCombo)
+                input.moveY = -1.0f;
             threat |= (boss->GetMode() == BossMode::Charge ||
-                boss->GetMode() == BossMode::Boxer ||
                 boss->GetMode() == BossMode::NeedleCombo) &&
                 std::hypot(boss->GetPosition().x - position.x,
                     boss->GetPosition().z - position.z) < 12.0f;
+            threat |= boss->GetMode() == BossMode::Boxer &&
+                boxerWindupSteps == 12;
         }
-        input.dodge.down = threat;
-        input.dodge.pressed = threat && !dodgeWasDown;
-        dodgeWasDown = threat;
+        const bool canDodge = player.GetPlayer().GetDodgeState() ==
+            PlayerDodgeState::Ready;
+        input.dodge.down = threat && canDodge;
+        input.dodge.pressed = input.dodge.down && !dodgeWasDown;
+        dodgeWasDown = input.dodge.down;
     }
     Vector3 target{};
     bool found = false;
@@ -138,6 +144,8 @@ int main(int argc, char** argv) {
     std::optional<CombatSession> battle;
     std::string selectedId;
     bool dodgeWasDown = false;
+    int boxerWindupSteps = -1;
+    int battleSteps = 0;
     int attacks[3]{};
     bool cleared[3]{};
     bool sawStory0 = false;
@@ -171,6 +179,12 @@ int main(int argc, char** argv) {
         flow.Update(kStep, input, result, true);
         if (flow.ConsumePhaseChanged()) {
             battle.reset();
+            player.ResetCombatState();
+            std::vector<std::string> targetIds;
+            for (const FirstPersonTarget& target : player.GetTargets())
+                targetIds.push_back(target.id);
+            for (const std::string& id : targetIds)
+                player.RemoveTarget(id);
             const FlowPhase phase = flow.GetPhase();
             if (phase == FlowPhase::Day1 || phase == FlowPhase::Day2 ||
                 phase == FlowPhase::Boss) {
@@ -182,19 +196,31 @@ int main(int argc, char** argv) {
                     ? day2 : EncounterConfig{}, combatConfig);
                 selectedId.clear();
                 dodgeWasDown = false;
+                boxerWindupSteps = -1;
+                battleSteps = 0;
             }
         }
         if (battle && flow.GetScreenState().presentation == FlowPresentation::Normal) {
             GameInput attackInput{};
-            if (battle->GetPhase() == BattlePhase::Ready) attackInput.battleStart.pressed = true;
+            const bool startingBattle = battle->GetPhase() == BattlePhase::Ready;
+            if (startingBattle) attackInput.battleStart.pressed = true;
             const int index = flow.GetPhase() == FlowPhase::Day1 ? 0 :
                 flow.GetPhase() == FlowPhase::Day2 ? 1 : 2;
             float mouseX = 0.0f;
+            if (boxerWindupSteps >= 0) ++boxerWindupSteps;
             AimAtBattle(*battle, player, attackInput, mouseX,
-                selectedId, dodgeWasDown, attacks[index], step);
+                selectedId, dodgeWasDown, attacks[index], battleSteps,
+                boxerWindupSteps);
             battle->Update(kStep, attackInput, mouseX, 0.0f);
+            if (battle->GetBoss() &&
+                battle->GetBoss()->DidBeginStrikeThisStep())
+                boxerWindupSteps = 0;
+            if (!startingBattle) ++battleSteps;
             if (battle->GetPhase() == BattlePhase::GameOver) {
-                std::printf("FAIL: GameOver in phase %d at step %d\n", index, step);
+                std::printf("FAIL: GameOver in phase %d at step %d battleStep %d HP %d base %d attacks %d\n",
+                    index, step, battleSteps,
+                    player.GetVitality().GetHitPoints(),
+                    battle->GetBaseHitPoints(), attacks[index]);
                 return 1;
             }
             if (battle->GetPhase() == BattlePhase::Clear) cleared[index] = true;

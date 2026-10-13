@@ -9,6 +9,7 @@ void TutorialSession::Start(const TutorialObservation& player) {
     previousPitch_ = player.cameraPitch;
     previousPosition_ = player.playerPosition;
     gate_ = 0.5f;
+    reminderRemaining_ = 12.0f;
     cue_ = "personnel.wav";
 }
 
@@ -18,13 +19,16 @@ GameInput TutorialSession::FilterInput(GameInput input) const {
         input.moveX = input.moveY = 0.0f;
         input.leftPunchKeyDown = input.rightPunchKeyDown = false;
         input.leftMouseDown = input.rightMouseDown = false;
+        input.allowRocketCharge = false;
         input.dodge = {};
+        if (lookAngle_ < 1.5707963f) input.switchView = {};
     } else if (step_ == TutorialStep::Mobility) {
         input.leftPunchKeyDown = input.rightPunchKeyDown = false;
         input.leftMouseDown = input.rightMouseDown = false;
+        input.allowRocketCharge = false;
         input.dodge = {};
     } else if (step_ == TutorialStep::Punch) {
-        input.leftMouseDown = input.rightMouseDown = false;
+        input.allowRocketCharge = false;
         input.dodge = {};
     } else if (step_ == TutorialStep::RocketPunch || step_ == TutorialStep::Defense) {
         input.dodge = {};
@@ -33,8 +37,10 @@ GameInput TutorialSession::FilterInput(GameInput input) const {
 }
 
 void TutorialSession::CompleteStep() {
-    if (confirmation_ > 0.0f) return;
+    if (confirmationPending_) return;
     confirmation_ = 0.6f;
+    confirmationPending_ = true;
+    reminderRemaining_ = 12.0f;
     switch (step_) {
     case TutorialStep::VisualLink: cue_ = "system/system_visual_link_pass.wav"; break;
     case TutorialStep::Mobility: cue_ = "system/system_mobility_pass.wav"; break;
@@ -59,14 +65,17 @@ void TutorialSession::Advance() {
     case TutorialStep::Complete: break;
     }
     gate_ = 0.5f;
+    reminderRemaining_ = 12.0f;
     confirmation_ = 0.0f;
+    confirmationPending_ = false;
     lookAngle_ = moveDistance_ = 0.0f;
     leftHit_ = rightHit_ = false;
     if (step_ != TutorialStep::Complete) cue_ = "personnel.wav";
 }
 
 void TutorialSession::Update(float seconds, const GameInput& input,
-    const TutorialObservation& player) {
+    const TutorialObservation& player, bool systemVoicePlaying,
+    bool anyVoicePlaying) {
     if (IsComplete()) freePracticeCaptionRemaining_ =
         std::max(0.0f, freePracticeCaptionRemaining_ - seconds);
     gate_ = std::max(0.0f, gate_ - seconds);
@@ -80,15 +89,24 @@ void TutorialSession::Update(float seconds, const GameInput& input,
     previousYaw_ = yaw;
     previousPitch_ = pitch;
     previousPosition_ = position;
-    if (confirmation_ > 0.0f) {
-        confirmation_ -= seconds;
-        if (confirmation_ <= 0.0f) Advance();
+    if (confirmationPending_) {
+        confirmation_ = std::max(0.0f, confirmation_ - seconds);
+        if (confirmation_ <= 0.0f && !systemVoicePlaying) Advance();
         return;
     }
     if (gate_ > 0.0f || IsComplete()) return;
+    if (!anyVoicePlaying) {
+        reminderRemaining_ = std::max(0.0f, reminderRemaining_ - seconds);
+        if (reminderRemaining_ <= 0.0f) {
+            cue_ = "personnel.wav";
+            reminderRemaining_ = 12.0f;
+        }
+    }
     switch (step_) {
     case TutorialStep::VisualLink:
-        if (lookAngle_ >= 1.5707963f && input.switchView.pressed) {
+        if (lookAngle_ >= 1.5707963f && input.switchView.pressed)
+            cockpitAlignmentPending_ = true;
+        if (cockpitAlignmentPending_ && player.cameraDriving) {
             cockpitConnected_ = true;
             CompleteStep();
         }
@@ -118,7 +136,9 @@ void TutorialSession::Update(float seconds, const GameInput& input,
 void TutorialSession::SkipToFreePractice() {
     step_ = TutorialStep::Complete;
     confirmation_ = gate_ = 0.0f;
+    confirmationPending_ = false;
     cockpitConnected_ = true;
+    cockpitAlignmentPending_ = false;
     freePracticeCaptionRemaining_ = 10.0f;
     cue_ = "system/system_all_green.wav";
 }
@@ -146,7 +166,7 @@ const char* TutorialSession::GetTitle() const {
 }
 
 const char* TutorialSession::GetInstruction() const {
-    if (confirmation_ > 0.0f) return "RESPONSE CONFIRMED / CHECK PASSED";
+    if (confirmationPending_) return "RESPONSE CONFIRMED / CHECK PASSED";
     switch (step_) {
     case TutorialStep::VisualLink: return lookAngle_ >= 1.5707963f
         ? "PRESS [V] / [R3] TO CONNECT COCKPIT VIEW" : "MOVE MOUSE / RIGHT STICK TO SCAN";

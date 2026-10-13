@@ -3,8 +3,8 @@
 The SDL executable now starts at Title when launched without preview arguments.
 The KamataEngine project remains a read-only reference. Required images, sounds,
 and the cockpit model are copied into this project and into each CMake build
-configuration. The copied cockpit model has a front-facing variant with reduced
-opacity so the scene remains visible through the original texture.
+configuration. This document records the Stage 5 result; the later presentation
+parity pass restores the complete cockpit mesh.
 
 ## Run
 
@@ -86,10 +86,9 @@ rumble, and audible BGM/voice transitions were not listened to directly.
 ## Presentation differences
 
 The original story images, Title image, font atlas, HUD placement reference,
-cockpit texture, BGM, and Tutorial voice are used. HUD geometry is drawn with
-SDL rectangles and text; it does not yet reproduce every original color pulse,
-animation, and lock-target selection priority. The cockpit uses a translucent
-front-facing copy of the original mesh to keep combat readable with this
-renderer. Startup, game flow, and Tutorial transitions are code controlled;
+cockpit texture, BGM, and Tutorial voice are used. At this Stage 5 checkpoint,
+HUD geometry is drawn with SDL rectangles and text, and a front-facing cockpit
+variant was used. Later presentation work replaces that variant with the full
+mesh and corrects HUD states. Startup, game flow, and Tutorial transitions are code controlled;
 Blender skeletal animation and the detailed fire/explosion effects remain
 outside Stage 5.

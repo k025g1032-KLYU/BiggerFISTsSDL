@@ -2,18 +2,22 @@
 
 enum class BattleFeedbackEvent {
     EnemyDefeated,
+    EnemyExploded,
     ProjectileLaunched,
-    BossModeChanged,
+    BossNeedlePoseChanged,
     BossCrystalLaunched,
     BossDamaged,
+    BossDefeatSmallExplosion,
     BossDefeated,
     BaseDamaged,
     EnemyLanded,
     ChargePreparing,
     ChargeDashing,
+    ChargeWallImpact,
     BossDodged,
     BossStriking,
     BossNeedleStarted,
     BossBarrageStarted,
+    BossChargeLaunched,
     ProjectileExploded
 };

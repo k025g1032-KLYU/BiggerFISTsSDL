@@ -55,6 +55,7 @@ if(NOT BIGGERFISTS_SDL_ACTUAL_VERSION STREQUAL BIGGERFISTS_SDL_REQUIRED_VERSION)
 endif()
 
 set(SCENE_RENDERING_SOURCES
+    src/Rendering/UiDrawList.cpp
     src/World/ModelScene.cpp
     src/World/ModelScene.h
     src/Math/MathTypes.cpp
@@ -65,6 +66,7 @@ set(SCENE_RENDERING_SOURCES
     src/Rendering/MeshRenderer.h
     src/Rendering/UiRenderer.cpp
     src/Rendering/UiRenderer.h
+    src/Rendering/UiLayout.h
     src/Rendering/TextureLoader.cpp
     src/Rendering/TextureLoader.h
 )
@@ -104,6 +106,8 @@ add_executable(BiggerFISTsSDL
     src/Input/InputBindings.cpp
     src/Input/InputBindings.h
     src/Input/GameInput.h
+    src/Input/PresentationReplay.cpp
+    src/Input/PresentationReplay.h
     src/Data/GameConfig.cpp
     src/Data/GameConfig.h
     src/Data/CombatFeedbackConfig.cpp
@@ -120,6 +124,8 @@ add_executable(BiggerFISTsSDL
     src/Gameplay/Combat/CombatSession.h
     src/Gameplay/Tutorial/TutorialSession.cpp
     src/Gameplay/Tutorial/TutorialSession.h
+    src/Gameplay/Tutorial/TutorialEncounter.cpp
+    src/Gameplay/Tutorial/TutorialEncounter.h
     src/Gameplay/Cockpit/CockpitPresentation.cpp
     src/Gameplay/Cockpit/CockpitPresentation.h
     src/Gameplay/Combat/BattleBoss.cpp
@@ -127,6 +133,8 @@ add_executable(BiggerFISTsSDL
     src/Data/BattleCombatConfig.cpp
     src/Data/BattleCombatConfig.h
     src/Rendering/BattleScenePresenter.cpp
+    src/Rendering/BattleHitboxOverlay.cpp
+    src/Rendering/BattleHitboxOverlay.h
     src/Rendering/FullGameUi.cpp
     src/Rendering/FullGameUi.h
     src/Game/GameFlow.cpp
@@ -527,6 +535,23 @@ add_executable(TutorialSessionTests EXCLUDE_FROM_ALL
 target_include_directories(TutorialSessionTests PRIVATE src)
 add_test(NAME TutorialSessionTests COMMAND TutorialSessionTests)
 
+add_executable(TutorialEncounterTests EXCLUDE_FROM_ALL
+    tests/TutorialEncounterTests.cpp
+    src/Gameplay/Tutorial/TutorialEncounter.cpp
+    src/Gameplay/Tutorial/TutorialSession.cpp
+    src/Game/FirstPersonGame.cpp
+    src/Gameplay/Player/PlayerMovement.cpp
+    src/Gameplay/Player/PlayerVitality.cpp
+    src/Gameplay/Player/PunchArm.cpp
+    src/Gameplay/Combat/CombatHitResolver.cpp
+    src/Collision/Collision.cpp
+    src/World/FirstPersonCamera.cpp
+    src/Math/MathTypes.cpp
+    src/Platform/FixedStepClock.cpp
+)
+target_include_directories(TutorialEncounterTests PRIVATE src)
+add_test(NAME TutorialEncounterTests COMMAND TutorialEncounterTests)
+
 add_executable(CockpitPresentationTests EXCLUDE_FROM_ALL
     tests/CockpitPresentationTests.cpp
     src/Gameplay/Cockpit/CockpitPresentation.cpp
@@ -556,6 +581,38 @@ target_include_directories(FullGameIntegrationTests PRIVATE src)
 add_test(NAME FullGameIntegrationTests COMMAND FullGameIntegrationTests
     "${CMAKE_CURRENT_SOURCE_DIR}/config")
 
+add_executable(PresentationReplayTests EXCLUDE_FROM_ALL
+    tests/PresentationReplayTests.cpp
+    src/Input/PresentationReplay.cpp
+)
+target_include_directories(PresentationReplayTests PRIVATE src)
+add_test(NAME PresentationReplayTests COMMAND PresentationReplayTests)
+
+add_executable(FullGameUiTests EXCLUDE_FROM_ALL
+    tests/FullGameUiTests.cpp
+    src/Rendering/FullGameUi.cpp
+    src/Rendering/UiDrawList.cpp
+    src/Rendering/UiLayout.h
+    src/Gameplay/Cockpit/CockpitPresentation.cpp
+    src/Gameplay/Tutorial/TutorialSession.cpp
+    src/Data/BattleCombatConfig.cpp
+    src/Gameplay/Combat/BattleBoss.cpp
+    src/Gameplay/Combat/CombatSession.cpp
+    src/Gameplay/Combat/EncounterConfig.cpp
+    src/Gameplay/Combat/EncounterDirector.cpp
+    src/Game/FirstPersonGame.cpp
+    src/Gameplay/Player/PlayerMovement.cpp
+    src/Gameplay/Player/PlayerVitality.cpp
+    src/Gameplay/Player/PunchArm.cpp
+    src/Gameplay/Combat/CombatHitResolver.cpp
+    src/Collision/Collision.cpp
+    src/World/FirstPersonCamera.cpp
+    src/Math/MathTypes.cpp
+)
+target_include_directories(FullGameUiTests PRIVATE src)
+target_link_libraries(FullGameUiTests PRIVATE SDL3::SDL3-shared)
+add_test(NAME FullGameUiTests COMMAND FullGameUiTests)
+
 if(MSVC)
     target_compile_options(BiggerFISTsSDL PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(InputActionsTests PRIVATE /W4 /utf-8 /EHsc)
@@ -580,8 +637,11 @@ if(MSVC)
     target_compile_options(BattleReplayTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(GameFlowTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(TutorialSessionTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(TutorialEncounterTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(CockpitPresentationTests PRIVATE /W4 /utf-8 /EHsc)
     target_compile_options(FullGameIntegrationTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(PresentationReplayTests PRIVATE /W4 /utf-8 /EHsc)
+    target_compile_options(FullGameUiTests PRIVATE /W4 /utf-8 /EHsc)
 endif()
 
 add_custom_command(TARGET BiggerFISTsSDL POST_BUILD
@@ -625,6 +685,41 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/config/enemy-combat.cfg"
     "${CMAKE_CURRENT_SOURCE_DIR}/config/projectile-combat.cfg"
     "${CMAKE_CURRENT_SOURCE_DIR}/config/boss-combat.cfg"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config/presentation-combat.replay"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config/presentation-full-game.replay"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config/presentation-ui-flow.replay"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config/presentation-boxer.replay"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config/presentation-charge.replay"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config/presentation-needle.replay"
+)
+
+file(GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/presentation-combat.replay"
+    INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/presentation-combat.replay"
+)
+
+file(GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/presentation-full-game.replay"
+    INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/presentation-full-game.replay"
+)
+file(GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/presentation-ui-flow.replay"
+    INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/presentation-ui-flow.replay"
+)
+
+file(GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/presentation-boxer.replay"
+    INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/presentation-boxer.replay"
+)
+
+file(GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/presentation-charge.replay"
+    INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/presentation-charge.replay"
+)
+
+file(GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/presentation-needle.replay"
+    INPUT "${CMAKE_CURRENT_SOURCE_DIR}/config/presentation-needle.replay"
 )
 
 file(GENERATE

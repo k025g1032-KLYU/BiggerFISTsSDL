@@ -6,6 +6,7 @@
 struct TutorialObservation {
     float cameraYaw = 0.0f;
     float cameraPitch = 0.0f;
+    bool cameraDriving = true;
     Vector3 playerPosition{};
     bool leftPunchHit = false;
     bool rightPunchHit = false;
@@ -25,7 +26,8 @@ public:
     void Start(const TutorialObservation& player);
     GameInput FilterInput(GameInput input) const;
     void Update(float seconds, const GameInput& input,
-        const TutorialObservation& player);
+        const TutorialObservation& player, bool systemVoicePlaying = false,
+        bool anyVoicePlaying = false);
     void SkipToFreePractice();
     TutorialStep GetStep() const { return step_; }
     bool IsComplete() const { return step_ == TutorialStep::Complete; }
@@ -38,7 +40,10 @@ public:
     float GetMoveDistance() const { return moveDistance_; }
     bool HasLeftHit() const { return leftHit_; }
     bool HasRightHit() const { return rightHit_; }
-    bool IsConfirming() const { return confirmation_ > 0.0f; }
+    bool IsConfirming() const { return confirmationPending_; }
+    bool IsAwaitingInput() const {
+        return !IsComplete() && !confirmationPending_ && gate_ <= 0.0f;
+    }
     bool ShowFreePracticeCaption() const {
         return IsComplete() && freePracticeCaptionRemaining_ > 0.0f;
     }
@@ -49,13 +54,16 @@ private:
     TutorialStep step_ = TutorialStep::VisualLink;
     float gate_ = 0.0f;
     float confirmation_ = 0.0f;
+    bool confirmationPending_ = false;
     float lookAngle_ = 0.0f;
     float moveDistance_ = 0.0f;
     float freePracticeCaptionRemaining_ = 0.0f;
+    float reminderRemaining_ = 12.0f;
     float previousYaw_ = 0.0f;
     float previousPitch_ = 0.0f;
     Vector3 previousPosition_{};
     bool cockpitConnected_ = false;
+    bool cockpitAlignmentPending_ = false;
     bool leftHit_ = false;
     bool rightHit_ = false;
     mutable const char* cue_ = nullptr;

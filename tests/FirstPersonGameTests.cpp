@@ -183,6 +183,26 @@ int main() {
         Near(camera.GetPosition().y, 5.85f) &&
         Near(camera.GetShakeTimeRemaining(), 0.0f),
         "The shake ends and the camera returns to its followed anchor");
+    camera.Reset({0.0f, 5.85f, 0.0f});
+    camera.BeginTutorialVisualCheck();
+    camera.UpdateLook(400.0f, 160.0f);
+    success &= Expect(camera.GetControlMode() == CameraControlMode::Observation &&
+        !camera.ShouldBodyFollowCamera() &&
+        Near(camera.GetYaw(), 400.0f * FirstPersonTuning::kMouseLookSensitivity *
+            FirstPersonTuning::kObservationLookSpeedMultiplier) &&
+        Near(camera.GetPitch(), 160.0f * FirstPersonTuning::kMouseLookSensitivity *
+            FirstPersonTuning::kObservationLookSpeedMultiplier),
+        "Observation look uses the original 1.35 speed without turning the body");
+    camera.ToggleObservationMode(0.0f);
+    for (int frame = 0; frame < 30; ++frame)
+        camera.UpdateControl(1.0f / 60.0f, 0.0f);
+    success &= Expect(camera.GetControlMode() == CameraControlMode::Driving &&
+        Near(camera.GetYaw(), 0.0f) && Near(camera.GetPitch(), 0.0f),
+        "Returning from observation realigns yaw and pitch");
+    camera.ToggleObservationMode(0.0f);
+    camera.ToggleObservationMode(0.0f);
+    success &= Expect(camera.GetControlMode() == CameraControlMode::Driving,
+        "Already aligned observation returns immediately");
 
     const ModelInstance targetBefore = game.GetScene().models.front();
     game.Update(0.25, input, 100.0f, -50.0f);
@@ -294,6 +314,10 @@ int main() {
     FirstPersonHarness mousePunchGame(GameConfig{}, scene);
     GameInput mousePunch{};
     mousePunch.leftMouseDown = true;
+    mousePunch.allowRocketCharge = false;
+    mousePunchGame.Update(0.01, mousePunch, 0.0f, 0.0f);
+    success &= Expect(mousePunchGame.GetLeftArm().GetState() == PunchArmState::Ready,
+        "Tutorial Punch gate blocks unshifted mouse Rocket charging");
     mousePunch.shiftDown = true;
     mousePunchGame.Update(0.01, mousePunch, 0.0f, 0.0f);
     success &= Expect(mousePunchGame.GetLeftArm().GetState() == PunchArmState::Charging &&
@@ -309,6 +333,37 @@ int main() {
     mousePunchGame.Update(0.01, mousePunch, 0.0f, 0.0f);
     success &= Expect(mousePunchGame.GetLeftArm().GetState() == PunchArmState::Punching,
         "Releasing the mouse after full charge starts the punch");
+
+    FirstPersonHarness bothMouseGame(GameConfig{}, scene);
+    GameInput bothMouse{};
+    bothMouse.leftMouseDown = true;
+    bothMouse.rightMouseDown = true;
+    bothMouse.shiftDown = true;
+    bothMouse.allowRocketCharge = false;
+    bothMouseGame.Update(0.01, bothMouse, 0.0f, 0.0f);
+    success &= Expect(bothMouseGame.GetLeftArm().GetState() == PunchArmState::Charging &&
+        bothMouseGame.GetRightArm().GetState() == PunchArmState::Charging &&
+        bothMouseGame.GetRightArm().GetAttackType() == PunchArmAttackType::Punch,
+        "Shift plus both mouse buttons starts two independent ordinary punches");
+    bothMouse.leftMouseDown = false;
+    bothMouseGame.Update(0.01, bothMouse, 0.0f, 0.0f);
+    success &= Expect(bothMouseGame.GetLeftArm().GetState() == PunchArmState::Ready &&
+        bothMouseGame.GetRightArm().GetState() == PunchArmState::Charging,
+        "Releasing one mouse button before charge cancels only that arm");
+
+    FirstPersonHarness shoulderGame(GameConfig{}, scene);
+    GameInput shoulder{};
+    shoulder.shiftDown = true;
+    shoulder.leftGamepadRocketDown = true;
+    shoulderGame.Update(0.01, shoulder, 0.0f, 0.0f);
+    success &= Expect(shoulderGame.GetLeftArm().GetState() == PunchArmState::Charging &&
+        shoulderGame.GetLeftArm().GetAttackType() == PunchArmAttackType::RocketPunch,
+        "Keyboard Shift does not change a gamepad shoulder Rocket into Punch");
+    FirstPersonHarness blockedShoulder(GameConfig{}, scene);
+    shoulder.allowRocketCharge = false;
+    blockedShoulder.Update(0.01, shoulder, 0.0f, 0.0f);
+    success &= Expect(blockedShoulder.GetLeftArm().GetState() == PunchArmState::Ready,
+        "Tutorial Punch gate also blocks gamepad shoulder Rockets");
 
     ModelScene hitScene = scene;
     hitScene.models.front().position = {0.0f, 4.55f, 5.8f};
@@ -432,6 +487,19 @@ int main() {
     sceneryView.Sync(dynamicGame);
     success &= Expect(FindModelById(sceneryView.GetScene(), "arena") != nullptr,
         "Sync preserves non-Target scenery models");
+    const PlayerHitResult sharpHit = dynamicGame.ReceivePlayerHit(
+        PlayerHitType::Projectile, {}, true);
+    success &= Expect(sharpHit.shieldLayersLost == 1 &&
+        dynamicGame.GetEvents().playerHitWasBossNeedle &&
+        dynamicGame.GetEvents().playerHitType == PlayerHitType::Projectile &&
+        dynamicGame.GetEvents().playerHits.size() == 1 &&
+        dynamicGame.GetEvents().playerHits.front().bossNeedleHit,
+        "Boss needle hit retains its source for audio without changing damage");
+    dynamicGame.ReceivePlayerHit(PlayerHitType::Projectile);
+    success &= Expect(dynamicGame.GetEvents().playerHits.size() == 2 &&
+        dynamicGame.GetEvents().playerHits[0].bossNeedleHit &&
+        !dynamicGame.GetEvents().playerHits[1].bossNeedleHit,
+        "Multiple hits in one fixed step retain their individual audio sources");
 
     if (success) {
         std::puts("PASS: first-person movement, independent punches, Target damage and reset");

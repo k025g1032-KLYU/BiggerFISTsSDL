@@ -1,0 +1,12 @@
+# Reach Tutorial through the original Title and Prologue skip flow.
+# Use fixed 1/60-second ticks with --smoke-frames=600 or higher.
+press 0 confirm
+press 40 skip
+# Tutorial startup should be active in the middle of this interval.
+press 450 skip
+# Free practice uses the same GameInput and PracticeCommand path as live input.
+practice 470 ToggleData
+practice 485 BossSpawn
+practice 510 SystemOffline
+# The spawned Boss finishes its entrance before this command.
+practice 590 BossFullBarrage

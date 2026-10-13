@@ -13,7 +13,7 @@ namespace {
 using FloatField = float PlayerCombatConfig::*;
 using IntField = int PlayerCombatConfig::*;
 
-constexpr std::array<std::pair<std::string_view, FloatField>, 61> floatFields{{
+constexpr std::array<std::pair<std::string_view, FloatField>, 66> floatFields{{
     std::pair<std::string_view, FloatField>{"chargeTime", &PlayerCombatConfig::chargeTime},
     {"punchDuration", &PlayerCombatConfig::punchDuration},
     {"punchDistance", &PlayerCombatConfig::punchDistance},
@@ -47,6 +47,8 @@ constexpr std::array<std::pair<std::string_view, FloatField>, 61> floatFields{{
     {"unshieldedChargeDuration", &PlayerCombatConfig::unshieldedChargeDuration},
     {"burstKnockbackSpeed", &PlayerCombatConfig::burstKnockbackSpeed},
     {"burstKnockbackDuration", &PlayerCombatConfig::burstKnockbackDuration},
+    {"bossBodyPushSpeed", &PlayerCombatConfig::bossBodyPushSpeed},
+    {"bossBodyPushDuration", &PlayerCombatConfig::bossBodyPushDuration},
     {"needleFinisherKnockbackSpeed", &PlayerCombatConfig::needleFinisherKnockbackSpeed},
     {"needleFinisherKnockbackDuration", &PlayerCombatConfig::needleFinisherKnockbackDuration},
     {"needleFinisherShutdownDelay", &PlayerCombatConfig::needleFinisherShutdownDelay},
@@ -71,7 +73,10 @@ constexpr std::array<std::pair<std::string_view, FloatField>, 61> floatFields{{
     {"ultimateSpeed", &PlayerCombatConfig::ultimateSpeed},
     {"ultimateMaximumRange", &PlayerCombatConfig::ultimateMaximumRange},
     {"ultimateRadius", &PlayerCombatConfig::ultimateRadius},
-    {"ultimateReturnDuration", &PlayerCombatConfig::ultimateReturnDuration},
+    {"ultimateReturnSplitHalfWidth", &PlayerCombatConfig::ultimateReturnSplitHalfWidth},
+    {"ultimateReturnEntryHeightAboveShoulder", &PlayerCombatConfig::ultimateReturnEntryHeightAboveShoulder},
+    {"ultimateDockDuration", &PlayerCombatConfig::ultimateDockDuration},
+    {"ultimateReturnPostDockPause", &PlayerCombatConfig::ultimateReturnPostDockPause},
     {"ultimateSystemOfflineDuration", &PlayerCombatConfig::ultimateSystemOfflineDuration},
     {"ultimateRecoilSpeed", &PlayerCombatConfig::ultimateRecoilSpeed},
     {"ultimateRecoilDuration", &PlayerCombatConfig::ultimateRecoilDuration},

@@ -56,8 +56,19 @@ int main(int argc, char** argv) {
         "Reset starts with five HP and three shield layers");
     const PlayerHitResult shieldHit = vitality.ReceiveHit(PlayerHitType::Projectile);
     success &= Expect(shieldHit.shieldLayersLost == 1 &&
+        shieldHit.shieldImpact == ShieldImpactState::TwoOrMoreRemaining &&
         !shieldHit.didDamageHitPoints && vitality.GetShieldLayers() == 2,
-        "Projectile consumes one shield layer");
+        "Projectile leaves two layers and reports the blue shield state");
+    const PlayerHitResult oneLayerHit = vitality.ReceiveHit(PlayerHitType::Projectile);
+    success &= Expect(oneLayerHit.shieldImpact == ShieldImpactState::OneRemaining &&
+        vitality.GetShieldLayers() == 1,
+        "Projectile leaves one layer and reports the yellow shield state");
+    const PlayerHitResult brokenShieldHit = vitality.ReceiveHit(PlayerHitType::Projectile);
+    success &= Expect(brokenShieldHit.shieldImpact == ShieldImpactState::Broken &&
+        vitality.GetShieldLayers() == 0,
+        "Projectile breaks the last layer and reports the red shield state");
+    vitality.Reset();
+    vitality.ReceiveHit(PlayerHitType::Projectile);
     vitality.Update(2.0f);
     success &= Expect(vitality.GetShieldLayers() == 2,
         "Shield does not recharge early");
@@ -66,23 +77,40 @@ int main(int argc, char** argv) {
         "Shield recharges after three seconds");
     const PlayerHitResult chargeHit = vitality.ReceiveHit(PlayerHitType::ChargeUnit);
     success &= Expect(chargeHit.shieldLayersLost == 3 &&
+        chargeHit.shieldImpact == ShieldImpactState::Broken &&
         vitality.GetShieldLayers() == 0 && vitality.GetHitPoints() == 5,
-        "Charge impact clears all shields without HP loss");
+        "Charge impact clears all shields and reports the red shield state");
     const PlayerHitResult hitPointsHit = vitality.ReceiveHit(PlayerHitType::Projectile);
     success &= Expect(hitPointsHit.didDamageHitPoints &&
+        hitPointsHit.shieldImpact == ShieldImpactState::None &&
         hitPointsHit.hitPointsAfterHit == 4,
-        "Unshielded projectile consumes one HP");
+        "Unshielded projectile consumes HP without a shield visual");
     vitality.Reset();
     const PlayerHitResult burstHit = vitality.ReceiveHit(PlayerHitType::BossSpreadBurst);
     success &= Expect(burstHit.shieldLayersLost == 3 &&
+        burstHit.shieldImpact == ShieldImpactState::Broken &&
         vitality.GetHitPoints() == 5,
-        "Spread burst uses the original all-shield damage rule");
+        "Spread burst reports the red shield state");
+    vitality.Reset();
+    vitality.ReceiveHit(PlayerHitType::Projectile);
+    const PlayerHitResult partialChargeHit = vitality.ReceiveHit(PlayerHitType::ChargeUnit);
+    success &= Expect(partialChargeHit.shieldLayersLost == 2 &&
+        partialChargeHit.shieldImpact == ShieldImpactState::Broken,
+        "Charge impact also reports red when fewer layers remain");
     vitality.Reset();
     const PlayerHitResult finisherHit = vitality.ReceiveHit(
         PlayerHitType::NeedleFinisher);
     success &= Expect(finisherHit.didDamageHitPoints &&
+        finisherHit.shieldImpact == ShieldImpactState::None &&
         vitality.GetHitPoints() == 4 && vitality.GetShieldLayers() == 3,
         "Needle finisher damages HP through remaining shield");
+    PlayerCombatConfig extendedShieldConfig = config;
+    extendedShieldConfig.maximumShieldLayers = 4;
+    PlayerVitality extendedShield(extendedShieldConfig);
+    const PlayerHitResult extendedHit = extendedShield.ReceiveHit(PlayerHitType::Projectile);
+    success &= Expect(extendedHit.shieldImpact ==
+        ShieldImpactState::TwoOrMoreRemaining && extendedShield.GetShieldLayers() == 3,
+        "More than three shield layers still use the blue state");
 
     const Collision::SweepHit movingHit = Collision::SweepSphereAgainstMovingSphere(
         {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 0.5f,
@@ -120,6 +148,18 @@ int main(int argc, char** argv) {
     success &= Expect(std::isfinite(movement.GetVelocity().x) &&
         std::isfinite(movement.GetVelocity().z),
         "Invalid impact directions fall back to the player heading");
+    movement.StartBossBodyPush({-1.0f, 0.0f, 0.0f});
+    success &= Expect(movement.GetImpactState() ==
+            PlayerImpactState::Knockback &&
+        std::abs(movement.GetVelocity().x +
+            config.bossBodyPushSpeed) < 0.0001f,
+        "Boss body contact pushes without a damage event");
+    for (int frame = 0; frame < 24; ++frame) {
+        movement.Update(kStep, 0.0f, 0.0f, 0.0f);
+    }
+    success &= Expect(movement.GetImpactState() ==
+        PlayerImpactState::None,
+        "Boss body push ends after its configured duration");
     movement.Reset({0.0f, 1.7f, -7.8f});
     movement.SetResearchInstituteCollisionEnabled(true);
     movement.Update(kStep, 0.0f, 0.0f, 0.0f);
@@ -308,10 +348,36 @@ int main(int argc, char** argv) {
         ultimateGame.GetUltimatePosition().z >
             ultimateGame.GetPreviousUltimatePosition().z,
         "Ultimate exposes a forward swept collision segment");
-    for (int frame = 0; frame < 300; ++frame) {
+    for (int frame = 0; frame < 20; ++frame)
         ultimateGame.Update(kStep, {}, 0.0f, 0.0f);
+    success &= Expect(!ultimateGame.IsSystemOffline(),
+        "Ultimate recoil precedes the original system shutdown");
+    bool sawShutdownEvent = false;
+    for (int frame = 0; frame < 25; ++frame) {
+        ultimateGame.Update(kStep, {}, 0.0f, 0.0f);
+        sawShutdownEvent |= ultimateGame.GetEvents().systemOfflineStarted;
     }
-    success &= Expect(ultimateGame.GetUltimateState() == UltimateState::Idle &&
+    success &= Expect(sawShutdownEvent && ultimateGame.IsSystemOffline(),
+        "Ultimate emits one system shutdown after recoil");
+    bool sawUltimateSplit = false;
+    bool sawUltimateShutdown = false;
+    bool sawUltimateReturn = false;
+    for (int frame = 0; frame < 720 &&
+            ultimateGame.GetUltimateState() != UltimateState::Idle; ++frame) {
+        ultimateGame.Update(kStep, {}, 0.0f, 0.0f);
+        if (!sawUltimateSplit &&
+            ultimateGame.GetUltimateState() == UltimateState::Returning) {
+            sawUltimateSplit = true;
+            const Vector3& leftFist = ultimateGame.GetLeftArm().GetFistPosition();
+            const Vector3& rightFist = ultimateGame.GetRightArm().GetFistPosition();
+            success &= Expect(leftFist.x < rightFist.x,
+                "Ultimate splits into independent left and right fists");
+        }
+        sawUltimateShutdown |= ultimateGame.IsSystemOffline();
+        sawUltimateReturn |= ultimateGame.GetEvents().ultimateReturned;
+    }
+    success &= Expect(sawUltimateSplit && sawUltimateShutdown &&
+        sawUltimateReturn && ultimateGame.GetUltimateState() == UltimateState::Idle &&
         ultimateGame.GetLeftArm().GetState() == PunchArmState::Ready &&
         ultimateGame.GetRightArm().GetState() == PunchArmState::Ready,
         "Ultimate returns both fists and finishes system offline recovery");

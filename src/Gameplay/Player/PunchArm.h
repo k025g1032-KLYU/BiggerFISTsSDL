@@ -43,6 +43,8 @@ public:
     void Reset(const Vector3& playerPosition, float bodyYaw);
     void Update(float deltaTime, const Vector3& playerPosition, float bodyYaw,
         const PunchArmInput& input, bool allowNewCharge = true);
+    void BeginUltimateReturn(const Vector3& splitPosition,
+        const Vector3& flightDirection, float bodyYaw);
 
     PunchArmState GetState() const { return state_; }
     PunchArmAttackType GetAttackType() const { return attackType_; }
@@ -67,6 +69,8 @@ public:
     float GetRocketPoseYaw() const { return rocketPoseYaw_; }
     float GetRocketTravelDistance() const { return rocketTravelDistance_; }
     float GetRocketMaximumRange() const { return rocketMaximumRange_; }
+    float GetRocketFlameScale() const;
+    bool IsUltimateDocking() const;
     RocketPreviewTrajectory GetRocketPreviewTrajectory(
         const Vector3& playerPosition, float bodyYaw) const;
 
@@ -77,7 +81,8 @@ private:
         TurnHome,
         FlyHome,
         Align,
-        Dock
+        Dock,
+        UltimateDock
     };
 
     Vector3 CalculateHomePosition(const Vector3& playerPosition, float bodyYaw) const;
@@ -117,4 +122,5 @@ private:
     float returnAscentDistance_ = 0.0f;
     Vector3 returnPhaseStartPosition_{};
     RocketReturnPhase rocketReturnPhase_ = RocketReturnPhase::TurnUp;
+    bool ultimateReturn_ = false;
 };

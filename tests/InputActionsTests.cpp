@@ -53,7 +53,7 @@ bool HasDefaultBindings(const InputBindings& bindings) {
 }
 
 int main(int, char**) {
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         SDL_Log("SDL_Init failed: %s", SDL_GetError());
         return 1;
     }
@@ -115,8 +115,8 @@ int main(int, char**) {
         "R must trigger the Target reset action");
     input.BeginFrame();
     input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_DOWN, SDL_SCANCODE_F1));
-    success &= Expect(defaults.Evaluate(input).practiceCommand ==
-        PracticeCommand::ThirdPerson, "F1 must map to the practice camera command");
+    success &= Expect(defaults.Evaluate(input).toggleThirdPerson.pressed,
+        "F1 must map to the shared combat camera command");
     input.BeginFrame();
     input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_DOWN, SDL_SCANCODE_7));
     success &= Expect(defaults.Evaluate(input).practiceCommand ==
@@ -133,9 +133,17 @@ int main(int, char**) {
         input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_UP, key));
         return matched;
     };
-    success &= Expect(checkPracticeKey(SDL_SCANCODE_F2, PracticeCommand::CycleCockpitModel) &&
-        checkPracticeKey(SDL_SCANCODE_F3, PracticeCommand::ToggleData) &&
-        checkPracticeKey(SDL_SCANCODE_F5, PracticeCommand::FullStartup) &&
+    input.BeginFrame();
+    input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_DOWN, SDL_SCANCODE_F2));
+    success &= Expect(defaults.Evaluate(input).cycleCockpitModel.pressed,
+        "F2 must map to the shared cockpit model command");
+    input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_UP, SDL_SCANCODE_F2));
+    input.BeginFrame();
+    input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_DOWN, SDL_SCANCODE_F3));
+    success &= Expect(defaults.Evaluate(input).toggleCombatData.pressed,
+        "F3 must map to the shared combat data command");
+    input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_UP, SDL_SCANCODE_F3));
+    success &= Expect(checkPracticeKey(SDL_SCANCODE_F5, PracticeCommand::FullStartup) &&
         checkPracticeKey(SDL_SCANCODE_F6, PracticeCommand::QuickStartup) &&
         checkPracticeKey(SDL_SCANCODE_F7, PracticeCommand::BossStartup) &&
         checkPracticeKey(SDL_SCANCODE_F8, PracticeCommand::SystemOffline),
@@ -156,6 +164,9 @@ int main(int, char**) {
         checkPracticeKey(SDL_SCANCODE_4, PracticeCommand::MixedProjectiles),
         "Shift+1-4 must select projectile patterns");
     input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_UP, SDL_SCANCODE_LSHIFT));
+    success &= Expect(!IsGamepadTriggerPressed(0) &&
+        !IsGamepadTriggerPressed(3855) && IsGamepadTriggerPressed(3856),
+        "Trigger threshold must match the original XInput 30/255 boundary");
     input.BeginFrame();
     input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_DOWN, SDL_SCANCODE_LCTRL));
     success &= Expect(checkPracticeKey(SDL_SCANCODE_F1, PracticeCommand::None),
@@ -218,6 +229,18 @@ int main(int, char**) {
     success &= Expect(defaults.Evaluate(input).leftMouseDown &&
         defaults.Evaluate(input).rightMouseDown,
         "Both mouse buttons can be held independently");
+    input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_DOWN, SDL_SCANCODE_LSHIFT));
+    state = defaults.Evaluate(input);
+    success &= Expect(state.shiftDown && state.leftMouseDown &&
+        state.rightMouseDown,
+        "Left Shift plus both mouse buttons reaches both arms");
+    input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_UP, SDL_SCANCODE_LSHIFT));
+    input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_DOWN, SDL_SCANCODE_RSHIFT));
+    state = defaults.Evaluate(input);
+    success &= Expect(state.shiftDown && state.leftMouseDown &&
+        state.rightMouseDown,
+        "Right Shift plus both mouse buttons reaches both arms");
+    input.ProcessEvent(KeyEvent(SDL_EVENT_KEY_UP, SDL_SCANCODE_RSHIFT));
     SDL_Event mouseUp{};
     mouseUp.button.type = SDL_EVENT_MOUSE_BUTTON_UP;
     mouseUp.button.button = SDL_BUTTON_LEFT;
@@ -232,14 +255,83 @@ int main(int, char**) {
         input.GetMouseDeltaY() == 0.0f,
         "Mouse movement is discarded when the window loses focus");
     success &= Expect(!defaults.Evaluate(input).leftMouseDown &&
-        !defaults.Evaluate(input).rightMouseDown,
-        "Losing focus releases both mouse attack buttons");
+        !defaults.Evaluate(input).rightMouseDown &&
+        !defaults.Evaluate(input).shiftDown,
+        "Losing focus releases mouse attacks and modifiers");
     state = defaults.Evaluate(input);
     success &= Expect(!state.changeBackground.pressed && !state.quit.pressed,
         "Non-keyboard events must not create key actions");
     SDL_Event focusGained{};
     focusGained.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
     input.ProcessEvent(focusGained);
+
+    SDL_VirtualJoystickDesc virtualDesc{};
+    virtualDesc.version = sizeof(virtualDesc);
+    virtualDesc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
+    virtualDesc.naxes = SDL_GAMEPAD_AXIS_COUNT;
+    virtualDesc.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
+    virtualDesc.button_mask = (1u << SDL_GAMEPAD_BUTTON_COUNT) - 1u;
+    virtualDesc.axis_mask = (1u << SDL_GAMEPAD_AXIS_COUNT) - 1u;
+    virtualDesc.name = "Input mapping test gamepad";
+    const SDL_JoystickID virtualId = SDL_AttachVirtualJoystick(&virtualDesc);
+    SDL_Gamepad* gamepad = virtualId ? SDL_OpenGamepad(virtualId) : nullptr;
+    success &= Expect(gamepad != nullptr,
+        "A virtual gamepad must be available for input mapping tests");
+    if (gamepad) {
+        SDL_Joystick* joystick = SDL_GetGamepadJoystick(gamepad);
+        const auto setButton = [&](SDL_GamepadButton button, bool down) {
+            SDL_SetJoystickVirtualButton(joystick, button, down);
+            SDL_UpdateJoysticks();
+        };
+        const auto setAxis = [&](SDL_GamepadAxis axis, Sint16 value) {
+            SDL_SetJoystickVirtualAxis(joystick, axis, value);
+            SDL_UpdateJoysticks();
+        };
+        setAxis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER, SDL_JOYSTICK_AXIS_MIN);
+        state = defaults.Evaluate(input, gamepad);
+        success &= Expect(!state.leftPunchKeyDown,
+            "A released virtual trigger must stay below the threshold");
+        setAxis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER, SDL_JOYSTICK_AXIS_MAX);
+        setAxis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, SDL_JOYSTICK_AXIS_MAX);
+        state = defaults.Evaluate(input, gamepad);
+        success &= Expect(state.leftPunchKeyDown && state.rightPunchKeyDown,
+            "Both triggers above threshold must charge independently");
+        setButton(SDL_GAMEPAD_BUTTON_BACK, true);
+        setButton(SDL_GAMEPAD_BUTTON_RIGHT_STICK, true);
+        setButton(SDL_GAMEPAD_BUTTON_START, true);
+        setButton(SDL_GAMEPAD_BUTTON_SOUTH, true);
+        setButton(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, true);
+        setButton(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, true);
+        state = defaults.Evaluate(input, gamepad);
+        success &= Expect(state.toggleCombatData.pressed &&
+            state.switchView.pressed && state.battleStart.pressed &&
+            state.skip.pressed && state.confirm.pressed &&
+            state.dodge.pressed && state.leftGamepadRocketDown &&
+            state.rightGamepadRocketDown && !state.leftMouseDown &&
+            !state.rightMouseDown,
+            "View, R3, Start, A and both shoulders keep distinct mappings");
+        state = defaults.Evaluate(input, gamepad);
+        success &= Expect(!state.toggleCombatData.pressed &&
+            !state.switchView.pressed && !state.battleStart.pressed,
+            "Held gamepad buttons must not repeat press edges");
+        input.ProcessEvent(focusLost);
+        state = defaults.Evaluate(input, gamepad);
+        success &= Expect(!state.toggleCombatData.pressed &&
+            !state.leftPunchKeyDown,
+            "Losing focus must clear gamepad actions");
+        input.ProcessEvent(focusGained);
+        setButton(SDL_GAMEPAD_BUTTON_BACK, false);
+        setButton(SDL_GAMEPAD_BUTTON_RIGHT_STICK, false);
+        setButton(SDL_GAMEPAD_BUTTON_START, false);
+        setButton(SDL_GAMEPAD_BUTTON_SOUTH, false);
+        setButton(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, false);
+        setButton(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, false);
+        setAxis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER, SDL_JOYSTICK_AXIS_MIN);
+        setAxis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, SDL_JOYSTICK_AXIS_MIN);
+        defaults.Evaluate(input, gamepad);
+        SDL_CloseGamepad(gamepad);
+    }
+    if (virtualId) SDL_DetachVirtualJoystick(virtualId);
 
     const InputBindings configured = LoadTestConfig(
         "moveLeft Left\nmoveRight Right\nmoveUp Up\nmoveDown Down\n"

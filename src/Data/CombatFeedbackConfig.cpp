@@ -24,11 +24,13 @@ constexpr std::array requiredKeys{
     "dodgeRumbleMs", "bossChangeModeWav", "bossSharpHitWav",
     "bossRiserWav", "battleExplosionWav", "battleCueGain",
     "systemRestartRumbleLow",
-    "systemRestartRumbleHigh", "systemRestartRumbleMs"};
+    "systemRestartRumbleHigh", "systemRestartRumbleMs",
+    "bossSmallExplosionGain", "bossFinalExplosionGain",
+    "bossSharpShieldHitGain", "bossSharpHitPointGain"};
 constexpr std::array cueNames{
     "landing", "chargePrepare", "chargeDash", "missileLaunch",
     "bossDash", "bossStrike",
-    "bossNeedle", "bossBarrage", "playerShield", "playerHealth",
+    "bossNeedle", "bossBarrage",
     "cockpitStart", "systemOffline", "engineLoop", "footstep",
     "projectileExplosion"};
 
@@ -124,7 +126,11 @@ bool LoadCombatFeedbackConfig(const std::filesystem::path& path,
                 key == "rocketLaunchGain" || key == "punchSwingGain" ||
                 key == "rocketReconnectGain" || key == "chargeHitGain" ||
                 key == "dodgeGain" || key == "ultimateLaunchGain" ||
-                key == "battleCueGain") &&
+                key == "battleCueGain" ||
+                key == "bossSmallExplosionGain" ||
+                key == "bossFinalExplosionGain" ||
+                key == "bossSharpShieldHitGain" ||
+                key == "bossSharpHitPointGain") &&
             ParseNumber(value, gain) &&
             std::isfinite(gain) && gain >= 0.0f && gain <= 2.0f) {
             if (key == "punchImpactGain") {
@@ -143,6 +149,14 @@ bool LoadCombatFeedbackConfig(const std::filesystem::path& path,
                 parsed.ultimateLaunchGain = gain;
             } else if (key == "battleCueGain") {
                 parsed.battleCueGain = gain;
+            } else if (key == "bossSmallExplosionGain") {
+                parsed.bossSmallExplosionGain = gain;
+            } else if (key == "bossFinalExplosionGain") {
+                parsed.bossFinalExplosionGain = gain;
+            } else if (key == "bossSharpShieldHitGain") {
+                parsed.bossSharpShieldHitGain = gain;
+            } else if (key == "bossSharpHitPointGain") {
+                parsed.bossSharpHitPointGain = gain;
             } else {
                 parsed.chargeHitGain = gain;
             }

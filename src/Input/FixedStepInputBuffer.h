@@ -25,6 +25,9 @@ private:
     bool skipPressed_ = false;
     bool skipPhasePressed_ = false;
     bool switchViewPressed_ = false;
+    bool toggleThirdPersonPressed_ = false;
+    bool cycleCockpitModelPressed_ = false;
+    bool toggleCombatDataPressed_ = false;
     bool dodgePressed_ = false;
     bool projectileHitPressed_ = false;
     bool chargeHitPressed_ = false;

@@ -1,0 +1,9 @@
+# One tick is one fixed 1/60-second game update. Tick 0 is the first frame.
+# set keeps a button or movement axis held until the next set command.
+# press acts for one tick. mouse look is a one-tick delta.
+set 10 leftRocket 1
+set 55 leftRocket 0
+press 80 projectileHit
+set 100 rightPunch 1
+set 140 rightPunch 0
+press 165 reset

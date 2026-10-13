@@ -9,10 +9,18 @@ enum class PlayerHitType {
     NeedleFinisher
 };
 
+enum class ShieldImpactState {
+    None,
+    TwoOrMoreRemaining,
+    OneRemaining,
+    Broken
+};
+
 struct PlayerHitResult {
     bool wasApplied = false;
     int shieldLayersBeforeHit = 0;
     int shieldLayersLost = 0;
+    ShieldImpactState shieldImpact = ShieldImpactState::None;
     bool didDamageHitPoints = false;
     int hitPointsAfterHit = 0;
 };

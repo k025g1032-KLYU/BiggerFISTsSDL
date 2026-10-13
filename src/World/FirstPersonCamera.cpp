@@ -12,6 +12,7 @@ void FirstPersonCamera::Reset(const Vector3& eye) {
     followedAnchor_ = eye;
     yaw_ = 0.0f;
     pitch_ = 0.0f;
+    controlMode_ = CameraControlMode::Driving;
     shakeStrength_ = 0.0f;
     shakeDuration_ = 0.0f;
     shakeTimer_ = 0.0f;
@@ -24,13 +25,48 @@ void FirstPersonCamera::Reset(const Vector3& eye) {
 }
 
 void FirstPersonCamera::UpdateLook(float mouseDeltaX, float mouseDeltaY) {
+    if (controlMode_ == CameraControlMode::AligningToDriving) return;
     if (!std::isfinite(mouseDeltaX) || !std::isfinite(mouseDeltaY)) {
         return;
     }
-    yaw_ = std::remainder(yaw_ + mouseDeltaX * FirstPersonTuning::kMouseLookSensitivity,
+    const float lookMultiplier = controlMode_ == CameraControlMode::Observation
+        ? FirstPersonTuning::kObservationLookSpeedMultiplier : 1.0f;
+    yaw_ = std::remainder(yaw_ + mouseDeltaX * FirstPersonTuning::kMouseLookSensitivity * lookMultiplier,
         2.0f * std::numbers::pi_v<float>);
-    pitch_ = std::clamp(pitch_ + mouseDeltaY * FirstPersonTuning::kMouseLookSensitivity,
+    pitch_ = std::clamp(pitch_ + mouseDeltaY * FirstPersonTuning::kMouseLookSensitivity * lookMultiplier,
         -FirstPersonTuning::kMaximumPitch, FirstPersonTuning::kMaximumPitch);
+}
+
+void FirstPersonCamera::UpdateControl(float seconds, float bodyYaw) {
+    if (controlMode_ != CameraControlMode::AligningToDriving ||
+        !std::isfinite(seconds) || seconds < 0.0f) return;
+    const float remaining = std::remainder(bodyYaw - yaw_,
+        2.0f * std::numbers::pi_v<float>);
+    const float movement = std::clamp(remaining, -7.0f * seconds, 7.0f * seconds);
+    yaw_ = std::remainder(yaw_ + movement, 2.0f * std::numbers::pi_v<float>);
+    pitch_ += std::clamp(-pitch_, -7.0f * seconds, 7.0f * seconds);
+    if (std::abs(std::remainder(bodyYaw - yaw_,
+            2.0f * std::numbers::pi_v<float>)) < 0.00001f &&
+        std::abs(pitch_) < 0.00001f) {
+        yaw_ = std::remainder(bodyYaw, 2.0f * std::numbers::pi_v<float>);
+        pitch_ = 0.0f;
+        controlMode_ = CameraControlMode::Driving;
+    }
+}
+
+void FirstPersonCamera::BeginTutorialCockpitAlignment(float bodyYaw) {
+    if (controlMode_ != CameraControlMode::Driving)
+        controlMode_ = CameraControlMode::AligningToDriving;
+    UpdateControl(0.0f, bodyYaw);
+}
+
+void FirstPersonCamera::ToggleObservationMode(float bodyYaw) {
+    if (controlMode_ == CameraControlMode::Driving ||
+        controlMode_ == CameraControlMode::AligningToDriving) {
+        controlMode_ = CameraControlMode::Observation;
+    } else {
+        BeginTutorialCockpitAlignment(bodyYaw);
+    }
 }
 
 void FirstPersonCamera::Follow(const Vector3& cameraAnchor, double deltaSeconds,

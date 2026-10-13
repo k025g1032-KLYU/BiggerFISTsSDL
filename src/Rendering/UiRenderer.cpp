@@ -1,6 +1,7 @@
 #include "Rendering/UiRenderer.h"
 
 #include "Rendering/TextureLoader.h"
+#include "Rendering/UiLayout.h"
 #include "Data/StoryConfig.h"
 
 #include <algorithm>
@@ -30,44 +31,6 @@ SDL_GPUShader* LoadUiShader(SDL_GPUDevice* device, const char* filename,
     SDL_free(bytes);
     return shader;
 }
-}
-
-void UiDrawList::Image(std::string_view name, float x, float y, float width,
-    float height, UiColor color, bool cropStory) {
-    commands_.push_back({std::string(name), x, y, width, height,
-        0.0f, 0.0f, 1.0f, 1.0f, color, cropStory});
-}
-void UiDrawList::Rectangle(float x, float y, float width, float height, UiColor color) {
-    Image("white1x1.png", x, y, width, height, color);
-}
-void UiDrawList::RotatedRectangle(float centerX, float centerY,
-    float width, float height, float radians, UiColor color) {
-    Image("white1x1.png", centerX - width * 0.5f,
-        centerY - height * 0.5f, width, height, color);
-    commands_.back().rotationRadians = radians;
-}
-void UiDrawList::ImageFrame(std::string_view name, float x, float y,
-    float width, float height, int columns, int frame) {
-    if (columns <= 0) return;
-    commands_.push_back({std::string(name), x, y, width, height,
-        static_cast<float>(frame % columns) / columns, 0.0f,
-        1.0f / columns, 1.0f, {}, false});
-}
-void UiDrawList::Text(std::string_view value, float x, float y, float scale, UiColor color) {
-    const float glyphWidth = 9.0f * scale;
-    const float glyphHeight = 18.0f * scale;
-    const float startX = x;
-    for (const unsigned char glyph : value) {
-        if (glyph == '\n') { x = startX; y += glyphHeight; continue; }
-        if (glyph < 32 || glyph > 126) { x += glyphWidth; continue; }
-        const int index = glyph - 32;
-        const int column = index % 14;
-        const int row = index / 14;
-        commands_.push_back({"debugfont.png", x, y, glyphWidth, glyphHeight,
-            column * 9.0f / 128.0f, row * 18.0f / 128.0f,
-            9.0f / 128.0f, 18.0f / 128.0f, color, false});
-        x += glyphWidth;
-    }
 }
 
 UiRenderer::~UiRenderer() { Shutdown(); }
@@ -115,8 +78,11 @@ bool UiRenderer::Initialize(SDL_GPUDevice* device, SDL_Window* window,
     samplerInfo.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
     samplerInfo.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     samplerInfo.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    sampler_ = SDL_CreateGPUSampler(device, &samplerInfo);
-    if (!pipeline_ || !sampler_) {
+    imageSampler_ = SDL_CreateGPUSampler(device, &samplerInfo);
+    samplerInfo.min_filter = SDL_GPU_FILTER_NEAREST;
+    samplerInfo.mag_filter = SDL_GPU_FILTER_NEAREST;
+    fontSampler_ = SDL_CreateGPUSampler(device, &samplerInfo);
+    if (!pipeline_ || !imageSampler_ || !fontSampler_) {
         error = std::string("Could not create UI pipeline: ") + SDL_GetError();
         Shutdown();
         return false;
@@ -155,34 +121,53 @@ bool UiRenderer::Draw(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* backbuffer
     SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &target, 1, nullptr);
     if (!pass) return false;
     SDL_BindGPUGraphicsPipeline(pass, pipeline_);
-    const float scale = std::min(width / 1280.0f, height / 720.0f);
-    const float offsetX = (width - 1280.0f * scale) * 0.5f;
-    const float offsetY = (height - 720.0f * scale) * 0.5f;
+    const UiLayout layout(static_cast<float>(width), static_cast<float>(height));
     SDL_Rect fullScissor{0, 0, static_cast<int>(width), static_cast<int>(height)};
-    SDL_Rect storyScissor{static_cast<int>(offsetX), static_cast<int>(offsetY),
-        static_cast<int>(1280.0f * scale), static_cast<int>(500.0f * scale)};
+    SDL_Rect storyScissor{0, static_cast<int>(layout.safeOffsetY),
+        static_cast<int>(width), static_cast<int>(500.0f * layout.safeScale)};
     bool storyClipped = false;
     for (const UiCommand& command : list.GetCommands()) {
         auto found = textures_.find(command.image);
         if (found == textures_.end()) continue;
+        const bool isFont = command.image == "debugfont.png";
         if (command.cropStory != storyClipped) {
             SDL_SetGPUScissor(pass, command.cropStory ? &storyScissor : &fullScissor);
             storyClipped = command.cropStory;
         }
+        const UiBounds bounds = layout.Map(command);
+        float left = bounds.left;
+        float top = bounds.top;
+        float right = left + bounds.width;
+        float bottom = top + bounds.height;
+        if (isFont) {
+            left = std::round(left);
+            top = std::round(top);
+            right = std::round(right);
+            bottom = std::round(bottom);
+        }
         const float uniform[12]{
-            offsetX + command.x * scale, offsetY + command.y * scale,
-            command.width * scale, command.height * scale,
+            left, top, right - left, bottom - top,
             command.u, command.v, command.uSize, command.vSize,
             static_cast<float>(width), static_cast<float>(height),
             command.rotationRadians, 0.0f
         };
-        const float tint[4]{command.color.r, command.color.g,
-            command.color.b, command.color.a};
+        const float halfTexel = 0.5f / 128.0f;
+        const float fragmentUniform[12]{
+            command.color.r, command.color.g, command.color.b, command.color.a,
+            command.u + halfTexel, command.v + halfTexel,
+            command.u + command.uSize - halfTexel,
+            command.v + command.vSize - halfTexel,
+            isFont ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f
+        };
         SDL_PushGPUVertexUniformData(commands, 0, uniform, sizeof(uniform));
-        SDL_PushGPUFragmentUniformData(commands, 0, tint, sizeof(tint));
+        SDL_PushGPUFragmentUniformData(commands, 0,
+            fragmentUniform, sizeof(fragmentUniform));
         SDL_GPUTextureSamplerBinding binding{};
         binding.texture = found->second;
-        binding.sampler = sampler_;
+        const float glyphPixelScale = bounds.width / 9.0f;
+        const bool integerFontScale = isFont &&
+            std::abs(glyphPixelScale - std::round(glyphPixelScale)) < 0.001f;
+        binding.sampler = integerFontScale ? fontSampler_ : imageSampler_;
         SDL_BindGPUFragmentSamplers(pass, 0, &binding, 1);
         SDL_DrawGPUPrimitives(pass, 6, 1, 0, 0);
     }
@@ -197,9 +182,11 @@ void UiRenderer::Shutdown() {
         if (texture) SDL_ReleaseGPUTexture(device_, texture);
     }
     textures_.clear();
-    if (sampler_) SDL_ReleaseGPUSampler(device_, sampler_);
+    if (fontSampler_) SDL_ReleaseGPUSampler(device_, fontSampler_);
+    if (imageSampler_) SDL_ReleaseGPUSampler(device_, imageSampler_);
     if (pipeline_) SDL_ReleaseGPUGraphicsPipeline(device_, pipeline_);
-    sampler_ = nullptr;
+    fontSampler_ = nullptr;
+    imageSampler_ = nullptr;
     pipeline_ = nullptr;
     device_ = nullptr;
 }

@@ -32,21 +32,35 @@ int main() {
     GameInput view;
     view.switchView.pressed = true;
     tutorial.Update(1.0f / 60.0f, view, player);
-    Wait(tutorial, player);
+    for (int index = 0; index < 80; ++index)
+        tutorial.Update(1.0f / 60.0f, {}, player, true);
+    success &= Check(tutorial.GetStep() == TutorialStep::VisualLink &&
+        tutorial.IsConfirming(), "confirmation waits for the system voice");
+    tutorial.Update(1.0f / 60.0f, {}, player, false);
     success &= Check(tutorial.GetStep() == TutorialStep::Mobility &&
         tutorial.IsCockpitConnected(), "VisualLink connects cockpit");
+    Wait(tutorial, player);
     player.cameraYaw = 2.2f;
     player.playerPosition.z = 5.1f;
     tutorial.Update(1.0f / 60.0f, {}, player);
     Wait(tutorial, player);
     success &= Check(tutorial.GetStep() == TutorialStep::Punch,
         "Mobility requires movement and look");
+    fullInput.shiftDown = true;
+    fullInput.rightMouseDown = true;
+    const GameInput punchInput = tutorial.FilterInput(fullInput);
+    success &= Check(punchInput.leftMouseDown && punchInput.rightMouseDown &&
+        punchInput.leftPunchKeyDown && !punchInput.allowRocketCharge &&
+        !punchInput.dodge.pressed,
+        "Punch step keeps Shift+mouse and keyboard Punch while blocking Rocket");
     player.leftPunchHit = player.rightPunchHit = true;
     tutorial.Update(1.0f / 60.0f, {}, player);
     player.leftPunchHit = player.rightPunchHit = false;
     Wait(tutorial, player);
     success &= Check(tutorial.GetStep() == TutorialStep::RocketPunch,
         "both ordinary punches advance to RocketPunch");
+    success &= Check(tutorial.FilterInput(fullInput).allowRocketCharge,
+        "Rocket Punch step restores mouse Rocket input");
     player.leftRocketHit = player.rightRocketHit = true;
     tutorial.Update(1.0f / 60.0f, {}, player);
     player.leftRocketHit = player.rightRocketHit = false;

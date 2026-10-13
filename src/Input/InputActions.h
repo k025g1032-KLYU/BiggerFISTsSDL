@@ -4,6 +4,8 @@
 #include "Input/Input.h"
 #include "Input/InputBindings.h"
 
+bool IsGamepadTriggerPressed(Sint16 value);
+
 class InputActions {
 public:
     explicit InputActions(const InputBindings& bindings = {});

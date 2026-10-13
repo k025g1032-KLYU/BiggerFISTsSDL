@@ -14,6 +14,8 @@
 #include <vector>
 #include <unordered_set>
 
+enum class TargetDisplayKind { Static, Enemy, Boss, Projectile };
+
 struct FirstPersonTarget {
     std::string id;
     Vector3 position{};
@@ -22,6 +24,13 @@ struct FirstPersonTarget {
     bool movedSinceLastStep = false;
     float radius = 1.25f;
     float punchRadiusMultiplier = 1.0f;
+    TargetDisplayKind displayKind = TargetDisplayKind::Static;
+};
+
+struct PlayerHitFeedback {
+    PlayerHitType type = PlayerHitType::Projectile;
+    PlayerHitResult result{};
+    bool bossNeedleHit = false;
 };
 
 struct FirstPersonEvents {
@@ -45,7 +54,9 @@ struct FirstPersonEvents {
     bool dodgeStarted = false;
     bool playerHit = false;
     bool playerDefeated = false;
+    std::vector<PlayerHitFeedback> playerHits;
     PlayerHitType playerHitType = PlayerHitType::Projectile;
+    bool playerHitWasBossNeedle = false;
     PlayerHitResult playerHitResult{};
 };
 
@@ -66,14 +77,20 @@ public:
     bool MoveTarget(std::string_view id, const Vector3& position);
     bool RemoveTarget(std::string_view id);
     PlayerHitResult ReceivePlayerHit(PlayerHitType type,
-        const Vector3& pushDirection = {0.0f, 0.0f, 1.0f});
+        const Vector3& pushDirection = {0.0f, 0.0f, 1.0f},
+        bool bossNeedleHit = false);
     void StartNeedleStun();
+    void StartBossBodyPush(const Vector3& direction);
     void EndNeedleStun();
     void TriggerPracticeOffline();
     float GetOfflineRemaining() const { return needleOfflineTimer_ > 0.0f
         ? needleOfflineTimer_ : ultimateOfflineTimer_; }
     const PlayerMovement& GetPlayer() const { return player_; }
     const FirstPersonCamera& GetCamera() const { return camera_; }
+    void BeginTutorialVisualCheck() { camera_.BeginTutorialVisualCheck(); }
+    void BeginTutorialCockpitAlignment() {
+        camera_.BeginTutorialCockpitAlignment(player_.GetBodyYaw());
+    }
     const PunchArm& GetLeftArm() const { return leftArm_; }
     const PunchArm& GetRightArm() const { return rightArm_; }
     const PlayerVitality& GetVitality() const { return vitality_; }
@@ -87,8 +104,9 @@ public:
         player_.SetResearchInstituteCollisionEnabled(enabled);
     }
     UltimateState GetUltimateState() const { return ultimateState_; }
+    float GetUltimateChargeRatio() const;
     bool IsSystemOffline() const {
-        return ultimateState_ == UltimateState::Offline ||
+        return ultimateShutdown_ ||
             needleOfflineTimer_ > 0.0f;
     }
     bool IsUltimateDamageActiveThisFrame() const {
@@ -129,13 +147,13 @@ private:
     bool ultimateEnabled_ = false;
     UltimateState ultimateState_ = UltimateState::Idle;
     bool ultimateDamageActiveThisFrame_ = false;
+    bool ultimateShutdown_ = false;
     Vector3 ultimatePosition_{};
     Vector3 previousUltimatePosition_{};
     Vector3 ultimateDirection_{0.0f, 0.0f, 1.0f};
-    Vector3 ultimateSplitPosition_{};
     float ultimateChargeTimer_ = 0.0f;
     float ultimateTravel_ = 0.0f;
-    float ultimateReturnTimer_ = 0.0f;
+    float ultimateRecoilTimer_ = 0.0f;
     float ultimateOfflineTimer_ = 0.0f;
     float needleShutdownDelay_ = 0.0f;
     float needleOfflineTimer_ = 0.0f;

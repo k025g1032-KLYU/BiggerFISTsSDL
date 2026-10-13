@@ -100,7 +100,7 @@ bool LoadFields(const std::filesystem::path& path, T& output,
     return true;
 }
 
-constexpr std::array<std::pair<std::string_view, float EnemyCombatConfig::*>, 37>
+constexpr std::array<std::pair<std::string_view, float EnemyCombatConfig::*>, 51>
     kEnemyFields{{
         {"radius", &EnemyCombatConfig::radius},
         {"dropStartHeight", &EnemyCombatConfig::dropStartHeight},
@@ -117,6 +117,8 @@ constexpr std::array<std::pair<std::string_view, float EnemyCombatConfig::*>, 37
         {"landingPause", &EnemyCombatConfig::landingPause},
         {"takeoffSpeed", &EnemyCombatConfig::takeoffSpeed},
         {"missileMoveSpeed", &EnemyCombatConfig::missileMoveSpeed},
+        {"missilePatrolTurnSpeed", &EnemyCombatConfig::missilePatrolTurnSpeed},
+        {"missileFireTurnSpeed", &EnemyCombatConfig::missileFireTurnSpeed},
         {"missileInitialFireDelay", &EnemyCombatConfig::missileInitialFireDelay},
         {"missileFireCooldown", &EnemyCombatConfig::missileFireCooldown},
         {"missileFirePauseBeforeLaunch", &EnemyCombatConfig::missileFirePauseBeforeLaunch},
@@ -136,9 +138,21 @@ constexpr std::array<std::pair<std::string_view, float EnemyCombatConfig::*>, 37
         {"chargeMissBrakingDuration", &EnemyCombatConfig::chargeMissBrakingDuration},
         {"chargeHitBrakingInitialSpeed", &EnemyCombatConfig::chargeHitBrakingInitialSpeed},
         {"chargeImpactDuration", &EnemyCombatConfig::chargeImpactDuration},
+        {"chargeImpactWidthScale", &EnemyCombatConfig::chargeImpactWidthScale},
+        {"chargeImpactHeightScale", &EnemyCombatConfig::chargeImpactHeightScale},
+        {"chargeImpactDepthScale", &EnemyCombatConfig::chargeImpactDepthScale},
         {"chargeTargetPassDistance", &EnemyCombatConfig::chargeTargetPassDistance},
         {"chargeBaseSafetyMargin", &EnemyCombatConfig::chargeBaseSafetyMargin},
         {"defeatLaunchDuration", &EnemyCombatConfig::defeatLaunchDuration},
+        {"defeatPunchSpeed", &EnemyCombatConfig::defeatPunchSpeed},
+        {"defeatRocketSpeed", &EnemyCombatConfig::defeatRocketSpeed},
+        {"defeatUltimateSpeed", &EnemyCombatConfig::defeatUltimateSpeed},
+        {"defeatUpwardSpeed", &EnemyCombatConfig::defeatUpwardSpeed},
+        {"defeatGravity", &EnemyCombatConfig::defeatGravity},
+        {"defeatBoundsMargin", &EnemyCombatConfig::defeatBoundsMargin},
+        {"defeatRotationXSpeed", &EnemyCombatConfig::defeatRotationXSpeed},
+        {"defeatRotationYSpeed", &EnemyCombatConfig::defeatRotationYSpeed},
+        {"defeatRotationZSpeed", &EnemyCombatConfig::defeatRotationZSpeed},
     }};
 constexpr std::array<std::pair<std::string_view, float ProjectileCombatConfig::*>, 14>
     kProjectileFields{{
@@ -157,7 +171,7 @@ constexpr std::array<std::pair<std::string_view, float ProjectileCombatConfig::*
         {"crystalCubeOscillationAmplitude", &ProjectileCombatConfig::crystalCubeOscillationAmplitude},
         {"crystalCubeOscillationFrequency", &ProjectileCombatConfig::crystalCubeOscillationFrequency},
     }};
-constexpr std::array<std::pair<std::string_view, float BossCombatConfig::*>, 100>
+constexpr std::array<std::pair<std::string_view, float BossCombatConfig::*>, 140>
     kBossFields{{
         {"poseBlendSpeed", &BossCombatConfig::poseBlendSpeed},
         {"cruisePoseBlendSpeed", &BossCombatConfig::cruisePoseBlendSpeed},
@@ -227,19 +241,36 @@ constexpr std::array<std::pair<std::string_view, float BossCombatConfig::*>, 100
         {"crystalHaloBackOffset", &BossCombatConfig::crystalHaloBackOffset},
         {"crystalHaloRotationSpeed", &BossCombatConfig::crystalHaloRotationSpeed},
         {"crystalLaunchHeight", &BossCombatConfig::crystalLaunchHeight},
+        {"crystalRemoteSpawnMargin", &BossCombatConfig::crystalRemoteSpawnMargin},
         {"chargePrepareDuration", &BossCombatConfig::chargePrepareDuration},
         {"chargeSpeed", &BossCombatConfig::chargeSpeed},
+        {"chargeTurnDuration", &BossCombatConfig::chargeTurnDuration},
+        {"chargePullbackDuration", &BossCombatConfig::chargePullbackDuration},
+        {"chargePullbackDistance", &BossCombatConfig::chargePullbackDistance},
+        {"chargeAimTurnSpeed", &BossCombatConfig::chargeAimTurnSpeed},
+        {"chargeTipOffset", &BossCombatConfig::chargeTipOffset},
+        {"chargeTipRadius", &BossCombatConfig::chargeTipRadius},
+        {"chargeImpactDuration", &BossCombatConfig::chargeImpactDuration},
+        {"chargeWallImpactDuration", &BossCombatConfig::chargeWallImpactDuration},
         {"boxerApproachSpeed", &BossCombatConfig::boxerApproachSpeed},
         {"boxerOrbitSpeed", &BossCombatConfig::boxerOrbitSpeed},
         {"boxerDesiredDistance", &BossCombatConfig::boxerDesiredDistance},
         {"boxerStrikeStartDistance", &BossCombatConfig::boxerStrikeStartDistance},
+        {"boxerDistanceTolerance", &BossCombatConfig::boxerDistanceTolerance},
         {"boxerEntryMaximumDistance", &BossCombatConfig::boxerEntryMaximumDistance},
         {"boxerEntryWindupDuration", &BossCombatConfig::boxerEntryWindupDuration},
         {"boxerEntryPullbackDistance", &BossCombatConfig::boxerEntryPullbackDistance},
         {"boxerEntryDashSpeed", &BossCombatConfig::boxerEntryDashSpeed},
         {"boxerEntryDashMaximumDistance", &BossCombatConfig::boxerEntryDashMaximumDistance},
         {"boxerEntryDashMaximumDuration", &BossCombatConfig::boxerEntryDashMaximumDuration},
+        {"boxerEntryTimeout", &BossCombatConfig::boxerEntryTimeout},
+        {"boxerBehaviorDuration", &BossCombatConfig::boxerBehaviorDuration},
+        {"boxerClosingStepMaximumDistance", &BossCombatConfig::boxerClosingStepMaximumDistance},
         {"boxerClosingStepSpeed", &BossCombatConfig::boxerClosingStepSpeed},
+        {"boxerClosingStepDuration", &BossCombatConfig::boxerClosingStepDuration},
+        {"boxerClosingStepCooldown", &BossCombatConfig::boxerClosingStepCooldown},
+        {"boxerClosingStepLateralWeight", &BossCombatConfig::boxerClosingStepLateralWeight},
+        {"boxerClosingStepEndMargin", &BossCombatConfig::boxerClosingStepEndMargin},
         {"boxerStrikeInterval", &BossCombatConfig::boxerStrikeInterval},
         {"boxerWindupDuration", &BossCombatConfig::boxerWindupDuration},
         {"boxerWindupHoldDuration", &BossCombatConfig::boxerWindupHoldDuration},
@@ -247,29 +278,53 @@ constexpr std::array<std::pair<std::string_view, float BossCombatConfig::*>, 100
         {"boxerStrikeDuration", &BossCombatConfig::boxerStrikeDuration},
         {"boxerStrikeRadius", &BossCombatConfig::boxerStrikeRadius},
         {"boxerStrikeOffset", &BossCombatConfig::boxerStrikeOffset},
+        {"boxerStrikePullbackDistance", &BossCombatConfig::boxerStrikePullbackDistance},
         {"needleTipOffset", &BossCombatConfig::needleTipOffset},
         {"needleStrikeRadius", &BossCombatConfig::needleStrikeRadius},
         {"needleWindupDuration", &BossCombatConfig::needleWindupDuration},
+        {"needlePullbackDistance", &BossCombatConfig::needlePullbackDistance},
         {"needleDashSpeed", &BossCombatConfig::needleDashSpeed},
         {"needleFrontDistance", &BossCombatConfig::needleFrontDistance},
         {"needleStrikeDuration", &BossCombatConfig::needleStrikeDuration},
+        {"needleStrikeOffset", &BossCombatConfig::needleStrikeOffset},
         {"needleStrikePauseDuration", &BossCombatConfig::needleStrikePauseDuration},
+        {"barrageFlightHeightOffset", &BossCombatConfig::barrageFlightHeightOffset},
+        {"barrageDeploymentZ", &BossCombatConfig::barrageDeploymentZ},
+        {"barrageTurnUpDuration", &BossCombatConfig::barrageTurnUpDuration},
+        {"barrageAscendSpeed", &BossCombatConfig::barrageAscendSpeed},
+        {"barrageLevelingDuration", &BossCombatConfig::barrageLevelingDuration},
+        {"barrageFlightSpeed", &BossCombatConfig::barrageFlightSpeed},
+        {"barrageDiveTurnDuration", &BossCombatConfig::barrageDiveTurnDuration},
+        {"barrageDiveSpeed", &BossCombatConfig::barrageDiveSpeed},
+        {"barrageLandingTurnDuration", &BossCombatConfig::barrageLandingTurnDuration},
         {"barrageShotInterval", &BossCombatConfig::barrageShotInterval},
+        {"barrageChargeTransitionDuration", &BossCombatConfig::barrageChargeTransitionDuration},
         {"spreadWindupDuration", &BossCombatConfig::spreadWindupDuration},
         {"spreadSpinDuration", &BossCombatConfig::spreadSpinDuration},
         {"spreadBurstRadius", &BossCombatConfig::spreadBurstRadius},
-        {"defeatDuration", &BossCombatConfig::defeatDuration},
+        {"defeatLaunchHorizontalSpeed", &BossCombatConfig::defeatLaunchHorizontalSpeed},
+        {"defeatLaunchUpwardSpeed", &BossCombatConfig::defeatLaunchUpwardSpeed},
+        {"defeatGravity", &BossCombatConfig::defeatGravity},
+        {"defeatWallBounceRetention", &BossCombatConfig::defeatWallBounceRetention},
+        {"defeatGroundBounceSpeed", &BossCombatConfig::defeatGroundBounceSpeed},
+        {"defeatGroundHorizontalRetention", &BossCombatConfig::defeatGroundHorizontalRetention},
+        {"defeatPauseDuration", &BossCombatConfig::defeatPauseDuration},
+        {"defeatSmallExplosionInterval", &BossCombatConfig::defeatSmallExplosionInterval},
+        {"defeatRotationXSpeed", &BossCombatConfig::defeatRotationXSpeed},
+        {"defeatRotationYSpeed", &BossCombatConfig::defeatRotationYSpeed},
+        {"defeatRotationZSpeed", &BossCombatConfig::defeatRotationZSpeed},
     }};
 constexpr std::array<std::pair<std::string_view, int EnemyCombatConfig::*>, 2>
     kEnemyIntegers{{
         {"baseHitPoints", &EnemyCombatConfig::baseHitPoints},
         {"day2BaseHitPoints", &EnemyCombatConfig::day2BaseHitPoints},
     }};
-constexpr std::array<std::pair<std::string_view, int BossCombatConfig::*>, 3>
+constexpr std::array<std::pair<std::string_view, int BossCombatConfig::*>, 4>
     kBossIntegers{{
         {"coreHitPoints", &BossCombatConfig::coreHitPoints},
         {"ultimateDamage", &BossCombatConfig::ultimateDamage},
         {"cruiseMaximumRetargetCount", &BossCombatConfig::cruiseMaximumRetargetCount},
+        {"chargeSequenceCount", &BossCombatConfig::chargeSequenceCount},
     }};
 }
 
@@ -305,7 +360,11 @@ bool LoadBattleCombatConfig(const std::filesystem::path& directory,
         parsed.boss.spreadPressureDistance >=
             parsed.boss.spreadPressureRearmDistance ||
         parsed.boss.chargeMinimumStartDistance <=
-            parsed.boss.spreadPressureDistance) {
+            parsed.boss.spreadPressureDistance ||
+        parsed.boss.boxerDesiredDistance <=
+            parsed.boss.boxerStrikeStartDistance ||
+        parsed.boss.boxerClosingStepMaximumDistance <=
+            parsed.boss.boxerStrikeStartDistance) {
         error = "Invalid Boss distance thresholds in '" +
             ToUtf8(directory / "boss-combat.cfg") + "'";
         return false;
@@ -315,6 +374,16 @@ bool LoadBattleCombatConfig(const std::filesystem::path& directory,
         parsed.boss.cruiseMinimumLandingPlayerDistance <= 0.0f ||
         parsed.boss.rocketDodgeDirectionDotThreshold > 1.0f) {
         error = "Invalid Boss action or cruise timing in '" +
+            ToUtf8(directory / "boss-combat.cfg") + "'";
+        return false;
+    }
+    if (parsed.boss.chargeTurnDuration +
+            parsed.boss.chargePullbackDuration >=
+            parsed.boss.chargePrepareDuration ||
+        parsed.boss.chargeSequenceCount < 1 ||
+        parsed.boss.chargeTipOffset <= 0.0f ||
+        parsed.boss.chargeTipRadius <= 0.0f) {
+        error = "Invalid Boss charge settings in '" +
             ToUtf8(directory / "boss-combat.cfg") + "'";
         return false;
     }

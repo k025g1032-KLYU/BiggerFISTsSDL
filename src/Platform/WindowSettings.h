@@ -13,12 +13,15 @@ struct DisplaySettings {
 
 DisplaySettings LoadDisplaySettings(const char* filePath = nullptr);
 
+enum class WindowShortcutContext { General, Combat, Practice };
+
 class WindowSettings {
 public:
     explicit WindowSettings(SDL_Window* window);
 
     bool Apply(const DisplaySettings& settings);
-    void ProcessEvent(const SDL_Event& event, bool practiceActive = false);
+    void ProcessEvent(const SDL_Event& event,
+        WindowShortcutContext context = WindowShortcutContext::General);
     bool ApplyPending();
     void UpdateOutputSize(Uint32 width, Uint32 height);
 

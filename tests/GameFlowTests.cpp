@@ -67,6 +67,8 @@ int main(int argc, char** argv) {
     Tick(flow, Confirm());
     success &= Check(WaitFor(flow, FlowPhase::Prologue, FlowPresentation::Story),
         "Title enters Prologue");
+    success &= Check(flow.GetScreenState().showPrompt,
+        "Prologue displays fast-forward prompt while scrolling");
     Tick(flow, Skip());
     success &= Check(WaitFor(flow, FlowPhase::Tutorial, FlowPresentation::Normal),
         "skipped Prologue enters Tutorial");
@@ -113,6 +115,8 @@ int main(int argc, char** argv) {
     Tick(normal, fast);
     success &= Check(WaitFor(normal, FlowPhase::Story0, FlowPresentation::Story),
         "normal Prologue enters Story0");
+    success &= Check(normal.GetScreenState().showPrompt,
+        "Story prompt remains visible while page enters");
     success &= Check(normal.GetScreenState().page &&
         normal.GetScreenState().page->image == "story0.png",
         "Story0 uses original long image");

@@ -209,7 +209,7 @@ FlowScreenState GameFlow::GetScreenState() const {
     state.pageY = pageY_;
     state.curtainAmount = curtainAmount_;
     state.dialogueIndex = dialogueIndex_;
-    state.showPrompt = state.page && !state.page->autoScroll && !exiting_ &&
-        !skipping_ && std::abs(pageY_ - targetY_) < 0.01f;
+    state.showPrompt = presentation_ == FlowPresentation::Story &&
+        state.page != nullptr;
     return state;
 }

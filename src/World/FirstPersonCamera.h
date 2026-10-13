@@ -3,11 +3,17 @@
 #include "Math/MathTypes.h"
 #include "Data/PlayerCombatConfig.h"
 
+enum class CameraControlMode { Driving, Observation, AligningToDriving };
+
 class FirstPersonCamera {
 public:
     explicit FirstPersonCamera(PlayerCombatConfig config = {}) : config_(config) {}
     void Reset(const Vector3& eye);
     void UpdateLook(float mouseDeltaX, float mouseDeltaY);
+    void UpdateControl(float seconds, float bodyYaw);
+    void ToggleObservationMode(float bodyYaw);
+    void BeginTutorialVisualCheck() { controlMode_ = CameraControlMode::Observation; }
+    void BeginTutorialCockpitAlignment(float bodyYaw);
     void AddShake(float strength, float duration);
     void Follow(const Vector3& cameraAnchor, double deltaSeconds,
         float movementSpeed = 0.0f);
@@ -17,6 +23,10 @@ public:
     Vector3 GetTarget() const;
     float GetYaw() const { return yaw_; }
     float GetPitch() const { return pitch_; }
+    CameraControlMode GetControlMode() const { return controlMode_; }
+    bool ShouldBodyFollowCamera() const {
+        return controlMode_ == CameraControlMode::Driving;
+    }
     float GetShakeTimeRemaining() const { return shakeTimer_; }
     bool DidStepThisFrame() const { return didStepThisFrame_; }
 
@@ -27,6 +37,7 @@ private:
     Vector3 followedAnchor_{};
     float yaw_ = 0.0f;
     float pitch_ = 0.0f;
+    CameraControlMode controlMode_ = CameraControlMode::Driving;
     float shakeStrength_ = 0.0f;
     float shakeDuration_ = 0.0f;
     float shakeTimer_ = 0.0f;

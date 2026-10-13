@@ -12,6 +12,9 @@ void FixedStepInputBuffer::QueueFrame(const GameInput& input,
     skipPressed_ |= input.skip.pressed;
     skipPhasePressed_ |= input.skipPhase.pressed;
     switchViewPressed_ |= input.switchView.pressed;
+    toggleThirdPersonPressed_ |= input.toggleThirdPerson.pressed;
+    cycleCockpitModelPressed_ |= input.cycleCockpitModel.pressed;
+    toggleCombatDataPressed_ |= input.toggleCombatData.pressed;
     dodgePressed_ |= input.dodge.pressed;
     projectileHitPressed_ |= input.testProjectileHit.pressed;
     chargeHitPressed_ |= input.testChargeHit.pressed;
@@ -37,6 +40,9 @@ SimulationStepInput FixedStepInputBuffer::ConsumeStep(int remainingSteps) {
     result.game.skip.pressed = skipPressed_;
     result.game.skipPhase.pressed = skipPhasePressed_;
     result.game.switchView.pressed = switchViewPressed_;
+    result.game.toggleThirdPerson.pressed = toggleThirdPersonPressed_;
+    result.game.cycleCockpitModel.pressed = cycleCockpitModelPressed_;
+    result.game.toggleCombatData.pressed = toggleCombatDataPressed_;
     result.game.dodge.pressed = dodgePressed_;
     result.game.testProjectileHit.pressed = projectileHitPressed_;
     result.game.testChargeHit.pressed = chargeHitPressed_;
@@ -51,6 +57,9 @@ SimulationStepInput FixedStepInputBuffer::ConsumeStep(int remainingSteps) {
     skipPressed_ = false;
     skipPhasePressed_ = false;
     switchViewPressed_ = false;
+    toggleThirdPersonPressed_ = false;
+    cycleCockpitModelPressed_ = false;
+    toggleCombatDataPressed_ = false;
     dodgePressed_ = false;
     projectileHitPressed_ = false;
     chargeHitPressed_ = false;

@@ -1,5 +1,6 @@
 #include "Data/ObjLoader.h"
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -27,6 +28,16 @@ int main() {
     passed &= Expect(model.vertices.size() > 482, "split OBJ position/UV/normal combinations");
     passed &= Expect(model.texturePath.filename() == "target.png", "resolve map_Kd PNG");
     passed &= Expect(std::filesystem::exists(model.texturePath), "original PNG exists");
+    passed &= Expect(!model.submeshes.empty() &&
+        model.submeshes.front().material.ambient[0] == 1.0f &&
+        model.submeshes.front().material.opacity == 1.0f,
+        "preserve original ambient material and opacity");
+    passed &= Expect(std::all_of(model.vertices.begin(), model.vertices.end(),
+        [](const MeshVertex& vertex) {
+            const float length = std::hypot(vertex.normal[0],
+                vertex.normal[1], vertex.normal[2]);
+            return std::isfinite(length) && length > 0.5f;
+        }), "preserve valid OBJ vertex normals");
     for (const auto index : model.indices) {
         passed &= Expect(index < model.vertices.size(), "every index refers to a vertex");
         if (!passed) {

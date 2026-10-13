@@ -4,6 +4,11 @@
 #include <cmath>
 #include <initializer_list>
 
+bool IsGamepadTriggerPressed(Sint16 value) {
+    constexpr int threshold = (30 * 32767 + 254) / 255;
+    return value > threshold;
+}
+
 InputActions::InputActions(const InputBindings& bindings)
     : bindings_(bindings) {
 }
@@ -72,10 +77,10 @@ GameInput InputActions::Evaluate(const Input& input, SDL_Gamepad* gamepad,
                 SDL_SCANCODE_C, SDL_SCANCODE_N, SDL_SCANCODE_M}) {
             shiftedCommand |= (input.GetPressModifiers(key) & SDL_KMOD_SHIFT) != 0;
         }
-        if (pressed(SDL_SCANCODE_F1)) result.practiceCommand = PracticeCommand::ThirdPerson;
-        else if (pressed(SDL_SCANCODE_F2)) result.practiceCommand = PracticeCommand::CycleCockpitModel;
-        else if (pressed(SDL_SCANCODE_F3)) result.practiceCommand = PracticeCommand::ToggleData;
-        else if (pressed(SDL_SCANCODE_F5)) result.practiceCommand = PracticeCommand::FullStartup;
+        result.toggleThirdPerson.pressed = pressed(SDL_SCANCODE_F1);
+        result.cycleCockpitModel.pressed = pressed(SDL_SCANCODE_F2);
+        result.toggleCombatData.pressed = pressed(SDL_SCANCODE_F3);
+        if (pressed(SDL_SCANCODE_F5)) result.practiceCommand = PracticeCommand::FullStartup;
         else if (pressed(SDL_SCANCODE_F6)) result.practiceCommand = PracticeCommand::QuickStartup;
         else if (pressed(SDL_SCANCODE_F7)) result.practiceCommand = PracticeCommand::BossStartup;
         else if (pressed(SDL_SCANCODE_F8)) result.practiceCommand = PracticeCommand::SystemOffline;
@@ -132,6 +137,7 @@ GameInput InputActions::Evaluate(const Input& input, SDL_Gamepad* gamepad,
     const ActionState south = button(SDL_GAMEPAD_BUTTON_SOUTH);
     const ActionState start = button(SDL_GAMEPAD_BUTTON_START);
     const ActionState rightStick = button(SDL_GAMEPAD_BUTTON_RIGHT_STICK);
+    const ActionState back = button(SDL_GAMEPAD_BUTTON_BACK);
     const ActionState leftShoulder = button(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
     const ActionState rightShoulder = button(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
     result.moveX = std::clamp(result.moveX + axis(SDL_GAMEPAD_AXIS_LEFTX), -1.0f, 1.0f);
@@ -142,12 +148,14 @@ GameInput InputActions::Evaluate(const Input& input, SDL_Gamepad* gamepad,
         static_cast<float>(deltaSeconds) / mouseSensitivity;
     result.lookY = axis(SDL_GAMEPAD_AXIS_RIGHTY) * lookRadiansPerSecond *
         static_cast<float>(deltaSeconds) / mouseSensitivity;
-    const bool leftTrigger = axis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 0.35f;
-    const bool rightTrigger = axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 0.35f;
+    const bool leftTrigger = IsGamepadTriggerPressed(
+        SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER));
+    const bool rightTrigger = IsGamepadTriggerPressed(
+        SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER));
     result.leftPunchKeyDown |= leftTrigger;
     result.rightPunchKeyDown |= rightTrigger;
-    result.leftMouseDown |= leftShoulder.down;
-    result.rightMouseDown |= rightShoulder.down;
+    result.leftGamepadRocketDown = leftShoulder.down;
+    result.rightGamepadRocketDown = rightShoulder.down;
     result.dodge.pressed |= south.pressed;
     result.dodge.down |= south.down;
     result.confirm.pressed |= south.pressed;
@@ -157,6 +165,7 @@ GameInput InputActions::Evaluate(const Input& input, SDL_Gamepad* gamepad,
     result.skip.pressed |= start.pressed;
     result.skip.down |= start.down;
     result.switchView.pressed |= rightStick.pressed;
+    result.toggleCombatData.pressed |= back.pressed;
     previousLeftTrigger_ = leftTrigger;
     previousRightTrigger_ = rightTrigger;
 

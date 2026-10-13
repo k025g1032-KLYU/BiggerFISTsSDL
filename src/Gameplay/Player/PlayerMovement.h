@@ -14,6 +14,7 @@ public:
     void Update(double deltaSeconds, float moveRight, float moveForward, float cameraYaw);
     void StartChargeImpact(const Vector3& direction, bool wasShielded);
     void StartBurstImpact(const Vector3& direction);
+    void StartBossBodyPush(const Vector3& direction);
     void StartNeedleStun();
     void StartNeedleFinisher(const Vector3& direction);
     void ClearNeedleStun();
@@ -29,8 +30,15 @@ public:
     const Vector3& GetVelocity() const { return velocity_; }
     float GetBodyYaw() const { return bodyYaw_; }
     PlayerImpactState GetImpactState() const { return impactState_; }
+    float GetImpactStateTimer() const { return impactTimer_; }
     PlayerDodgeState GetDodgeState() const { return dodgeState_; }
+    const Vector3& GetDodgeDirection() const { return dodgeDirection_; }
+    float GetDodgeStateTimer() const { return dodgeTimer_; }
     float GetDodgeCooldownRemaining() const { return dodgeCooldownRemaining_; }
+    bool IsDodgeReady() const {
+        return dodgeState_ == PlayerDodgeState::Ready &&
+            dodgeCooldownRemaining_ <= 0.0f;
+    }
 
 private:
     void ResolveResearchInstituteCollision();

@@ -9,6 +9,7 @@
 #include "Input/InputActions.h"
 #include "Input/InputBindings.h"
 #include "Input/FixedStepInputBuffer.h"
+#include "Input/PresentationReplay.h"
 #include "Platform/WindowSettings.h"
 #include "Platform/CombatFeedback.h"
 #include "Data/ObjLoader.h"
@@ -26,9 +27,12 @@
 #include "Data/StoryConfig.h"
 #include "Game/GameFlow.h"
 #include "Gameplay/Tutorial/TutorialSession.h"
+#include "Gameplay/Tutorial/TutorialEncounter.h"
 #include "Gameplay/Cockpit/CockpitPresentation.h"
+#include "Gameplay/Player/FirstPersonTuning.h"
 #include "Rendering/FullGameUi.h"
 #include "Rendering/UiRenderer.h"
+#include "Rendering/BattleHitboxOverlay.h"
 #include "Collision/Collision.h"
 
 #include <SDL3/SDL.h>
@@ -44,16 +48,24 @@
 #include <vector>
 
 namespace {
-TutorialObservation ObserveTutorial(const FirstPersonGame& player) {
+constexpr float kProjectileDamageVignetteDuration = 0.2f;
+constexpr float kProjectileDamageVignetteAlpha = 0.4f;
+constexpr float kChargeDamageVignetteDuration = 0.4f;
+constexpr float kChargeDamageVignetteAlpha = 0.7f;
+
+TutorialObservation ObserveTutorial(const FirstPersonGame& player,
+    bool defenseContact = false) {
     TutorialObservation observation{};
     observation.cameraYaw = player.GetCamera().GetYaw();
     observation.cameraPitch = player.GetCamera().GetPitch();
+    observation.cameraDriving = player.GetCamera().ShouldBodyFollowCamera();
     observation.playerPosition = player.GetPlayer().GetPosition();
     observation.leftFistAway = player.GetLeftArm().IsFistAway();
     observation.rightFistAway = player.GetRightArm().IsFistAway();
     observation.playerHit = player.GetEvents().playerHit &&
         player.GetEvents().playerHitResult.wasApplied;
     observation.dodgeStarted = player.GetEvents().dodgeStarted;
+    observation.defenseIntercepted = defenseContact;
     for (const CombatHitEvent& hit : player.GetEvents().targetHits) {
         const bool left = hit.armSide == PunchArmSide::Left;
         const bool punch = hit.attackType == PunchArmAttackType::Punch;
@@ -68,26 +80,20 @@ TutorialObservation ObserveTutorial(const FirstPersonGame& player) {
     return observation;
 }
 
-void ResetPracticeTargets(FirstPersonGame& player) {
-    std::vector<std::string> oldIds;
-    for (const FirstPersonTarget& target : player.GetTargets())
-        if (target.id.starts_with("target_tutorial_")) oldIds.push_back(target.id);
-    for (const std::string& id : oldIds) player.RemoveTarget(id);
-    constexpr float lanes[3]{4.0f, 8.0f, 12.0f};
-    constexpr float distances[3]{8.0f, 16.0f, 24.0f};
-    for (int row = 0; row < 3; ++row) {
-        for (int side = 0; side < 2; ++side) {
-            player.SpawnTarget({"target_tutorial_" + std::to_string(row * 2 + side),
-                {lanes[row] * (side == 0 ? -1.0f : 1.0f), 4.55f,
-                    distances[row]}, 1, {}, false, 1.25f});
-        }
-    }
-}
 }
 
 int Application::Run(const ApplicationOptions& options) {
     const bool battlePreview = options.battlePreview != BattlePreviewKind::None;
     const bool fullGame = !options.scenePreview && !options.firstPersonPreview;
+    PresentationReplay replay;
+    const bool scriptedReplay = !options.replayInput.empty();
+    if (scriptedReplay) {
+        std::string error;
+        if (!replay.Load(options.replayInput, options.smokeFrames, error)) {
+            std::fprintf(stderr, "%s\n", error.c_str());
+            return 1;
+        }
+    }
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("SDL_Init failed: %s", SDL_GetError());
         return 1;
@@ -118,7 +124,7 @@ int Application::Run(const ApplicationOptions& options) {
     if (!windowSettings.Apply(displaySettings)) {
         SDL_Log("Using the current window after display settings could not be applied");
     }
-    SDL_Log("Display shortcuts: F11 fullscreen, F1 1280x720, F2 1600x900, F8 next display");
+    SDL_Log("Display shortcuts: F11 fullscreen; F1/F2 resolution outside combat, Ctrl+F1/F2 during combat; F8 next display except practice (Ctrl+F8)");
 
     const char* basePath = SDL_GetBasePath();
     if (basePath == nullptr) {
@@ -255,8 +261,10 @@ int Application::Run(const ApplicationOptions& options) {
     StoryConfig storyConfig;
     std::optional<GameFlow> gameFlow;
     std::optional<TutorialSession> tutorial;
-    if (fullGame) {
-        if (!LoadStoryConfig(executableDirectory / "story-pages.cfg", storyConfig, loadError) ||
+    std::optional<TutorialEncounter> tutorialEncounter;
+    if (fullGame || battlePreview) {
+        if ((fullGame && !LoadStoryConfig(executableDirectory / "story-pages.cfg",
+                storyConfig, loadError)) ||
             !uiRenderer.Initialize(renderer.GetDevice(), window,
                 executableDirectory / "assets", storyConfig, loadError)) {
             SDL_Log("%s", loadError.c_str());
@@ -266,8 +274,10 @@ int Application::Run(const ApplicationOptions& options) {
             SDL_Quit();
             return 1;
         }
-        gameFlow.emplace(storyConfig);
-        tutorial.emplace();
+        if (fullGame && !options.presentationPreview) {
+            gameFlow.emplace(storyConfig);
+            tutorial.emplace();
+        }
     }
     Game game(config, previewScene);
     std::optional<FirstPersonGame> firstPersonGame;
@@ -356,26 +366,36 @@ int Application::Run(const ApplicationOptions& options) {
     bool isRunning = true;
     int exitCode = 0;
     int renderedFrames = 0;
+    bool frameCaptured = false;
     Uint64 smokeUpdateNanoseconds = 0;
     Uint64 smokeRenderNanoseconds = 0;
     double battleStatusElapsed = 0.0;
     float cockpitStartupRemaining = 0.0f;
     CockpitPresentation cockpitPresentation;
-    bool cockpitVisible = true;
+    if (options.presentationPreview && options.presentationBoot) {
+        cockpitPresentation.Start(CockpitMode::FullStartup);
+        const int tick = options.presentationTick < 0 ? 120 :
+            options.presentationTick;
+        for (int index = 0; index < tick; ++index)
+            cockpitPresentation.Update(static_cast<float>(FixedStepClock::kStepSeconds));
+    }
     bool tutorialPendingStart = false;
-    bool practiceThirdPerson = false;
-    bool practiceDataVisible = false;
-    int practiceModelMode = 0;
-    float tutorialDefenseElapsed = 0.0f;
-    bool tutorialMissileActive = false;
-    Vector3 tutorialMissilePosition{};
+    bool combatThirdPerson = false;
+    bool combatDataVisible = false;
+    int combatModelMode = 0;
     double fullGameElapsed = 0.0;
+    float damageVignetteRemaining = 0.0f;
+    float damageVignetteDuration = 0.0f;
+    float damageVignettePeakAlpha = 0.0f;
+    bool offlineRestartCuePlayed = false;
+    bool showHitboxes = options.showHitboxes;
     const Uint64 smokeStarted = SDL_GetTicks();
 
     while (isRunning) {
         const Uint64 frameStarted = SDL_GetTicksNS();
         frameTimer.BeginFrame();
-        const double deltaTime = frameTimer.GetDeltaTime();
+        const double deltaTime = options.captureAtFrame >= 0
+            ? FixedStepClock::kStepSeconds : frameTimer.GetDeltaTime();
         input.BeginFrame();
 
         SDL_Event event;
@@ -384,7 +404,13 @@ int Application::Run(const ApplicationOptions& options) {
             const bool practiceActive = gameFlow && tutorial &&
                 gameFlow->GetPhase() == FlowPhase::Tutorial &&
                 tutorial->IsComplete();
-            windowSettings.ProcessEvent(event, practiceActive);
+            const bool combatActive = gameFlow &&
+                (gameFlow->GetPhase() == FlowPhase::Tutorial ||
+                    gameFlow->IsBattlePhase());
+            const WindowShortcutContext shortcutContext = practiceActive
+                ? WindowShortcutContext::Practice : combatActive
+                ? WindowShortcutContext::Combat : WindowShortcutContext::General;
+            windowSettings.ProcessEvent(event, shortcutContext);
             if (combatFeedback) {
                 combatFeedback->ProcessEvent(event);
             }
@@ -398,8 +424,12 @@ int Application::Run(const ApplicationOptions& options) {
         }
 
         input.Update();
-        GameInput gameInput = inputActions.Evaluate(input,
-            combatFeedback ? combatFeedback->GetGamepad() : nullptr, deltaTime);
+        if (battlePreview && input.IsKeyPressed(SDL_SCANCODE_F9)) {
+            showHitboxes = !showHitboxes;
+        }
+        GameInput gameInput = scriptedReplay ? replay.GetFrame(renderedFrames) :
+            inputActions.Evaluate(input,
+                combatFeedback ? combatFeedback->GetGamepad() : nullptr, deltaTime);
         if (!battlePreview && !fullGame) {
             gameInput.dodge = {};
             gameInput.battleStart = {};
@@ -427,18 +457,35 @@ int Application::Run(const ApplicationOptions& options) {
         }
         if (firstPersonGame) {
             fixedStepInput.QueueFrame(gameInput,
-                input.GetMouseDeltaX() + gameInput.lookX,
-                input.GetMouseDeltaY() + gameInput.lookY);
+                (scriptedReplay ? 0.0f : input.GetMouseDeltaX()) + gameInput.lookX,
+                (scriptedReplay ? 0.0f : input.GetMouseDeltaY()) + gameInput.lookY);
             const int simulationSteps = fixedStepClock.Advance(deltaTime);
             for (int step = 0; step < simulationSteps; ++step) {
+                firstPersonView->AdvanceVisualTime(FixedStepClock::kStepSeconds);
+                damageVignetteRemaining = std::max(0.0f,
+                    damageVignetteRemaining -
+                        static_cast<float>(FixedStepClock::kStepSeconds));
                 const SimulationStepInput stepInput =
                     fixedStepInput.ConsumeStep(simulationSteps - step);
+                if (gameFlow && (gameFlow->GetPhase() == FlowPhase::Tutorial ||
+                        gameFlow->IsBattlePhase()) &&
+                    gameFlow->GetScreenState().presentation == FlowPresentation::Normal) {
+                    if (stepInput.game.toggleThirdPerson.pressed)
+                        combatThirdPerson = !combatThirdPerson;
+                    if (stepInput.game.cycleCockpitModel.pressed)
+                        combatModelMode = (combatModelMode + 1) % 4;
+                    if (stepInput.game.toggleCombatData.pressed)
+                        combatDataVisible = !combatDataVisible;
+                }
                 if (gameFlow) {
+                    fullGameElapsed += FixedStepClock::kStepSeconds;
                     const bool tutorialWasComplete = tutorial->IsComplete();
                     if (gameFlow->GetPhase() == FlowPhase::Tutorial &&
                         (stepInput.game.skip.pressed ||
                          (stepInput.game.skipPhase.pressed && !tutorial->IsComplete()))) {
                         tutorial->SkipToFreePractice();
+                        firstPersonGame->BeginTutorialCockpitAlignment();
+                        combatFeedback->StopTutorialVoice();
                         combatFeedback->StopCue("cockpitStart");
                         cockpitPresentation.Reset();
                         cockpitStartupRemaining = 0.0f;
@@ -454,8 +501,13 @@ int Application::Run(const ApplicationOptions& options) {
                     gameFlow->Update(static_cast<float>(FixedStepClock::kStepSeconds),
                         stepInput.game, result, tutorialWasComplete);
                     if (gameFlow->ConsumePhaseChanged()) {
+                        combatFeedback->StopBattleAudio();
                         combatFeedback->StopCue("cockpitStart");
+                        combatFeedback->StopCue("systemOffline");
+                        combatFeedback->StopTutorialVoice();
+                        offlineRestartCuePlayed = false;
                         combatSession.reset();
+                        tutorialEncounter.reset();
                         firstPersonGame->ResetCombatState();
                         if (fullGame) {
                             std::vector<std::string> targetIds;
@@ -478,19 +530,25 @@ int Application::Run(const ApplicationOptions& options) {
                             ? "BiggerFISTs | Story 3" : phase == FlowPhase::Boss
                             ? "BiggerFISTs | Boss" : "BiggerFISTs | Ending";
                         SDL_SetWindowTitle(window, phaseTitle);
-                        cockpitVisible = true;
                         cockpitPresentation.Reset();
-                        practiceThirdPerson = false;
-                        practiceDataVisible = false;
-                        practiceModelMode = 0;
+                        combatThirdPerson = false;
+                        combatDataVisible = false;
+                        combatModelMode = 0;
                         tutorialPendingStart = false;
                         if (phase == FlowPhase::Tutorial) {
+                            BattleCombatConfig battleConfig;
+                            if (!LoadBattleCombatConfig(executableDirectory,
+                                    battleConfig, loadError)) {
+                                SDL_Log("%s", loadError.c_str());
+                                exitCode = 1;
+                                isRunning = false;
+                                break;
+                            }
+                            tutorialEncounter.emplace(battleConfig);
                             tutorial.emplace();
                             tutorialPendingStart = true;
                             cockpitPresentation.Start(CockpitMode::FullStartup);
                             cockpitStartupRemaining = cockpitPresentation.GetDuration();
-                            tutorialDefenseElapsed = 0.0f;
-                            tutorialMissileActive = false;
                         } else if (gameFlow->IsBattlePhase()) {
                             const BattlePreviewKind kind = phase == FlowPhase::Day1
                                 ? BattlePreviewKind::Day1 : phase == FlowPhase::Day2
@@ -543,7 +601,7 @@ int Application::Run(const ApplicationOptions& options) {
                                 combatFeedback->StopCue("cockpitStart");
                                 combatSession->Reset();
                                 firstPersonGame->ResetCombatState();
-                                ResetPracticeTargets(*firstPersonGame);
+                                tutorialEncounter->ResetTargets(*firstPersonGame);
                                 cockpitPresentation.Start(command == PracticeCommand::FullStartup
                                     ? CockpitMode::FullStartup :
                                     command == PracticeCommand::QuickStartup
@@ -562,10 +620,8 @@ int Application::Run(const ApplicationOptions& options) {
                                 combatSession->Start(options.smokeTest);
                             if (tutorialPendingStart) {
                                 tutorial->Start(ObserveTutorial(*firstPersonGame));
-                                firstPersonGame->SpawnTarget({"target_tutorial_left",
-                                    {-1.55f, 4.55f, 9.0f}, 1, {}, false, 2.0f});
-                                firstPersonGame->SpawnTarget({"target_tutorial_right",
-                                    {1.55f, 4.55f, 9.0f}, 1, {}, false, 2.0f});
+                                firstPersonGame->BeginTutorialVisualCheck();
+                                tutorialEncounter->Start(*firstPersonGame);
                                 tutorialPendingStart = false;
                             }
                         }
@@ -581,88 +637,48 @@ int Application::Run(const ApplicationOptions& options) {
                             isRunning = false;
                             break;
                         }
-                        ResetPracticeTargets(*firstPersonGame);
+                        tutorialEncounter->ResetTargets(*firstPersonGame);
                         combatSession.emplace(BattlePreviewKind::Practice,
                             *firstPersonGame, EncounterConfig{}, battleConfig);
                         continue;
                     }
-                    if (stepInput.game.switchView.pressed &&
-                        (gameFlow->IsBattlePhase() ||
-                         (gameFlow->GetPhase() == FlowPhase::Tutorial &&
-                          tutorial->IsCockpitConnected()))) {
-                        cockpitVisible = !cockpitVisible;
-                    }
                     if (gameFlow->GetPhase() == FlowPhase::Tutorial &&
                         !tutorial->IsComplete()) {
                         GameInput tutorialInput = tutorial->FilterInput(stepInput.game);
-                        if (tutorial->GetStep() == TutorialStep::Defense) {
-                            tutorialDefenseElapsed += static_cast<float>(FixedStepClock::kStepSeconds);
-                            if (!tutorialMissileActive && tutorialDefenseElapsed >= 1.0f) {
-                                const Vector3& position = firstPersonGame->GetPlayer().GetPosition();
-                                tutorialMissilePosition = {position.x, 4.55f, position.z + 18.0f};
-                                tutorialMissileActive = firstPersonGame->SpawnTarget(
-                                    {"target_tutorial_missile", tutorialMissilePosition,
-                                        1, {}, false, 1.0f});
-                                tutorialDefenseElapsed = 0.0f;
-                            }
-                        }
-                        const Vector3 previousMissilePosition = tutorialMissilePosition;
-                        if (tutorialMissileActive) {
-                            tutorialMissilePosition.z -=
-                                12.0f * static_cast<float>(FixedStepClock::kStepSeconds);
-                            firstPersonGame->MoveTarget("target_tutorial_missile",
-                                tutorialMissilePosition);
-                        }
+                        tutorialEncounter->UpdateBeforePlayer(
+                            static_cast<float>(FixedStepClock::kStepSeconds),
+                            *tutorial, *firstPersonGame);
                         firstPersonGame->Update(FixedStepClock::kStepSeconds,
                             tutorialInput, stepInput.mouseDeltaX, stepInput.mouseDeltaY);
-                        if (tutorialMissileActive) {
-                            const auto& targets = firstPersonGame->GetTargets();
-                            const auto missile = std::find_if(targets.begin(), targets.end(),
-                                [](const FirstPersonTarget& target) {
-                                    return target.id == "target_tutorial_missile";
-                                });
-                            if (missile == targets.end() || missile->hitPoints <= 0) {
-                                firstPersonGame->RemoveTarget("target_tutorial_missile");
-                                tutorialMissileActive = false;
-                            }
+                        const bool defenseContact =
+                            tutorialEncounter->ResolveAfterPlayer(*firstPersonGame);
+                        for (const PlayerHitFeedback& hit :
+                                firstPersonGame->GetEvents().playerHits) {
+                            Vector3 center = firstPersonGame->GetPlayer().GetPosition();
+                            center.y += FirstPersonTuning::kPlayerColliderCenterHeight;
+                            if (const auto shieldEvent =
+                                    MakeShieldHitVisualEvent(hit, center))
+                                firstPersonView->QueueVisualEvents({*shieldEvent});
                         }
-                        if (tutorialMissileActive) {
-                            const Vector3& position = firstPersonGame->GetPlayer().GetPosition();
-                            const Collision::Sphere body{
-                                {position.x, 4.55f, position.z}, 1.6f};
-                            if (Collision::SweepSphereAgainstSphere(previousMissilePosition,
-                                    tutorialMissilePosition, 1.0f, body).didHit) {
-                                firstPersonGame->ReceivePlayerHit(PlayerHitType::Projectile);
-                                firstPersonGame->RemoveTarget("target_tutorial_missile");
-                                tutorialMissileActive = false;
-                            } else if (tutorialMissilePosition.z < position.z - 5.0f) {
-                                firstPersonGame->RemoveTarget("target_tutorial_missile");
-                                tutorialMissileActive = false;
-                            }
+                        if (const auto impact =
+                                tutorialEncounter->ConsumeProjectileImpact()) {
+                            firstPersonView->QueueVisualEvents({{
+                                BattleVisualEffect::Explosion,
+                                impact->position, impact->scale}});
+                            combatFeedback->PlayBattleEvent(
+                                BattleFeedbackEvent::ProjectileExploded);
                         }
+                        const TutorialStep previousStep = tutorial->GetStep();
                         tutorial->Update(static_cast<float>(FixedStepClock::kStepSeconds),
-                            stepInput.game, ObserveTutorial(*firstPersonGame));
-                        if (tutorial->GetStep() != TutorialStep::Defense && tutorialMissileActive) {
-                            firstPersonGame->RemoveTarget("target_tutorial_missile");
-                            tutorialMissileActive = false;
-                        }
+                            stepInput.game, ObserveTutorial(*firstPersonGame,
+                                defenseContact),
+                            combatFeedback->IsTutorialSystemVoicePlaying(),
+                            combatFeedback->IsTutorialVoicePlaying());
+                        if (tutorial->GetStep() != previousStep)
+                            tutorialEncounter->EnterStep(tutorial->GetStep(),
+                                *firstPersonGame);
                         if (const char* cue = tutorial->ConsumeVoiceCue())
                             combatFeedback->PlayTutorialVoice(cue);
-                        if (tutorial->GetStep() == TutorialStep::RocketPunch) {
-                            for (const char* id : {"target_tutorial_left", "target_tutorial_right"}) {
-                                auto found = std::find_if(firstPersonGame->GetTargets().begin(),
-                                    firstPersonGame->GetTargets().end(),
-                                    [&](const FirstPersonTarget& target) { return target.id == id; });
-                                if (found != firstPersonGame->GetTargets().end() &&
-                                    found->hitPoints <= 0) {
-                                    firstPersonGame->RemoveTarget(id);
-                                    firstPersonGame->SpawnTarget({id,
-                                        {std::string_view(id).ends_with("left") ? -1.55f : 1.55f,
-                                            4.55f, 9.0f},
-                                        1, {}, false, 2.0f});
-                                }
-                            }
-                        }
                         if (tutorial->IsComplete() && !combatSession) {
                             BattleCombatConfig battleConfig;
                             if (!LoadBattleCombatConfig(executableDirectory,
@@ -672,7 +688,7 @@ int Application::Run(const ApplicationOptions& options) {
                                 isRunning = false;
                                 break;
                             }
-                            ResetPracticeTargets(*firstPersonGame);
+                            tutorialEncounter->ResetTargets(*firstPersonGame);
                             combatSession.emplace(BattlePreviewKind::Practice,
                                 *firstPersonGame, EncounterConfig{}, battleConfig);
                             continue;
@@ -692,7 +708,7 @@ int Application::Run(const ApplicationOptions& options) {
                             combatFeedback->StopCue("cockpitStart");
                             combatSession->Reset();
                             firstPersonGame->ResetCombatState();
-                            ResetPracticeTargets(*firstPersonGame);
+                            tutorialEncounter->ResetTargets(*firstPersonGame);
                             cockpitPresentation.Start(command == PracticeCommand::FullStartup
                                 ? CockpitMode::FullStartup :
                                 command == PracticeCommand::QuickStartup
@@ -705,19 +721,16 @@ int Application::Run(const ApplicationOptions& options) {
                         if (command == PracticeCommand::SystemOffline) {
                             const bool alreadyOffline = firstPersonGame->IsSystemOffline();
                             firstPersonGame->TriggerPracticeOffline();
-                            if (!alreadyOffline) combatFeedback->PlayCue("systemOffline");
-                        } else if (command == PracticeCommand::ThirdPerson) {
-                            practiceThirdPerson = !practiceThirdPerson;
-                        } else if (command == PracticeCommand::CycleCockpitModel) {
-                            practiceModelMode = (practiceModelMode + 1) % 4;
-                        } else if (command == PracticeCommand::ToggleData) {
-                            practiceDataVisible = !practiceDataVisible;
+                            if (!alreadyOffline) {
+                                combatFeedback->PlayCue("systemOffline");
+                                offlineRestartCuePlayed = false;
+                            }
                         }
                         if (stepInput.game.resetTarget.pressed) {
                             firstPersonGame->ResetCombatState();
-                            ResetPracticeTargets(*firstPersonGame);
-                            practiceThirdPerson = false;
-                            practiceModelMode = 0;
+                            tutorialEncounter->ResetTargets(*firstPersonGame);
+                            combatThirdPerson = false;
+                            combatModelMode = 0;
                         }
                     }
                     const BattlePhase previousPhase = combatSession->GetPhase();
@@ -785,13 +798,27 @@ int Application::Run(const ApplicationOptions& options) {
                     firstPersonGame->GetEvents().rightRocketReconnected) {
                     combatFeedback->PlayRocketReconnect();
                 }
-                if (firstPersonGame->GetEvents().playerHit) {
-                    combatFeedback->PlayPlayerHit(firstPersonGame->GetEvents().playerHitType,
-                        firstPersonGame->GetEvents().playerHitResult.didDamageHitPoints);
+                for (const PlayerHitFeedback& hit :
+                        firstPersonGame->GetEvents().playerHits) {
+                    combatFeedback->PlayPlayerHit(hit.type,
+                        hit.result.didDamageHitPoints, hit.bossNeedleHit);
+                    if (hit.result.didDamageHitPoints) {
+                        const PlayerHitType hitType = hit.type;
+                        const bool chargeHit = hitType == PlayerHitType::ChargeUnit ||
+                            hitType == PlayerHitType::BossSpreadBurst ||
+                            hitType == PlayerHitType::NeedleFinisher;
+                        damageVignetteDuration = chargeHit
+                            ? kChargeDamageVignetteDuration
+                            : kProjectileDamageVignetteDuration;
+                        damageVignetteRemaining = damageVignetteDuration;
+                        damageVignettePeakAlpha = chargeHit
+                            ? kChargeDamageVignetteAlpha
+                            : kProjectileDamageVignetteAlpha;
+                    }
                     SDL_Log("Player hit: HP=%d, shields=%d, lost=%d%s",
                         firstPersonGame->GetVitality().GetHitPoints(),
                         firstPersonGame->GetVitality().GetShieldLayers(),
-                        firstPersonGame->GetEvents().playerHitResult.shieldLayersLost,
+                        hit.result.shieldLayersLost,
                         firstPersonGame->GetEvents().playerDefeated ? ", defeated" : "");
                 }
                 if (firstPersonGame->GetEvents().leftRocketLaunched) {
@@ -807,10 +834,30 @@ int Application::Run(const ApplicationOptions& options) {
                     combatFeedback->PlayDodge();
                 }
                 if (firstPersonGame->GetEvents().systemRestarted) {
-                    combatFeedback->PlaySystemRestart();
+                    combatFeedback->StopCue("systemOffline");
+                    combatFeedback->SetRocketLaunchGain(0.35f);
+                    if (!offlineRestartCuePlayed)
+                        combatFeedback->PlaySystemRestart();
+                    offlineRestartCuePlayed = false;
                 }
                 if (firstPersonGame->GetEvents().systemOfflineStarted) {
                     combatFeedback->PlayCue("systemOffline");
+                    combatFeedback->SetRocketLaunchGain(0.08f);
+                    offlineRestartCuePlayed = false;
+                }
+                if (firstPersonGame->IsSystemOffline()) {
+                    const float remaining = firstPersonGame->GetOfflineRemaining();
+                    if (!offlineRestartCuePlayed && remaining > 0.0f &&
+                        remaining <= 1.0f) {
+                        combatFeedback->StopCue("systemOffline");
+                        combatFeedback->SetRocketLaunchGain(0.35f);
+                        combatFeedback->PlaySystemRestart();
+                        offlineRestartCuePlayed = true;
+                    } else if (!offlineRestartCuePlayed && remaining < 1.25f) {
+                        combatFeedback->SetCueGain("systemOffline",
+                            0.70f * std::clamp((remaining - 1.0f) / 0.25f,
+                                0.0f, 1.0f));
+                    }
                 }
                 if (firstPersonGame->GetEvents().footstep &&
                     !firstPersonGame->GetEvents().dodgeStarted) {
@@ -868,7 +915,6 @@ int Application::Run(const ApplicationOptions& options) {
                     break;
                 }
             }
-            firstPersonView->AdvanceVisualTime(deltaTime);
             firstPersonView->Sync(*firstPersonGame,
                 static_cast<float>(fixedStepClock.GetInterpolationAlpha()));
             if (combatSession) {
@@ -908,24 +954,54 @@ int Application::Run(const ApplicationOptions& options) {
             if (gameFlow && (gameFlow->GetPhase() == FlowPhase::Tutorial ||
                     gameFlow->IsBattlePhase())) {
                 firstPersonView->SyncCockpit(*firstPersonGame, battleAssets,
-                    cockpitVisible && (gameFlow->GetPhase() != FlowPhase::Tutorial ||
-                    tutorial->IsCockpitConnected() || cockpitStartupRemaining > 0.0f),
+                    !combatThirdPerson,
                     cockpitPresentation.GetActivation(),
-                    combatSession && combatSession->IsPractice() ? practiceModelMode : 0);
-                firstPersonView->SetPracticeThirdPerson(*firstPersonGame,
-                    combatSession && combatSession->IsPractice() && practiceThirdPerson);
+                    combatModelMode,
+                    cockpitPresentation.GetMode() == CockpitMode::EmergencyReboot);
+                firstPersonView->SetCombatThirdPerson(*firstPersonGame,
+                    combatThirdPerson);
+            } else if (options.presentationPreview) {
+                firstPersonView->SyncTutorial(*firstPersonGame, battleAssets, false);
+                firstPersonView->SyncCockpit(*firstPersonGame, battleAssets,
+                    true, cockpitPresentation.GetActivation(), 0);
             }
         } else {
             game.Update(deltaTime, gameInput);
         }
         const ModelScene& scene = firstPersonView ? firstPersonView->GetScene() : game.GetScene();
+        int uiOutputWidth = 1280;
+        int uiOutputHeight = 720;
+        SDL_GetWindowSizeInPixels(window, &uiOutputWidth, &uiOutputHeight);
+        uiOutputWidth = std::max(1, uiOutputWidth);
+        uiOutputHeight = std::max(1, uiOutputHeight);
         if (gameFlow) {
-            fullGameElapsed += deltaTime;
             BuildFullGameUi(gameFlow->GetScreenState(),
                 gameFlow->GetPhase() == FlowPhase::Tutorial ? &*tutorial : nullptr,
                 combatSession ? &*combatSession : nullptr, *firstPersonGame,
-                fullGameElapsed, cockpitPresentation, practiceDataVisible,
-                uiDrawList);
+                fullGameElapsed, cockpitPresentation, combatDataVisible,
+                scene, uiDrawList, damageVignetteDuration > 0.0f
+                    ? damageVignettePeakAlpha * damageVignetteRemaining /
+                        damageVignetteDuration : 0.0f,
+                uiOutputWidth, uiOutputHeight);
+        } else if (options.presentationPreview) {
+            FlowScreenState previewState{};
+            previewState.phase = FlowPhase::Tutorial;
+            BuildFullGameUi(previewState, nullptr, nullptr,
+                *firstPersonGame, fullGameElapsed, cockpitPresentation,
+                false, scene, uiDrawList, 0.0f,
+                uiOutputWidth, uiOutputHeight);
+            const ModelInstance* cockpit = FindModelById(scene, "fullgame_cockpit");
+            if (!cockpit || cockpit->renderLayer != ModelRenderLayer::FirstPerson) {
+                SDL_Log("Presentation preview is missing the first-person cockpit");
+                exitCode = 1;
+                break;
+            }
+        }
+        if (battlePreview) {
+            uiDrawList.Clear();
+            if (showHitboxes && combatSession) {
+                BuildBattleHitboxOverlay(*combatSession, scene, uiDrawList);
+            }
         }
         if (options.dynamicTargetSmokeTest) {
             const ModelInstance* dynamicTarget = FindModelById(scene, "target_dynamic");
@@ -947,12 +1023,21 @@ int Application::Run(const ApplicationOptions& options) {
         if (options.smokeTest) {
             smokeUpdateNanoseconds += renderStarted - frameStarted;
         }
+        const std::string& capturePath = options.captureFrame.empty()
+            ? options.presentationCapture : options.captureFrame;
+        const bool shouldCapture = !frameCaptured && !capturePath.empty() &&
+            renderedFrames == std::max(0, options.captureAtFrame);
         if (!renderer.Render(scene, windowSettings, &frameRendered,
-                gameFlow ? &uiRenderer : nullptr, gameFlow ? &uiDrawList : nullptr)) {
+                fullGame || battlePreview ? &uiRenderer : nullptr,
+                fullGame || options.presentationPreview || battlePreview
+                    ? &uiDrawList : nullptr,
+                shouldCapture ? capturePath.c_str() : nullptr)) {
             SDL_Log("3D rendering failed");
             isRunning = false;
             exitCode = 1;
         }
+        if (frameRendered && shouldCapture)
+            frameCaptured = true;
         if (options.smokeTest) {
             smokeRenderNanoseconds += SDL_GetTicksNS() - renderStarted;
         }
@@ -962,9 +1047,14 @@ int Application::Run(const ApplicationOptions& options) {
                     smokeUpdateNanoseconds / (static_cast<double>(options.smokeFrames) * 1000000.0),
                     smokeRenderNanoseconds / (static_cast<double>(options.smokeFrames) * 1000000.0));
                 if (options.dynamicTargetSmokeTest) {
-                    SDL_Log("PASS: Dynamic Target spawned, moved, removed and rendered across 30 GPU frames");
+                    SDL_Log("PASS: Dynamic Target spawned, moved, removed and rendered across %d GPU frames", options.smokeFrames);
                 } else if (gameFlow) {
                     SDL_Log("PASS: Full game rendered %d GPU frames with UI", options.smokeFrames);
+                } else if (options.presentationPreview) {
+                    SDL_Log("PASS: Presentation preview rendered %d GPU frames at startup tick %d",
+                        options.smokeFrames, options.presentationBoot
+                        ? (options.presentationTick < 0 ? 120 : options.presentationTick)
+                        : 288);
                 } else if (battlePreview) {
                     SDL_Log("PASS: Battle preview rendered %d GPU frames with %u models, %u enemies and %u projectiles",
                         options.smokeFrames,
@@ -972,13 +1062,15 @@ int Application::Run(const ApplicationOptions& options) {
                         static_cast<Uint32>(combatSession->GetEnemies().size()),
                         static_cast<Uint32>(combatSession->GetProjectiles().size()));
                 } else if (options.firstPersonPreview) {
-                    SDL_Log("PASS: BiggerFISTsSDL %s rendered 30 3D frames with Targets, fists and upper arms",
-                        options.playerCombatPreview ? "player combat preview" : "first-person preview");
+                    SDL_Log("PASS: BiggerFISTsSDL %s rendered %d 3D frames with Targets, fists and upper arms",
+                        options.playerCombatPreview ? "player combat preview" : "first-person preview",
+                        options.smokeFrames);
                 } else if (options.missileUnitModelPreview) {
-                    SDL_Log("PASS: Original MissileUnit model rendered 30 3D frames with two PNG materials");
+                    SDL_Log("PASS: Original MissileUnit model rendered %d 3D frames with two PNG materials",
+                        options.smokeFrames);
                 } else if (options.scenePreview) {
-                    SDL_Log("PASS: BiggerFISTsSDL scene preview rendered 30 3D frames with %u models",
-                        static_cast<Uint32>(scene.models.size()));
+                    SDL_Log("PASS: BiggerFISTsSDL scene preview rendered %d 3D frames with %u models",
+                        options.smokeFrames, static_cast<Uint32>(scene.models.size()));
                 } else {
                     SDL_Log("PASS: BiggerFISTsSDL rendered 30 3D frames");
                 }

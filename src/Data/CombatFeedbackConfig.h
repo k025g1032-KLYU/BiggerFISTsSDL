@@ -31,6 +31,10 @@ struct CombatFeedbackConfig {
     float dodgeGain = 0.0f;
     float ultimateLaunchGain = 0.0f;
     float battleCueGain = 0.5f;
+    float bossSmallExplosionGain = 0.2f;
+    float bossFinalExplosionGain = 0.95f;
+    float bossSharpShieldHitGain = 0.45f;
+    float bossSharpHitPointGain = 0.65f;
     std::uint16_t punchRumbleLow = 0;
     std::uint16_t punchRumbleHigh = 0;
     std::uint32_t punchRumbleMs = 0;

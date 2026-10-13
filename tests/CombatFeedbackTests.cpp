@@ -30,7 +30,9 @@ int main(int argc, char** argv) {
     feedback.PlayRocketReconnect();
     feedback.PlayPlayerHit(PlayerHitType::Projectile, false);
     feedback.PlayPlayerHit(PlayerHitType::Projectile, true);
+    feedback.PlayPlayerHit(PlayerHitType::Projectile, false, true);
     feedback.PlayPlayerHit(PlayerHitType::ChargeUnit, false);
+    feedback.PlayPlayerHit(PlayerHitType::NeedleFinisher, true);
     for (const auto& [name, cue] : config.cues) {
         if (name != "engineLoop") feedback.PlayCue(name);
     }
@@ -40,6 +42,15 @@ int main(int argc, char** argv) {
         std::puts("FAIL: engine loop did not queue audio");
         return 1;
     }
+    feedback.SetRocketLaunchGain(0.08f);
+    feedback.StopBattleAudio();
+    if (feedback.IsEngineLoopQueued()) {
+        std::puts("FAIL: scene exit left engine audio queued");
+        return 1;
+    }
+    feedback.SetRocketLaunchGain(config.rocketLaunchGain);
+    feedback.SetEngineLoop(true);
+    feedback.UpdateMusic(1.0f / 60.0f);
     feedback.SetEngineLoop(false);
     if (feedback.IsEngineLoopQueued()) {
         std::puts("FAIL: engine loop did not stop");

@@ -16,6 +16,20 @@ Vector3 BlendPosition(const Vector3& previous, const Vector3& current,
         previous.z + (current.z - previous.z) * alpha};
 }
 
+Vector3 FormationFistPosition(const FirstPersonGame& game,
+    const PunchArm& arm, float alpha) {
+    Vector3 position = BlendPosition(arm.GetPreviousFistPosition(),
+        arm.GetFistPosition(), alpha);
+    if (game.GetUltimateState() == UltimateState::Forming &&
+        arm.GetState() == PunchArmState::Charged &&
+        arm.GetAttackType() == PunchArmAttackType::RocketPunch) {
+        position = BlendPosition(position,
+            game.GetUltimateFormationPosition(),
+            game.GetUltimateFormationRatio());
+    }
+    return position;
+}
+
 Vector3 ShoulderPosition(const FirstPersonGame& game, float sideSign,
     float alpha) {
     const Vector3 player = BlendPosition(game.GetPlayer().GetPreviousPosition(),
@@ -88,6 +102,7 @@ FirstPersonScenePresenter::FirstPersonScenePresenter(ModelScene initialScene)
 void FirstPersonScenePresenter::Sync(const FirstPersonGame& game,
     float interpolationAlpha) {
     interpolationAlpha_ = std::clamp(interpolationAlpha, 0.0f, 1.0f);
+    scene_.interpolationAlpha = interpolationAlpha_;
     scene_.cameraPosition = BlendPosition(
         game.GetCamera().GetPreviousPosition(),
         game.GetCamera().GetPosition(), interpolationAlpha_);
@@ -143,8 +158,7 @@ void FirstPersonScenePresenter::UpdateFistPose(const char* id, float sideSign,
     if (fist == nullptr) {
         return;
     }
-    const Vector3 fistPosition = BlendPosition(
-        arm.GetPreviousFistPosition(), arm.GetFistPosition(),
+    const Vector3 fistPosition = FormationFistPosition(game, arm,
         interpolationAlpha_);
     if (arm.IsFistAway()) {
         fist->position = fistPosition;
@@ -170,8 +184,11 @@ void FirstPersonScenePresenter::UpdateFistPose(const char* id, float sideSign,
         180.0f / std::numbers::pi_v<float>;
     fist->initialYDegrees = std::atan2(forearmX, forearmZ) *
         180.0f / std::numbers::pi_v<float>;
-    fist->initialZDegrees = (arm.GetState() == PunchArmState::Ready ||
-        arm.GetState() == PunchArmState::Recovery) ? -sideSign * 90.0f : 0.0f;
+    fist->initialZDegrees = game.GetUltimateState() == UltimateState::Forming
+        ? -sideSign * 90.0f * game.GetUltimateFormationRatio()
+        : (arm.GetState() == PunchArmState::Ready ||
+            arm.GetState() == PunchArmState::Recovery)
+        ? -sideSign * 90.0f : 0.0f;
 }
 
 void FirstPersonScenePresenter::UpdateUpperArmPose(const char* id, float sideSign,
@@ -182,8 +199,7 @@ void FirstPersonScenePresenter::UpdateUpperArmPose(const char* id, float sideSig
     }
     const Vector3 shoulder = ShoulderPosition(game, sideSign,
         interpolationAlpha_);
-    const Vector3 fistPosition = BlendPosition(
-        arm.GetPreviousFistPosition(), arm.GetFistPosition(),
+    const Vector3 fistPosition = FormationFistPosition(game, arm,
         interpolationAlpha_);
     const Vector3 elbow = ElbowPosition(game, arm, sideSign, shoulder,
         fistPosition);

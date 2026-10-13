@@ -282,7 +282,8 @@ bool WindowSettings::Apply(const DisplaySettings& requested) {
     return true;
 }
 
-void WindowSettings::ProcessEvent(const SDL_Event& event, bool practiceActive) {
+void WindowSettings::ProcessEvent(const SDL_Event& event,
+    WindowShortcutContext context) {
     if (event.type == SDL_EVENT_DISPLAY_REMOVED) {
         if (event.display.displayID == displayId_) {
             pending_ = hasPending_ ? pending_ : settings_;
@@ -317,8 +318,11 @@ void WindowSettings::ProcessEvent(const SDL_Event& event, bool practiceActive) {
     if (key != SDL_SCANCODE_F1 && key != SDL_SCANCODE_F2 && key != SDL_SCANCODE_F8 && key != SDL_SCANCODE_F11) {
         return;
     }
-    if (practiceActive && key != SDL_SCANCODE_F11 &&
-        (event.key.mod & SDL_KMOD_CTRL) == 0) return;
+    const bool inspectionKey = key == SDL_SCANCODE_F1 || key == SDL_SCANCODE_F2;
+    const bool practiceOfflineKey = key == SDL_SCANCODE_F8 &&
+        context == WindowShortcutContext::Practice;
+    if (((inspectionKey && context != WindowShortcutContext::General) ||
+            practiceOfflineKey) && (event.key.mod & SDL_KMOD_CTRL) == 0) return;
     if (!hasPending_) {
         Refresh();
         pending_ = settings_;

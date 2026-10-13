@@ -28,11 +28,39 @@ Vector3 BlendPosition(const Vector3& current, const Vector3& target,
         current.z + (target.z - current.z) * amount};
 }
 
+Vector3 TipToward(const Vector3& root, const Vector3& target,
+    const Vector3& fallbackDirection, float offset) {
+    const Vector3 delta{target.x - root.x, target.y - root.y,
+        target.z - root.z};
+    const float length = std::hypot(delta.x, delta.y, delta.z);
+    const Vector3 direction = length > 0.00001f
+        ? Vector3{delta.x / length, delta.y / length, delta.z / length}
+        : fallbackDirection;
+    return {root.x + direction.x * offset,
+        root.y + direction.y * offset,
+        root.z + direction.z * offset};
+}
+
 Vector3 BlendRotation(const Vector3& current, const Vector3& target,
     float amount) {
     return {BlendAngle(current.x, target.x, amount),
         BlendAngle(current.y, target.y, amount),
         BlendAngle(current.z, target.z, amount)};
+}
+
+bool MoveTowards(Vector3& position, const Vector3& target, float distance) {
+    const Vector3 delta{target.x - position.x, target.y - position.y,
+        target.z - position.z};
+    const float remaining = std::sqrt(delta.x * delta.x + delta.y * delta.y +
+        delta.z * delta.z);
+    if (remaining <= distance || remaining <= 0.00001f) {
+        position = target;
+        return true;
+    }
+    position.x += delta.x * distance / remaining;
+    position.y += delta.y * distance / remaining;
+    position.z += delta.z * distance / remaining;
+    return false;
 }
 }
 
@@ -44,16 +72,28 @@ void BattleBoss::Reset(const Vector3& position) {
     position_ = position;
     previousPosition_ = position;
     mode_ = BossMode::Entrance;
-    practiceNeedlePose_ = -1;
+    needlePose_ = BossNeedlePose::ChargeForm;
     modeTime_ = 0.0f;
+    barragePhase_ = BarragePhase::TurningUp;
+    barragePhaseTime_ = 0.0f;
+    barragePitch_ = 0.0f;
+    barrageShotTimer_ = 0.0f;
     entranceRecovering_ = false;
     entranceRecoveryTime_ = 0.0f;
     attackTimer_ = 0.0f;
     hitPoints_ = config_.coreHitPoints;
+    coreHitFlashRemaining_ = 0.0f;
     behaviorRandomState_ = 0x6d2b79f5u;
     lastIdleAction_ = BossMode::Entrance;
     boxerCooldown_ = 0.0f;
     chargeCooldown_ = 0.0f;
+    chargePhase_ = ChargePhase::Preparing;
+    chargePhaseTime_ = 0.0f;
+    chargeSequenceCount_ = 0;
+    chargeTipHit_ = false;
+    chargeBodyContact_ = false;
+    chargeTipAttackId_ = 0;
+    chargeBodyAttackId_ = 0;
     cruiseCooldown_ = 0.0f;
     cruisePhase_ = CruisePhase::TakingOff;
     cruiseTarget_ = position;
@@ -67,16 +107,31 @@ void BattleBoss::Reset(const Vector3& position) {
     strikeTime_ = 0.0f;
     boxerPhase_ = BoxerPhase::Approaching;
     boxerPhaseTime_ = 0.0f;
+    boxerNeedleIndex_ = -1;
+    boxerVisualStart_ = {};
+    boxerVisualPullback_ = {};
+    boxerVisualTarget_ = {};
+    boxerVisualDirection_ = {};
     boxerEntryDashDistance_ = 0.0f;
+    boxerClosingStepCooldown_ = 0.0f;
     usedBoxerEntryDash_ = false;
+    boxerCombatStarted_ = false;
     boxerEntryDirection_ = {};
     needleDashComplete_ = false;
+    needleVisualInitialized_ = false;
+    needleVisualDirection_ = {};
+    needleVisualTarget_ = {};
+    needleVisualStart_.fill({});
+    needleVisualPullback_.fill({});
+    needleVisualCurrent_.fill({});
     needleFirstHit_ = false;
     needleFirstAttackId_ = 0;
     needleImpactTime_ = 0.0f;
     needleImpactAttackId_ = 0;
     nextSpikeSlot_ = 0;
     nextCubeSlot_ = 0;
+    spikeShotSequence_ = 0;
+    cubeShotSequence_ = 0;
     crystalAngle_ = 0.0f;
     spikeSlots_.fill({});
     cubeSlots_.fill({});
@@ -101,6 +156,19 @@ void BattleBoss::Reset(const Vector3& position) {
     boxerRocketDodgeCooldown_ = 0.0f;
     rocketDodgeSpeed_ = 0.0f;
     beganRocketDodgeThisStep_ = false;
+    beganCrystalLaunchThisStep_ = false;
+    beganChargeThisStep_ = false;
+    beganStrikeThisStep_ = false;
+    lastPlayerPosition_ = {};
+    defeatVelocity_ = {};
+    defeatRotation_ = {};
+    defeatStartPitch_ = 0.0f;
+    defeatSmallExplosionPosition_ = {};
+    defeatPhase_ = DefeatPhase::Airborne;
+    defeatPhaseTime_ = 0.0f;
+    defeatSmallExplosionTime_ = 0.0f;
+    defeatSmallExplosionCount_ = 0;
+    emittedDefeatSmallExplosionThisStep_ = false;
     visualYaw_ = 0.0f;
     const BossVisualPose initialPose = CalculateTargetVisualPose();
     visualCones_ = initialPose.cones;
@@ -170,14 +238,14 @@ BossVisualPose BattleBoss::CalculateTargetVisualPose() const {
     }};
     BossVisualPose pose;
     pose.rootRotation.y = visualYaw_;
-    pose.cones = cruise;
-    if (mode_ == BossMode::Idle && practiceNeedlePose_ >= 0) {
-        switch (practiceNeedlePose_) {
-        case 1: pose.cones = spread; break;
-        case 2: pose.cones = needle; break;
-        case 3: pose.cones = {}; pose.coreRotation.x = pi * 0.5f; break;
-        default: break;
-        }
+    switch (needlePose_) {
+    case BossNeedlePose::Cruise: pose.cones = cruise; break;
+    case BossNeedlePose::Spread: pose.cones = spread; break;
+    case BossNeedlePose::NeedleStrike: pose.cones = needle; break;
+    case BossNeedlePose::ChargeForm:
+        pose.cones = {};
+        pose.coreRotation.x = pi * 0.5f;
+        break;
     }
     pose.crystalAngle = crystalAngle_;
     if (mode_ == BossMode::Entrance) {
@@ -186,27 +254,59 @@ BossVisualPose BattleBoss::CalculateTargetVisualPose() const {
                 config_.entranceFlipDuration, 0.0f, 1.0f)
             : 0.0f;
         pose.rootRotation.x = -pi * 0.5f * (1.0f - recoveryRatio);
-    } else if (mode_ == BossMode::Charge) {
-        pose.cones = {};
-        pose.coreRotation.x = pi * 0.5f;
-    } else if (mode_ == BossMode::NeedleCombo || mode_ == BossMode::Boxer) {
-        pose.cones = needle;
-        if (activeAttackId_ != 0) {
-            const std::size_t index = mode_ == BossMode::NeedleCombo
-                ? static_cast<std::size_t>(std::clamp(attackCount_ - 1, 0, 2))
-                : 0;
-            const Vector3 direction = DirectionTo(position_, strikePrevious_);
-            const float distance = std::hypot(strikePrevious_.x - position_.x,
-                strikePrevious_.z - position_.z);
-            const float localAngle = std::atan2(direction.x, direction.z) - visualYaw_;
+    } else if (mode_ == BossMode::Boxer && boxerNeedleIndex_ >= 0 &&
+        (boxerPhase_ == BoxerPhase::WindingUp ||
+            boxerPhase_ == BoxerPhase::Holding ||
+            boxerPhase_ == BoxerPhase::Striking ||
+            boxerPhase_ == BoxerPhase::Recovering)) {
+        const std::size_t index = static_cast<std::size_t>(boxerNeedleIndex_);
+        Vector3 worldPosition = boxerVisualStart_;
+        if (boxerPhase_ == BoxerPhase::WindingUp) {
+            worldPosition = BlendPosition(boxerVisualStart_,
+                boxerVisualPullback_, std::clamp(boxerPhaseTime_ /
+                    config_.boxerWindupDuration, 0.0f, 1.0f));
+        } else if (boxerPhase_ == BoxerPhase::Holding) {
+            worldPosition = boxerVisualPullback_;
+        } else if (boxerPhase_ == BoxerPhase::Striking) {
+            worldPosition = BlendPosition(boxerVisualPullback_,
+                boxerVisualTarget_, std::clamp(boxerPhaseTime_ /
+                    config_.boxerStrikeDuration, 0.0f, 1.0f));
+        } else {
+            const Vector3& base = needle[index].translation;
+            const float sine = std::sin(visualYaw_);
+            const float cosine = std::cos(visualYaw_);
+            const Vector3 returnPosition{
+                position_.x + base.x * cosine + base.z * sine,
+                position_.y + base.y,
+                position_.z - base.x * sine + base.z * cosine};
+            worldPosition = BlendPosition(boxerVisualTarget_,
+                returnPosition, std::clamp(boxerPhaseTime_ /
+                    config_.boxerRecoveryDuration, 0.0f, 1.0f));
+        }
+        const float sine = std::sin(visualYaw_);
+        const float cosine = std::cos(visualYaw_);
+        const float offsetX = worldPosition.x - position_.x;
+        const float offsetZ = worldPosition.z - position_.z;
+        pose.cones[index].rootTranslation = {
+            offsetX * cosine - offsetZ * sine,
+            worldPosition.y - position_.y,
+            offsetX * sine + offsetZ * cosine};
+        pose.cones[index].translation = {};
+    } else if (mode_ == BossMode::NeedleCombo &&
+        needleVisualInitialized_ && needleImpactAttackId_ == 0) {
+        const float sine = std::sin(visualYaw_);
+        const float cosine = std::cos(visualYaw_);
+        for (std::size_t index = 0; index < pose.cones.size(); ++index) {
+            const Vector3& world = needleVisualCurrent_[index];
+            const float offsetX = world.x - position_.x;
+            const float offsetZ = world.z - position_.z;
             pose.cones[index].rootTranslation = {
-                std::sin(localAngle) * distance,
-                strikePrevious_.y - position_.y,
-                std::cos(localAngle) * distance};
+                offsetX * cosine - offsetZ * sine,
+                world.y - position_.y,
+                offsetX * sine + offsetZ * cosine};
             pose.cones[index].translation = {};
         }
     } else if (mode_ == BossMode::SpreadCounter) {
-        pose.cones = spread;
         const float spinTime = modeTime_ - config_.spreadWindupDuration;
         if (spinTime > 0.0f) {
             pose.spreadSpin = std::clamp(spinTime /
@@ -214,13 +314,11 @@ BossVisualPose BattleBoss::CalculateTargetVisualPose() const {
                 4.0f * pi;
         }
     } else if (mode_ == BossMode::FullBarrage) {
-        const float height = position_.y - config_.hoverHeight;
-        pose.rootRotation.x = pi * 0.5f *
-            std::clamp(height / 12.0f, 0.0f, 1.0f);
+        pose.rootRotation.x = barragePitch_;
     } else if (mode_ == BossMode::Defeating || mode_ == BossMode::Defeated) {
-        pose.rootRotation.x = modeTime_ * 2.2f;
-        pose.rootRotation.y += modeTime_ * 3.0f;
-        pose.rootRotation.z = modeTime_ * 1.2f;
+        pose.rootRotation.x = defeatStartPitch_ + defeatRotation_.x;
+        pose.rootRotation.y += defeatRotation_.y;
+        pose.rootRotation.z = defeatRotation_.z;
     }
     for (std::size_t index = 0; index < pose.spikes.size(); ++index) {
         const float angle = crystalAngle_ + 2.0f * pi *
@@ -272,11 +370,14 @@ void BattleBoss::UpdateVisualPose(float seconds) {
                 spreadStartCones_[index].rootTranslation,
                 destination.rootTranslation, progress);
         } else if (mode_ == BossMode::SpreadCounter ||
-            ((mode_ == BossMode::NeedleCombo || mode_ == BossMode::Boxer) &&
-                activeAttackId_ != 0 &&
-                index == (mode_ == BossMode::Boxer ? 0u :
-                    static_cast<std::size_t>(std::clamp(attackCount_ - 1,
-                        0, 2))))) {
+            (mode_ == BossMode::Boxer && boxerNeedleIndex_ >= 0 &&
+                (boxerPhase_ == BoxerPhase::WindingUp ||
+                    boxerPhase_ == BoxerPhase::Holding ||
+                    boxerPhase_ == BoxerPhase::Striking ||
+                    boxerPhase_ == BoxerPhase::Recovering) &&
+                index == static_cast<std::size_t>(boxerNeedleIndex_)) ||
+            (mode_ == BossMode::NeedleCombo &&
+                needleVisualInitialized_ && needleImpactAttackId_ == 0)) {
             current = destination;
         } else {
             current.translation = BlendPosition(current.translation,
@@ -291,6 +392,30 @@ void BattleBoss::UpdateVisualPose(float seconds) {
         target.coreRotation, amount);
 }
 
+void BattleBoss::InitializeNeedleVisual(const Vector3& playerPosition) {
+    needleVisualDirection_ = DirectionTo(position_, playerPosition);
+    visualYaw_ = std::atan2(needleVisualDirection_.x,
+        needleVisualDirection_.z) + std::numbers::pi_v<float>;
+    const BossVisualPose basePose = CalculateTargetVisualPose();
+    const float sine = std::sin(visualYaw_);
+    const float cosine = std::cos(visualYaw_);
+    for (std::size_t index = 0; index < needleVisualStart_.size(); ++index) {
+        const Vector3& local = basePose.cones[index].translation;
+        needleVisualStart_[index] = {
+            position_.x + local.x * cosine + local.z * sine,
+            position_.y + local.y,
+            position_.z - local.x * sine + local.z * cosine};
+        needleVisualPullback_[index] = {
+            needleVisualStart_[index].x - needleVisualDirection_.x *
+                config_.needlePullbackDistance,
+            needleVisualStart_[index].y,
+            needleVisualStart_[index].z - needleVisualDirection_.z *
+                config_.needlePullbackDistance};
+        needleVisualCurrent_[index] = needleVisualStart_[index];
+    }
+    needleVisualInitialized_ = true;
+}
+
 void BattleBoss::BeginBehavior(BossMode mode) {
     if (mode_ == BossMode::Defeating || mode_ == BossMode::Defeated) {
         return;
@@ -298,8 +423,52 @@ void BattleBoss::BeginBehavior(BossMode mode) {
     if (mode == BossMode::SpreadCounter) {
         spreadStartCones_ = visualCones_;
     }
-    practiceNeedlePose_ = -1;
     mode_ = mode;
+    switch (mode) {
+    case BossMode::Entrance:
+    case BossMode::Charge:
+        needlePose_ = BossNeedlePose::ChargeForm;
+        if (mode == BossMode::Charge) {
+            chargePhase_ = ChargePhase::Preparing;
+            chargePhaseTime_ = 0.0f;
+            chargeSequenceCount_ = 0;
+            chargeTipHit_ = false;
+            chargeBodyContact_ = false;
+            chargeTipAttackId_ = 0;
+            chargeBodyAttackId_ = 0;
+        }
+        break;
+    case BossMode::Cruise:
+        needlePose_ = BossNeedlePose::Cruise;
+        break;
+    case BossMode::FullBarrage:
+        needlePose_ = BossNeedlePose::Cruise;
+        if (std::hypot(lastPlayerPosition_.x - position_.x,
+                lastPlayerPosition_.z - position_.z) > 0.00001f) {
+            visualYaw_ = std::atan2(lastPlayerPosition_.x - position_.x,
+                lastPlayerPosition_.z - position_.z) +
+                std::numbers::pi_v<float>;
+        }
+        barragePhase_ = BarragePhase::TurningUp;
+        barragePhaseTime_ = 0.0f;
+        barragePitch_ = 0.0f;
+        barrageShotTimer_ = 0.0f;
+        spikeSlots_.fill({});
+        cubeSlots_.fill({});
+        nextSpikeSlot_ = nextCubeSlot_ = 0;
+        break;
+    case BossMode::Idle:
+    case BossMode::SpreadCounter:
+        needlePose_ = BossNeedlePose::Spread;
+        break;
+    case BossMode::Boxer:
+    case BossMode::NeedleCombo:
+        needlePose_ = BossNeedlePose::NeedleStrike;
+        break;
+    case BossMode::Defeating:
+    case BossMode::Defeated:
+        break;
+    }
     modeTime_ = 0.0f;
     attackTimer_ = 0.0f;
     attackCount_ = 0;
@@ -310,9 +479,13 @@ void BattleBoss::BeginBehavior(BossMode mode) {
         boxerPhase_ = BoxerPhase::Approaching;
         boxerPhaseTime_ = 0.0f;
         boxerEntryDashDistance_ = 0.0f;
+        boxerClosingStepCooldown_ = 0.0f;
         usedBoxerEntryDash_ = false;
+        boxerCombatStarted_ = false;
     } else if (mode == BossMode::NeedleCombo) {
         needleDashComplete_ = false;
+        needleVisualInitialized_ = false;
+        strikePrevious_ = position_;
         needleFirstHit_ = false;
         needleFirstAttackId_ = 0;
         needleImpactTime_ = 0.0f;
@@ -324,7 +497,12 @@ void BattleBoss::CyclePracticeNeedlePose() {
     if (mode_ != BossMode::Idle && mode_ != BossMode::Cruise) return;
     mode_ = BossMode::Idle;
     modeTime_ = 0.0f;
-    practiceNeedlePose_ = (practiceNeedlePose_ + 1) % 4;
+    switch (needlePose_) {
+    case BossNeedlePose::Cruise: needlePose_ = BossNeedlePose::Spread; break;
+    case BossNeedlePose::Spread: needlePose_ = BossNeedlePose::NeedleStrike; break;
+    case BossNeedlePose::NeedleStrike: needlePose_ = BossNeedlePose::ChargeForm; break;
+    case BossNeedlePose::ChargeForm: needlePose_ = BossNeedlePose::Cruise; break;
+    }
 }
 
 float BattleBoss::NextBehaviorRandom() {
@@ -513,6 +691,7 @@ void BattleBoss::UpdateCruise(float seconds, const Vector3& playerPosition) {
         const float step = std::min(distance,
             config_.cruiseFlightSpeed * seconds);
         if (distance > 0.00001f) {
+            visualYaw_ = std::atan2(dx, dz) + std::numbers::pi_v<float>;
             position_.x += dx / distance * step;
             position_.z += dz / distance * step;
         }
@@ -533,6 +712,15 @@ void BattleBoss::UpdateCruise(float seconds, const Vector3& playerPosition) {
         break;
     }
     case CruisePhase::Landing:
+        if (const Vector3 facing = DirectionTo(position_, playerPosition);
+            std::hypot(facing.x, facing.z) > 0.00001f) {
+            const float targetYaw = std::atan2(facing.x, facing.z) +
+                std::numbers::pi_v<float>;
+            const float turn = std::remainder(targetYaw - visualYaw_,
+                2.0f * std::numbers::pi_v<float>);
+            visualYaw_ += std::clamp(turn,
+                -5.5f * seconds, 5.5f * seconds);
+        }
         position_.y = std::max(config_.hoverHeight,
             position_.y - config_.cruiseLandingSpeed * seconds);
         if (position_.y <= config_.hoverHeight) {
@@ -557,13 +745,17 @@ bool BattleBoss::BeginCrystalLaunch(bool spike) {
         }
         return false;
     };
-    return spike ? begin(spikeSlots_, nextSpikeSlot_)
+    const bool launched = spike ? begin(spikeSlots_, nextSpikeSlot_)
         : begin(cubeSlots_, nextCubeSlot_);
+    beganCrystalLaunchThisStep_ |= launched;
+    return launched;
 }
 
 void BattleBoss::UpdateCrystals(float seconds,
     std::vector<BossAttackEvent>& attacks) {
-    crystalAngle_ += config_.crystalHaloRotationSpeed * seconds;
+    crystalAngle_ = std::remainder(crystalAngle_ +
+        config_.crystalHaloRotationSpeed * seconds,
+        2.0f * std::numbers::pi_v<float>);
     const auto update = [&](auto& slots, BossAttackType type,
         float radiusScale, float phase) {
         for (std::size_t index = 0; index < slots.size(); ++index) {
@@ -591,7 +783,29 @@ void BattleBoss::UpdateCrystals(float seconds,
                     config_.crystalLaunchDuration);
                 slot.position.y += progress * config_.crystalLaunchHeight;
                 if (progress >= 1.0f) {
-                    attacks.push_back({type, slot.position});
+                    const bool spike = type == BossAttackType::CrystalSpike;
+                    const std::uint32_t sequence = spike
+                        ? spikeShotSequence_++ : cubeShotSequence_++;
+                    const float laneRatio = spike
+                        ? static_cast<float>((sequence * 5u) % 11u) / 10.0f
+                        : static_cast<float>((sequence * 7u + 3u) % 11u) / 10.0f;
+                    const float minimumX = -24.0f + config_.coreRadius;
+                    const float maximumX = 24.0f - config_.coreRadius;
+                    const Vector3 spawn{
+                        minimumX + (maximumX - minimumX) * laneRatio,
+                        config_.hoverHeight,
+                        42.0f + config_.crystalRemoteSpawnMargin};
+                    const Vector3 towardBase{-spawn.x, 0.0f, -16.0f - spawn.z};
+                    const float distance = std::hypot(towardBase.x, towardBase.z);
+                    BossAttackEvent shot{type, spawn};
+                    shot.direction = distance > 0.00001f
+                        ? Vector3{towardBase.x / distance, 0.0f,
+                            towardBase.z / distance}
+                        : Vector3{0.0f, 0.0f, -1.0f};
+                    shot.oscillationPhase = spike ? 0.0f
+                        : static_cast<float>(sequence) *
+                            std::numbers::pi_v<float> * 0.5f;
+                    attacks.push_back(shot);
                     slot.launchTime = 0.0f;
                     if (mode_ == BossMode::FullBarrage) {
                         slot.consumed = true;
@@ -607,6 +821,120 @@ void BattleBoss::UpdateCrystals(float seconds,
     };
     update(spikeSlots_, BossAttackType::CrystalSpike, 1.0f, 0.0f);
     update(cubeSlots_, BossAttackType::CrystalCube, 0.76f, 0.78539816f);
+}
+
+void BattleBoss::UpdateFullBarrage(float seconds,
+    const Vector3& playerPosition) {
+    constexpr float halfPi = std::numbers::pi_v<float> * 0.5f;
+    barragePhaseTime_ += seconds;
+    const float flightHeight = config_.hoverHeight +
+        config_.barrageFlightHeightOffset;
+    const Vector3 flightTarget{0.0f, flightHeight,
+        config_.barrageDeploymentZ};
+    const Vector3 attackTarget{0.0f, config_.hoverHeight,
+        config_.barrageDeploymentZ};
+    const auto advance = [&](BarragePhase phase) {
+        barragePhase_ = phase;
+        barragePhaseTime_ = 0.0f;
+    };
+    switch (barragePhase_) {
+    case BarragePhase::TurningUp: {
+        const float ratio = std::clamp(barragePhaseTime_ /
+            config_.barrageTurnUpDuration, 0.0f, 1.0f);
+        barragePitch_ = halfPi * ratio;
+        if (ratio >= 1.0f) advance(BarragePhase::Ascending);
+        break;
+    }
+    case BarragePhase::Ascending:
+        if (MoveTowards(position_, {position_.x, flightHeight, position_.z},
+                config_.barrageAscendSpeed * seconds))
+            advance(BarragePhase::LevelingOut);
+        break;
+    case BarragePhase::LevelingOut: {
+        const float ratio = std::clamp(barragePhaseTime_ /
+            config_.barrageLevelingDuration, 0.0f, 1.0f);
+        barragePitch_ = halfPi * (1.0f - ratio);
+        if (ratio >= 1.0f) advance(BarragePhase::MovingToDeployment);
+        break;
+    }
+    case BarragePhase::MovingToDeployment: {
+        const Vector3 travel{flightTarget.x - position_.x, 0.0f,
+            flightTarget.z - position_.z};
+        if (std::hypot(travel.x, travel.z) > 0.00001f) {
+            visualYaw_ = std::atan2(travel.x, travel.z) +
+                std::numbers::pi_v<float>;
+        }
+        if (MoveTowards(position_, flightTarget,
+                config_.barrageFlightSpeed * seconds))
+            advance(BarragePhase::TurningDown);
+        break;
+    }
+    case BarragePhase::TurningDown: {
+        const float ratio = std::clamp(barragePhaseTime_ /
+            config_.barrageDiveTurnDuration, 0.0f, 1.0f);
+        barragePitch_ = -halfPi * ratio;
+        if (ratio >= 1.0f) advance(BarragePhase::Diving);
+        break;
+    }
+    case BarragePhase::Diving:
+        if (MoveTowards(position_, attackTarget,
+                config_.barrageDiveSpeed * seconds)) {
+            needlePose_ = BossNeedlePose::Spread;
+            advance(BarragePhase::TurningToSpread);
+        }
+        break;
+    case BarragePhase::TurningToSpread: {
+        const Vector3 towardPlayer = DirectionTo(position_, playerPosition);
+        const float targetYaw = std::atan2(towardPlayer.x,
+            towardPlayer.z) + std::numbers::pi_v<float>;
+        const float turn = std::remainder(targetYaw - visualYaw_,
+            2.0f * std::numbers::pi_v<float>);
+        const float maximumTurn = std::numbers::pi_v<float> * seconds /
+            config_.barrageLandingTurnDuration;
+        visualYaw_ += std::clamp(turn, -maximumTurn, maximumTurn);
+        const float ratio = std::clamp(barragePhaseTime_ /
+            config_.barrageLandingTurnDuration, 0.0f, 1.0f);
+        barragePitch_ = -halfPi * (1.0f - ratio);
+        if (ratio >= 1.0f) {
+            barrageShotTimer_ = 0.0f;
+            advance(BarragePhase::Firing);
+        }
+        break;
+    }
+    case BarragePhase::Firing: {
+        barrageShotTimer_ -= seconds;
+        if (attackCount_ < 10 && barrageShotTimer_ <= 0.0f) {
+            const bool spike = attackCount_ % 2 == 0;
+            if (BeginCrystalLaunch(spike) || BeginCrystalLaunch(!spike)) {
+                ++attackCount_;
+                barrageShotTimer_ = config_.barrageShotInterval;
+            }
+        }
+        const auto launching = [](const BossCrystalSlot& slot) {
+            return slot.launchTime > 0.0f;
+        };
+        if (attackCount_ >= 10 &&
+            !std::any_of(spikeSlots_.begin(), spikeSlots_.end(), launching) &&
+            !std::any_of(cubeSlots_.begin(), cubeSlots_.end(), launching)) {
+            needlePose_ = BossNeedlePose::ChargeForm;
+            advance(BarragePhase::ChargeTransition);
+        }
+        break;
+    }
+    case BarragePhase::ChargeTransition:
+        if (barragePhaseTime_ >=
+            config_.barrageChargeTransitionDuration) {
+            fullBarrageDamageLocked_ = false;
+            const float playerDistance = std::hypot(
+                playerPosition.x - position_.x,
+                playerPosition.z - position_.z);
+            if (playerDistance >= config_.chargeMinimumStartDistance)
+                BeginBehavior(BossMode::Charge);
+            else
+                BeginCruise(playerPosition);
+        }
+        break;
+    }
 }
 
 bool BattleBoss::UpdateRocketDodge(float seconds,
@@ -652,6 +980,7 @@ bool BattleBoss::UpdateRocketDodge(float seconds,
     if (mode_ == BossMode::Boxer && confirmedAim &&
         (boxerPhase_ == BoxerPhase::Approaching ||
             boxerPhase_ == BoxerPhase::Orbiting ||
+            boxerPhase_ == BoxerPhase::ClosingStep ||
             boxerPhase_ == BoxerPhase::Recovering) &&
         rocketDodgeCooldown_ <= 0.0f &&
         boxerRocketDodgeCooldown_ <= 0.0f) {
@@ -682,12 +1011,34 @@ bool BattleBoss::ReceiveHit(int damage) {
     if (!needleComboUsed_ && hitPoints_ <= config_.coreHitPoints / 2) {
         needleComboPending_ = true;
     }
+    coreHitFlashRemaining_ = hitPoints_ > 0 ? 0.18f : 0.0f;
     if (hitPoints_ == 0) {
+        defeatStartPitch_ = CalculateTargetVisualPose().rootRotation.x;
         mode_ = BossMode::Defeating;
         modeTime_ = 0.0f;
         attackRegistered_ = false;
+        defeatPhase_ = DefeatPhase::Airborne;
+        defeatPhaseTime_ = 0.0f;
+        defeatSmallExplosionTime_ = 0.0f;
+        defeatSmallExplosionCount_ = 0;
+        defeatRotation_ = {};
+        const Vector3 direction{position_.x - lastPlayerPosition_.x, 0.0f,
+            position_.z - lastPlayerPosition_.z};
+        SetDefeatLaunchDirection(direction);
     }
     return true;
+}
+
+void BattleBoss::SetDefeatLaunchDirection(const Vector3& direction) {
+    if (mode_ != BossMode::Defeating) {
+        return;
+    }
+    const float length = std::hypot(direction.x, direction.z);
+    const float unitX = length > 0.00001f ? direction.x / length : 0.0f;
+    const float unitZ = length > 0.00001f ? direction.z / length : 1.0f;
+    defeatVelocity_ = {unitX * config_.defeatLaunchHorizontalSpeed,
+        config_.defeatLaunchUpwardSpeed,
+        unitZ * config_.defeatLaunchHorizontalSpeed};
 }
 
 bool BattleBoss::RegisterNeedleStrikeHit(std::uint64_t attackId) {
@@ -699,22 +1050,63 @@ bool BattleBoss::RegisterNeedleStrikeHit(std::uint64_t attackId) {
     return false;
 }
 
+bool BattleBoss::RegisterChargeTipHit(std::uint64_t attackId) {
+    if (mode_ != BossMode::Charge ||
+        chargePhase_ != ChargePhase::Charging ||
+        attackId != chargeTipAttackId_ || chargeTipHit_) {
+        return false;
+    }
+    chargeTipHit_ = true;
+    chargePhase_ = ChargePhase::Impact;
+    chargePhaseTime_ = 0.0f;
+    return true;
+}
+
+bool BattleBoss::RegisterChargeBodyContact(std::uint64_t attackId) {
+    if (mode_ != BossMode::Charge ||
+        chargePhase_ != ChargePhase::Charging ||
+        attackId != chargeBodyAttackId_ || chargeBodyContact_) {
+        return false;
+    }
+    chargeBodyContact_ = true;
+    return true;
+}
+
 std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
     const Vector3& playerPosition, const BossPlayerThreat& threat) {
     std::vector<BossAttackEvent> attacks;
     beganRocketDodgeThisStep_ = false;
+    beganCrystalLaunchThisStep_ = false;
+    beganChargeThisStep_ = false;
+    beganStrikeThisStep_ = false;
+    emittedDefeatSmallExplosionThisStep_ = false;
     if (!std::isfinite(seconds) || seconds < 0.0f ||
         mode_ == BossMode::Defeated) {
         return attacks;
     }
     previousVisualPose_ = GetVisualPose();
+    coreHitFlashRemaining_ = std::max(0.0f,
+        coreHitFlashRemaining_ - seconds);
     previousPosition_ = position_;
     modeTime_ += seconds;
+    if (mode_ == BossMode::Defeating) {
+        UpdateDefeat(seconds);
+        UpdateVisualPose(seconds);
+        return attacks;
+    }
+    lastPlayerPosition_ = playerPosition;
     if ((mode_ != BossMode::Entrance || entranceRecovering_) &&
-        mode_ != BossMode::Defeating) {
-        const Vector3 towardPlayer = DirectionTo(position_, playerPosition);
-        const float targetYaw = std::atan2(towardPlayer.x,
-            towardPlayer.z) + std::numbers::pi_v<float>;
+        mode_ != BossMode::Defeating && mode_ != BossMode::FullBarrage &&
+        mode_ != BossMode::NeedleCombo && mode_ != BossMode::Charge) {
+        const bool isBoxerStriking = mode_ == BossMode::Boxer &&
+            (boxerPhase_ == BoxerPhase::WindingUp ||
+                boxerPhase_ == BoxerPhase::Holding ||
+                boxerPhase_ == BoxerPhase::Striking ||
+                boxerPhase_ == BoxerPhase::Recovering);
+        const Vector3 facing = isBoxerStriking ? boxerVisualDirection_
+            : DirectionTo(position_, playerPosition);
+        const float targetYaw = std::atan2(facing.x,
+            facing.z) + std::numbers::pi_v<float>;
         const float turn = std::remainder(targetYaw - visualYaw_,
             2.0f * std::numbers::pi_v<float>);
         visualYaw_ += std::clamp(turn, -5.5f * seconds, 5.5f * seconds);
@@ -827,29 +1219,73 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
         break;
     }
     case BossMode::Charge:
-        if (modeTime_ < config_.chargePrepareDuration) {
-            chargeDirection_ = DirectionTo(position_, playerPosition);
-        } else if (modeTime_ < config_.chargePrepareDuration + 0.6f) {
-            position_.x += chargeDirection_.x * config_.chargeSpeed * seconds;
-            position_.z += chargeDirection_.z * config_.chargeSpeed * seconds;
-            if (!attackRegistered_ &&
-                Collision::SweepSphereAgainstMovingSphere(previousPosition_,
-                    position_, config_.coreRadius,
-                    {playerPosition.x, playerPosition.y +
-                        FirstPersonTuning::kPlayerColliderCenterHeight,
-                        playerPosition.z},
-                    {playerPosition.x, playerPosition.y +
-                        FirstPersonTuning::kPlayerColliderCenterHeight,
-                        playerPosition.z},
-                    FirstPersonTuning::kPlayerColliderRadius).didHit) {
-                attacks.push_back({BossAttackType::ChargeImpact, position_});
-                attackRegistered_ = true;
+        chargePhaseTime_ += seconds;
+        if (chargePhase_ == ChargePhase::Preparing) {
+            const Vector3 towardPlayer = DirectionTo(position_, playerPosition);
+            const float targetYaw = std::atan2(towardPlayer.x,
+                towardPlayer.z) + std::numbers::pi_v<float>;
+            const float difference = std::remainder(targetYaw - visualYaw_,
+                2.0f * std::numbers::pi_v<float>);
+            visualYaw_ += std::clamp(difference,
+                -config_.chargeAimTurnSpeed * seconds,
+                config_.chargeAimTurnSpeed * seconds);
+            if (chargePhaseTime_ > config_.chargeTurnDuration &&
+                chargePhaseTime_ <= config_.chargeTurnDuration +
+                    config_.chargePullbackDuration) {
+                const float pullbackSpeed = config_.chargePullbackDistance /
+                    config_.chargePullbackDuration;
+                position_.x -= towardPlayer.x * pullbackSpeed * seconds;
+                position_.z -= towardPlayer.z * pullbackSpeed * seconds;
             }
-        } else if (modeTime_ >= config_.chargePrepareDuration + 1.0f) {
-            BeginBehavior(BossMode::Idle);
+            if (chargePhaseTime_ >= config_.chargePrepareDuration) {
+                chargeDirection_ = DirectionTo(position_, playerPosition);
+                chargePhase_ = ChargePhase::Charging;
+                chargePhaseTime_ = 0.0f;
+                beganChargeThisStep_ = true;
+                chargeTipHit_ = false;
+                chargeBodyContact_ = false;
+                chargeTipAttackId_ = nextAttackId_++;
+                chargeBodyAttackId_ = nextAttackId_++;
+            }
+        } else if (chargePhase_ == ChargePhase::Charging) {
+            if (MoveChargeWithinBattlefield(config_.chargeSpeed * seconds)) {
+                chargePhase_ = ChargePhase::WallImpact;
+                chargePhaseTime_ = 0.0f;
+                break;
+            }
+            const Vector3 tip{position_.x + chargeDirection_.x *
+                    config_.chargeTipOffset, position_.y,
+                position_.z + chargeDirection_.z *
+                    config_.chargeTipOffset};
+            const Vector3 previousTip{previousPosition_.x +
+                    chargeDirection_.x * config_.chargeTipOffset,
+                previousPosition_.y, previousPosition_.z +
+                    chargeDirection_.z * config_.chargeTipOffset};
+            attacks.push_back({BossAttackType::ChargeImpact, tip,
+                previousTip, config_.chargeTipRadius, chargeTipAttackId_});
+            attacks.push_back({BossAttackType::ChargeBodyContact, position_,
+                previousPosition_, config_.coreRadius,
+                chargeBodyAttackId_});
+        } else if ((chargePhase_ == ChargePhase::Impact &&
+                chargePhaseTime_ >= config_.chargeImpactDuration) ||
+            (chargePhase_ == ChargePhase::WallImpact &&
+                chargePhaseTime_ >= config_.chargeWallImpactDuration)) {
+            ++chargeSequenceCount_;
+            const float distance = std::hypot(playerPosition.x - position_.x,
+                playerPosition.z - position_.z);
+            if (!chargeTipHit_ &&
+                chargeSequenceCount_ < config_.chargeSequenceCount &&
+                distance >= config_.chargeMinimumStartDistance) {
+                chargePhase_ = ChargePhase::Preparing;
+                chargePhaseTime_ = 0.0f;
+            } else {
+                BeginBehavior(BossMode::Idle);
+            }
         }
         break;
     case BossMode::Boxer: {
+        boxerClosingStepCooldown_ = std::max(0.0f,
+            boxerClosingStepCooldown_ - seconds);
         if (UpdateRocketDodge(seconds, playerPosition, threat)) {
             break;
         }
@@ -857,61 +1293,164 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
             playerPosition.z - position_.z);
         const Vector3 direction = DirectionTo(position_, playerPosition);
         boxerPhaseTime_ += seconds;
+        const auto boxerTipAt = [&](const Vector3& root) {
+            return TipToward(root, boxerVisualTarget_,
+                boxerVisualDirection_, config_.needleTipOffset);
+        };
         const auto beginStrike = [&](const Vector3& strikeDirection) {
+            beganStrikeThisStep_ = true;
+            if (!boxerCombatStarted_) {
+                boxerCombatStarted_ = true;
+                modeTime_ = 0.0f;
+            }
+            const int nextNeedleIndex = (boxerNeedleIndex_ + 1) % 3;
+            const BossPartPose base = CalculateTargetVisualPose().cones[
+                static_cast<std::size_t>(nextNeedleIndex)];
             boxerPhase_ = BoxerPhase::WindingUp;
             boxerPhaseTime_ = 0.0f;
-            strikeStart_ = {position_.x + strikeDirection.x * 2.2f,
-                position_.y, position_.z + strikeDirection.z * 2.2f};
-            strikeEnd_ = {position_.x + strikeDirection.x *
-                (config_.boxerStrikeOffset + config_.needleTipOffset),
-                position_.y, position_.z + strikeDirection.z *
-                (config_.boxerStrikeOffset + config_.needleTipOffset)};
-            strikePrevious_ = strikeStart_;
+            boxerNeedleIndex_ = nextNeedleIndex;
+            const float sine = std::sin(visualYaw_);
+            const float cosine = std::cos(visualYaw_);
+            boxerVisualStart_ = {
+                position_.x + base.translation.x * cosine +
+                    base.translation.z * sine,
+                position_.y + base.translation.y,
+                position_.z - base.translation.x * sine +
+                    base.translation.z * cosine};
+            boxerVisualTarget_ = {
+                position_.x + strikeDirection.x * config_.boxerStrikeOffset,
+                position_.y,
+                position_.z + strikeDirection.z * config_.boxerStrikeOffset};
+            const Vector3 towardTarget{
+                boxerVisualTarget_.x - boxerVisualStart_.x,
+                boxerVisualTarget_.y - boxerVisualStart_.y,
+                boxerVisualTarget_.z - boxerVisualStart_.z};
+            const float targetDistance = std::sqrt(
+                towardTarget.x * towardTarget.x +
+                towardTarget.y * towardTarget.y +
+                towardTarget.z * towardTarget.z);
+            const Vector3 pullbackDirection = targetDistance > 0.00001f
+                ? Vector3{towardTarget.x / targetDistance,
+                    towardTarget.y / targetDistance,
+                    towardTarget.z / targetDistance}
+                : Vector3{0.0f, 0.0f, -1.0f};
+            boxerVisualPullback_ = {
+                boxerVisualStart_.x - pullbackDirection.x *
+                    config_.boxerStrikePullbackDistance,
+                boxerVisualStart_.y - pullbackDirection.y *
+                    config_.boxerStrikePullbackDistance,
+                boxerVisualStart_.z - pullbackDirection.z *
+                    config_.boxerStrikePullbackDistance};
+            boxerVisualDirection_ = strikeDirection;
+            visualYaw_ = std::atan2(strikeDirection.x, strikeDirection.z) +
+                std::numbers::pi_v<float>;
+            strikePrevious_ = boxerTipAt(boxerVisualStart_);
         };
-        if (boxerPhase_ == BoxerPhase::Approaching ||
-            boxerPhase_ == BoxerPhase::Orbiting) {
-            if (boxerPhase_ == BoxerPhase::Approaching &&
-                !usedBoxerEntryDash_ &&
-                distance > config_.boxerDesiredDistance + 0.8f &&
+        if (boxerPhase_ == BoxerPhase::Approaching) {
+            if (!usedBoxerEntryDash_ &&
+                distance > config_.boxerDesiredDistance +
+                    config_.boxerDistanceTolerance &&
                 distance <= config_.boxerEntryMaximumDistance) {
                 boxerPhase_ = BoxerPhase::EntryWindup;
                 boxerPhaseTime_ = 0.0f;
                 break;
             }
-            attackTimer_ = std::min(config_.boxerStrikeInterval,
-                attackTimer_ + seconds);
-            if (distance > config_.boxerDesiredDistance) {
-                position_.x += direction.x * config_.boxerApproachSpeed * seconds;
-                position_.z += direction.z * config_.boxerApproachSpeed * seconds;
-                boxerPhase_ = BoxerPhase::Approaching;
-            } else {
-                boxerPhase_ = BoxerPhase::Orbiting;
-                const Vector3 tangent{-direction.z * idleStrafeSide_, 0.0f,
-                    direction.x * idleStrafeSide_};
-                const float radial = std::clamp(distance -
-                    config_.boxerDesiredDistance, -1.0f, 1.0f);
-                float moveX = tangent.x + direction.x * radial;
-                float moveZ = tangent.z + direction.z * radial;
-                if (attackTimer_ >= config_.boxerStrikeInterval &&
-                    distance > config_.boxerStrikeStartDistance) {
-                    moveX = direction.x;
-                    moveZ = direction.z;
-                }
-                const float length = std::hypot(moveX, moveZ);
-                if (length > 0.00001f) {
-                    const float speed = attackTimer_ >=
-                        config_.boxerStrikeInterval
-                        ? config_.boxerClosingStepSpeed
-                        : config_.boxerOrbitSpeed;
-                    position_.x += moveX / length * speed * seconds;
-                    position_.z += moveZ / length * speed * seconds;
+            const float approachDistance = std::max(0.0f,
+                distance - config_.boxerDesiredDistance);
+            const float step = std::min(config_.boxerApproachSpeed * seconds,
+                approachDistance);
+            position_.x += direction.x * step;
+            position_.z += direction.z * step;
+            const float currentDistance = std::hypot(
+                playerPosition.x - position_.x,
+                playerPosition.z - position_.z);
+            if (currentDistance <= config_.boxerDesiredDistance +
+                    config_.boxerDistanceTolerance) {
+                if (usedBoxerEntryDash_ && !boxerCombatStarted_ &&
+                    currentDistance <= config_.boxerStrikeStartDistance) {
+                    beginStrike(DirectionTo(position_, playerPosition));
+                } else {
+                    boxerPhase_ = BoxerPhase::Orbiting;
+                    boxerPhaseTime_ = 0.0f;
                 }
             }
+        } else if (boxerPhase_ == BoxerPhase::Orbiting) {
+            if (distance > config_.boxerClosingStepMaximumDistance) {
+                boxerPhase_ = BoxerPhase::Approaching;
+                boxerPhaseTime_ = 0.0f;
+                break;
+            }
+            if (attackTimer_ >= config_.boxerStrikeInterval &&
+                distance <= config_.boxerStrikeStartDistance) {
+                beginStrike(direction);
+                break;
+            }
+            if (attackTimer_ >= config_.boxerStrikeInterval &&
+                distance > config_.boxerStrikeStartDistance &&
+                boxerClosingStepCooldown_ <= 0.0f) {
+                boxerPhase_ = BoxerPhase::ClosingStep;
+                boxerPhaseTime_ = 0.0f;
+                boxerClosingStepCooldown_ =
+                    config_.boxerClosingStepCooldown;
+                break;
+            }
+            const Vector3 tangent{-direction.z * idleStrafeSide_, 0.0f,
+                direction.x * idleStrafeSide_};
+            const float radial = std::clamp(distance -
+                config_.boxerDesiredDistance, -1.0f, 1.0f);
+            const Vector3 move = attackTimer_ >= config_.boxerStrikeInterval &&
+                    distance > config_.boxerStrikeStartDistance
+                ? direction
+                : Vector3{tangent.x + direction.x * radial, 0.0f,
+                    tangent.z + direction.z * radial};
+            const float length = std::hypot(move.x, move.z);
+            if (length > 0.00001f) {
+                position_.x += move.x / length * config_.boxerOrbitSpeed * seconds;
+                position_.z += move.z / length * config_.boxerOrbitSpeed * seconds;
+            }
+            attackTimer_ = std::min(config_.boxerStrikeInterval,
+                attackTimer_ + seconds);
             if (attackTimer_ >= config_.boxerStrikeInterval &&
                 std::hypot(playerPosition.x - position_.x,
                     playerPosition.z - position_.z) <=
                     config_.boxerStrikeStartDistance) {
                 beginStrike(DirectionTo(position_, playerPosition));
+            }
+        } else if (boxerPhase_ == BoxerPhase::ClosingStep) {
+            if (distance <= config_.boxerStrikeStartDistance) {
+                beginStrike(direction);
+                break;
+            }
+            if (distance > config_.boxerClosingStepMaximumDistance) {
+                boxerPhase_ = BoxerPhase::Approaching;
+                boxerPhaseTime_ = 0.0f;
+                break;
+            }
+            const Vector3 tangent{-direction.z * idleStrafeSide_, 0.0f,
+                direction.x * idleStrafeSide_};
+            const float moveX = direction.x + tangent.x *
+                config_.boxerClosingStepLateralWeight;
+            const float moveZ = direction.z + tangent.z *
+                config_.boxerClosingStepLateralWeight;
+            const float length = std::hypot(moveX, moveZ);
+            const float step = std::min(config_.boxerClosingStepSpeed * seconds,
+                distance - config_.boxerStrikeStartDistance +
+                    config_.boxerClosingStepEndMargin);
+            if (length > 0.00001f) {
+                position_.x += moveX / length * step;
+                position_.z += moveZ / length * step;
+            }
+            const float currentDistance = std::hypot(
+                playerPosition.x - position_.x,
+                playerPosition.z - position_.z);
+            if (currentDistance <= config_.boxerStrikeStartDistance) {
+                beginStrike(DirectionTo(position_, playerPosition));
+            } else if (boxerPhaseTime_ >=
+                    config_.boxerClosingStepDuration) {
+                boxerPhase_ = currentDistance >
+                    config_.boxerClosingStepMaximumDistance
+                    ? BoxerPhase::Approaching : BoxerPhase::Orbiting;
+                boxerPhaseTime_ = 0.0f;
             }
         } else if (boxerPhase_ == BoxerPhase::EntryWindup) {
             position_.x -= direction.x * config_.boxerEntryPullbackDistance *
@@ -953,24 +1492,31 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
                 boxerPhase_ = BoxerPhase::Approaching;
                 boxerPhaseTime_ = 0.0f;
             }
-        } else if (boxerPhase_ == BoxerPhase::WindingUp &&
-            boxerPhaseTime_ >= config_.boxerWindupDuration) {
-            boxerPhase_ = BoxerPhase::Holding;
-            boxerPhaseTime_ = 0.0f;
-        } else if (boxerPhase_ == BoxerPhase::Holding &&
-            boxerPhaseTime_ >= config_.boxerWindupHoldDuration) {
-            boxerPhase_ = BoxerPhase::Striking;
-            boxerPhaseTime_ = 0.0f;
-            activeAttackId_ = nextAttackId_++;
-            strikeTime_ = 0.0f;
+        } else if (boxerPhase_ == BoxerPhase::WindingUp) {
+            const float progress = std::clamp(boxerPhaseTime_ /
+                config_.boxerWindupDuration, 0.0f, 1.0f);
+            strikePrevious_ = boxerTipAt(BlendPosition(boxerVisualStart_,
+                boxerVisualPullback_, progress));
+            if (boxerPhaseTime_ >= config_.boxerWindupDuration) {
+                boxerPhase_ = BoxerPhase::Holding;
+                boxerPhaseTime_ = 0.0f;
+                strikePrevious_ = boxerTipAt(boxerVisualPullback_);
+            }
+        } else if (boxerPhase_ == BoxerPhase::Holding) {
+            strikePrevious_ = boxerTipAt(boxerVisualPullback_);
+            if (boxerPhaseTime_ >= config_.boxerWindupHoldDuration) {
+                boxerPhase_ = BoxerPhase::Striking;
+                boxerPhaseTime_ = 0.0f;
+                activeAttackId_ = nextAttackId_++;
+                strikeTime_ = 0.0f;
+            }
         } else if (boxerPhase_ == BoxerPhase::Striking) {
             strikeTime_ += seconds;
             const float progress = std::clamp(strikeTime_ /
                 config_.boxerStrikeDuration, 0.0f, 1.0f);
-            const Vector3 tip{strikeStart_.x +
-                (strikeEnd_.x - strikeStart_.x) * progress,
-                strikeStart_.y + (strikeEnd_.y - strikeStart_.y) * progress,
-                strikeStart_.z + (strikeEnd_.z - strikeStart_.z) * progress};
+            const Vector3 root = BlendPosition(boxerVisualPullback_,
+                boxerVisualTarget_, progress);
+            const Vector3 tip = boxerTipAt(root);
             attacks.push_back({BossAttackType::BoxerStrike, tip,
                 strikePrevious_, config_.boxerStrikeRadius, activeAttackId_});
             strikePrevious_ = tip;
@@ -985,15 +1531,27 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
             boxerPhaseTime_ = 0.0f;
             attackTimer_ = 0.0f;
             idleStrafeSide_ = -idleStrafeSide_;
+            if (boxerNeedleIndex_ >= 0) {
+                visualCones_[static_cast<std::size_t>(boxerNeedleIndex_)] =
+                    CalculateTargetVisualPose().cones[
+                        static_cast<std::size_t>(boxerNeedleIndex_)];
+            }
         }
-        if (modeTime_ >= 4.0f &&
+        if (modeTime_ >= (boxerCombatStarted_
+                ? config_.boxerBehaviorDuration
+                : config_.boxerEntryTimeout) &&
             (boxerPhase_ == BoxerPhase::Approaching ||
-                boxerPhase_ == BoxerPhase::Orbiting)) {
-            BeginBehavior(BossMode::Idle);
+                boxerPhase_ == BoxerPhase::Orbiting ||
+                boxerPhase_ == BoxerPhase::ClosingStep)) {
+            cruiseCooldown_ = config_.cruiseCooldown;
+            BeginCruise(playerPosition);
         }
         break;
     }
     case BossMode::NeedleCombo: {
+        if (!needleVisualInitialized_) {
+            InitializeNeedleVisual(playerPosition);
+        }
         const float strikePeriod = config_.needleStrikeDuration +
             config_.needleStrikePauseDuration;
         if (attackCount_ == 1 && activeAttackId_ == 0 &&
@@ -1004,18 +1562,38 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
         }
         if (!needleDashComplete_) {
             if (modeTime_ < config_.needleWindupDuration) {
+                strikePrevious_ = position_;
+                const float progress = std::clamp(modeTime_ /
+                    config_.needleWindupDuration, 0.0f, 1.0f);
+                for (std::size_t index = 0;
+                        index < needleVisualCurrent_.size(); ++index) {
+                    needleVisualCurrent_[index] = BlendPosition(
+                        needleVisualStart_[index],
+                        needleVisualPullback_[index], progress);
+                }
                 break;
             }
+            if (modeTime_ - seconds < config_.needleWindupDuration) {
+                needleVisualCurrent_ = needleVisualPullback_;
+            }
+            strikePrevious_ = position_;
             const float distance = std::hypot(playerPosition.x - position_.x,
                 playerPosition.z - position_.z);
             if (distance > config_.needleFrontDistance) {
                 const Vector3 direction = DirectionTo(position_,
                     playerPosition);
+                needleVisualDirection_ = direction;
+                visualYaw_ = std::atan2(direction.x, direction.z) +
+                    std::numbers::pi_v<float>;
                 const float dashDistance = std::min(
                     config_.needleDashSpeed * seconds,
                     distance - config_.needleFrontDistance);
                 position_.x += direction.x * dashDistance;
                 position_.z += direction.z * dashDistance;
+                for (Vector3& current : needleVisualCurrent_) {
+                    current.x += direction.x * dashDistance;
+                    current.z += direction.z * dashDistance;
+                }
             }
             if (std::hypot(playerPosition.x - position_.x,
                     playerPosition.z - position_.z) >
@@ -1029,31 +1607,35 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
         const float activeTime = attackTimer_;
         if (activeTime >= 0.0f && attackCount_ < 3 &&
             activeTime >= attackCount_ * strikePeriod) {
-            const Vector3 direction = DirectionTo(position_, playerPosition);
+            beganStrikeThisStep_ = true;
             activeAttackId_ = nextAttackId_++;
             if (attackCount_ == 0) {
                 needleFirstAttackId_ = activeAttackId_;
             }
             strikeTime_ = 0.0f;
-            const float lateral = static_cast<float>(attackCount_ - 1) * 1.4f;
-            strikeStart_ = {position_.x + direction.x * 2.2f -
-                direction.z * lateral, position_.y,
-                position_.z + direction.z * 2.2f + direction.x * lateral};
-            strikeEnd_ = {position_.x + direction.x *
-                (config_.needleTipOffset + 4.75f) - direction.z * lateral,
-                position_.y, position_.z + direction.z *
-                (config_.needleTipOffset + 4.75f) + direction.x * lateral};
-            strikePrevious_ = strikeStart_;
+            needleVisualTarget_ = {
+                position_.x + needleVisualDirection_.x *
+                    config_.needleStrikeOffset,
+                position_.y,
+                position_.z + needleVisualDirection_.z *
+                    config_.needleStrikeOffset};
             ++attackCount_;
         }
+        bool enteredImpactThisStep = false;
         if (activeAttackId_ != 0) {
             strikeTime_ += seconds;
             const float progress = std::clamp(strikeTime_ /
                 config_.needleStrikeDuration, 0.0f, 1.0f);
-            const Vector3 tip{strikeStart_.x +
-                (strikeEnd_.x - strikeStart_.x) * progress,
-                strikeStart_.y + (strikeEnd_.y - strikeStart_.y) * progress,
-                strikeStart_.z + (strikeEnd_.z - strikeStart_.z) * progress};
+            const std::size_t visualIndex = static_cast<std::size_t>(
+                std::clamp(attackCount_ - 1, 0, 2));
+            needleVisualCurrent_[visualIndex] = BlendPosition(
+                needleVisualPullback_[visualIndex], needleVisualTarget_,
+                progress);
+            const Vector3& root = needleVisualCurrent_[visualIndex];
+            const Vector3 tip{
+                root.x + needleVisualDirection_.x * config_.needleTipOffset,
+                root.y,
+                root.z + needleVisualDirection_.z * config_.needleTipOffset};
             attacks.push_back({BossAttackType::NeedleStrike, tip,
                 strikePrevious_, config_.needleStrikeRadius, activeAttackId_});
             strikePrevious_ = tip;
@@ -1061,15 +1643,29 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
                 activeAttackId_ = 0;
                 if (attackCount_ == 3) {
                     needleImpactAttackId_ = nextAttackId_++;
+                    enteredImpactThisStep = true;
+                    needlePose_ = BossNeedlePose::ChargeForm;
+                    const BossVisualPose chargePose =
+                        CalculateTargetVisualPose();
+                    visualCones_ = chargePose.cones;
+                    visualCoreRotation_ = chargePose.coreRotation;
+                    previousVisualPose_ = GetVisualPose();
                 }
             }
         }
-        if (needleImpactAttackId_ != 0 &&
+        if (!enteredImpactThisStep && needleImpactAttackId_ != 0 &&
             needleImpactTime_ < 0.12f) {
             needleImpactTime_ += seconds;
+            const Vector3 impact{
+                position_.x + needleVisualDirection_.x *
+                    config_.needleStrikeOffset,
+                position_.y,
+                position_.z + needleVisualDirection_.z *
+                    config_.needleStrikeOffset};
             attacks.push_back({BossAttackType::NeedleImpact,
-                strikePrevious_, strikePrevious_,
+                impact, strikePrevious_,
                 config_.needleStrikeRadius, needleImpactAttackId_});
+            strikePrevious_ = impact;
         }
         if (activeTime >= 3.0f * strikePeriod + 2.0f) {
             BeginBehavior(BossMode::Idle);
@@ -1077,26 +1673,7 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
         break;
     }
     case BossMode::FullBarrage:
-        if (attackCount_ < 10 || modeTime_ < 4.0f) {
-            position_.y = std::min(config_.hoverHeight + 12.0f,
-                position_.y + 30.0f * seconds);
-        }
-        attackTimer_ += seconds;
-        if (attackTimer_ >= config_.barrageShotInterval && attackCount_ < 10) {
-            attackTimer_ -= config_.barrageShotInterval;
-            if (!BeginCrystalLaunch(attackCount_ % 2 == 0)) {
-                BeginCrystalLaunch(attackCount_ % 2 != 0);
-            }
-            ++attackCount_;
-        }
-        if (attackCount_ >= 10 && modeTime_ >= 4.0f) {
-            position_.y = std::max(config_.hoverHeight,
-                position_.y - 30.0f * seconds);
-            if (position_.y <= config_.hoverHeight) {
-                fullBarrageDamageLocked_ = false;
-                BeginBehavior(BossMode::Idle);
-            }
-        }
+        UpdateFullBarrage(seconds, playerPosition);
         break;
     case BossMode::SpreadCounter:
         if (!attackRegistered_ && modeTime_ >=
@@ -1114,18 +1691,17 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
         }
         break;
     case BossMode::Defeating:
-        position_.y = std::max(config_.coreRadius,
-            position_.y - 6.0f * seconds);
-        if (modeTime_ >= config_.defeatDuration) {
-            mode_ = BossMode::Defeated;
-        }
         break;
     case BossMode::Defeated:
         break;
     }
     UpdateCrystals(seconds, attacks);
-    position_.x = std::clamp(position_.x, -22.0f, 22.0f);
-    position_.z = std::clamp(position_.z, -14.0f, 40.0f);
+    position_.x = std::clamp(position_.x,
+        FirstPersonTuning::kBattlefieldMinimumX + config_.coreRadius,
+        FirstPersonTuning::kBattlefieldMaximumX - config_.coreRadius);
+    position_.z = std::clamp(position_.z,
+        FirstPersonTuning::kBattlefieldMinimumZ + config_.coreRadius,
+        FirstPersonTuning::kBattlefieldMaximumZ - config_.coreRadius);
     const float fromBaseX = position_.x;
     const float fromBaseZ = position_.z + 16.0f;
     const float fromBaseLength = std::hypot(fromBaseX, fromBaseZ);
@@ -1137,4 +1713,116 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
     }
     UpdateVisualPose(seconds);
     return attacks;
+}
+
+bool BattleBoss::MoveChargeWithinBattlefield(float distance) {
+    const Vector3 start = position_;
+    position_.x += chargeDirection_.x * distance;
+    position_.z += chargeDirection_.z * distance;
+    const float unclampedX = position_.x;
+    const float unclampedZ = position_.z;
+    position_.x = std::clamp(position_.x,
+        FirstPersonTuning::kBattlefieldMinimumX + config_.coreRadius,
+        FirstPersonTuning::kBattlefieldMaximumX - config_.coreRadius);
+    position_.z = std::clamp(position_.z,
+        FirstPersonTuning::kBattlefieldMinimumZ + config_.coreRadius,
+        FirstPersonTuning::kBattlefieldMaximumZ - config_.coreRadius);
+    if (std::abs(position_.x - unclampedX) > 0.00001f ||
+        std::abs(position_.z - unclampedZ) > 0.00001f) {
+        return true;
+    }
+
+    const float baseZ = FirstPersonTuning::kBattlefieldMinimumZ;
+    const float clearance = FirstPersonTuning::kResearchInstituteColliderRadius +
+        config_.coreRadius;
+    const float offsetX = start.x;
+    const float offsetZ = start.z - baseZ;
+    const float moveX = position_.x - start.x;
+    const float moveZ = position_.z - start.z;
+    const float a = moveX * moveX + moveZ * moveZ;
+    const float c = offsetX * offsetX + offsetZ * offsetZ -
+        clearance * clearance;
+    if (a <= 0.00001f || c < 0.0f) {
+        return false;
+    }
+    const float b = 2.0f * (offsetX * moveX + offsetZ * moveZ);
+    const float discriminant = b * b - 4.0f * a * c;
+    if (discriminant < 0.0f) {
+        return false;
+    }
+    const float entry = (-b - std::sqrt(discriminant)) / (2.0f * a);
+    if (entry < 0.0f || entry > 1.0f) {
+        return false;
+    }
+    position_.x = start.x + moveX * entry;
+    position_.z = start.z + moveZ * entry;
+    return true;
+}
+
+void BattleBoss::UpdateDefeat(float seconds) {
+    defeatPhaseTime_ += seconds;
+    if (defeatPhase_ == DefeatPhase::Pause) {
+        if (defeatPhaseTime_ >= config_.defeatPauseDuration) {
+            mode_ = BossMode::Defeated;
+        }
+        return;
+    }
+
+    defeatVelocity_.y -= config_.defeatGravity * seconds;
+    position_.x += defeatVelocity_.x * seconds;
+    position_.y += defeatVelocity_.y * seconds;
+    position_.z += defeatVelocity_.z * seconds;
+    const float minimumX = -24.0f + config_.coreRadius;
+    const float maximumX = 24.0f - config_.coreRadius;
+    const float minimumZ = -16.0f + config_.coreRadius;
+    const float maximumZ = 42.0f - config_.coreRadius;
+    if (position_.x < minimumX) {
+        position_.x = minimumX;
+        defeatVelocity_.x = std::abs(defeatVelocity_.x) *
+            config_.defeatWallBounceRetention;
+    } else if (position_.x > maximumX) {
+        position_.x = maximumX;
+        defeatVelocity_.x = -std::abs(defeatVelocity_.x) *
+            config_.defeatWallBounceRetention;
+    }
+    if (position_.z < minimumZ) {
+        position_.z = minimumZ;
+        defeatVelocity_.z = std::abs(defeatVelocity_.z) *
+            config_.defeatWallBounceRetention;
+    } else if (position_.z > maximumZ) {
+        position_.z = maximumZ;
+        defeatVelocity_.z = -std::abs(defeatVelocity_.z) *
+            config_.defeatWallBounceRetention;
+    }
+    if (position_.y <= config_.coreRadius) {
+        position_.y = config_.coreRadius;
+        defeatPhaseTime_ = 0.0f;
+        if (defeatPhase_ == DefeatPhase::Airborne) {
+            defeatPhase_ = DefeatPhase::Bounce;
+            defeatVelocity_.y = config_.defeatGroundBounceSpeed;
+            defeatVelocity_.x *= config_.defeatGroundHorizontalRetention;
+            defeatVelocity_.z *= config_.defeatGroundHorizontalRetention;
+        } else {
+            defeatPhase_ = DefeatPhase::Pause;
+            defeatVelocity_ = {};
+        }
+    }
+    defeatRotation_.x += config_.defeatRotationXSpeed * seconds;
+    defeatRotation_.y += config_.defeatRotationYSpeed * seconds;
+    defeatRotation_.z += config_.defeatRotationZSpeed * seconds;
+    defeatSmallExplosionTime_ += seconds;
+    if (defeatSmallExplosionTime_ >=
+            config_.defeatSmallExplosionInterval) {
+        defeatSmallExplosionTime_ -= config_.defeatSmallExplosionInterval;
+        const float angle = static_cast<float>(defeatSmallExplosionCount_) *
+            2.4f;
+        const float verticalOffset = static_cast<float>(
+            defeatSmallExplosionCount_ % 3u) - 1.0f;
+        defeatSmallExplosionPosition_ = {
+            position_.x + std::cos(angle) * 2.2f,
+            std::max(0.3f, position_.y + verticalOffset * 1.1f),
+            position_.z + std::sin(angle) * 2.2f};
+        ++defeatSmallExplosionCount_;
+        emittedDefeatSmallExplosionThisStep_ = true;
+    }
 }

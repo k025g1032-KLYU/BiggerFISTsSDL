@@ -10,6 +10,7 @@
 
 struct UiColor { float r = 1.0f, g = 1.0f, b = 1.0f, a = 1.0f; };
 struct StoryConfig;
+enum class UiPlacement { Safe, Cover, FullViewport, FullWidth, LeftEdge, RightEdge };
 struct UiCommand {
     std::string image;
     float x = 0.0f, y = 0.0f, width = 0.0f, height = 0.0f;
@@ -17,11 +18,13 @@ struct UiCommand {
     UiColor color{};
     bool cropStory = false;
     float rotationRadians = 0.0f;
+    UiPlacement placement = UiPlacement::Safe;
 };
 
 class UiDrawList {
 public:
-    void Clear() { commands_.clear(); }
+    void Clear() { commands_.clear(); placement_ = UiPlacement::Safe; }
+    void SetPlacement(UiPlacement placement) { placement_ = placement; }
     void Image(std::string_view name, float x, float y, float width, float height,
         UiColor color = {}, bool cropStory = false);
     void ImageFrame(std::string_view name, float x, float y, float width,
@@ -34,6 +37,7 @@ public:
     const std::vector<UiCommand>& GetCommands() const { return commands_; }
 private:
     std::vector<UiCommand> commands_;
+    UiPlacement placement_ = UiPlacement::Safe;
 };
 
 class UiRenderer {
@@ -48,6 +52,7 @@ public:
 private:
     SDL_GPUDevice* device_ = nullptr;
     SDL_GPUGraphicsPipeline* pipeline_ = nullptr;
-    SDL_GPUSampler* sampler_ = nullptr;
+    SDL_GPUSampler* imageSampler_ = nullptr;
+    SDL_GPUSampler* fontSampler_ = nullptr;
     std::unordered_map<std::string, SDL_GPUTexture*> textures_;
 };

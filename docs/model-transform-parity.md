@@ -23,9 +23,9 @@ now use the original local XY halo before the Boss parent yaw is applied.
 - The original `cube` OBJ is copied for completeness. The active SDL battle
   scene uses the finished arena meshes rather than drawing the original
   development blockout.
-- Transparent models render after opaque models with depth writes off. This is
-  used for the original clouds, tutorial banner, cockpit, helmet, flame, shield,
-  explosion planes, and front wall.
+- The later presentation pass separates world, additive effects, transparent
+  background, and first-person models. See `presentation-parity-audit.md` for
+  the current rendering order and its verification status.
 
 ## Source comparison
 
@@ -38,9 +38,9 @@ now use the original local XY halo before the Boss parent yaw is applied.
 | Bomber | `Bomber.cpp` ring speed 5 radians/second and loaded bomb | Ring Z spin and carried bomb Y spin; carried bomb scale tracks reload | Implemented |
 | ChargeUnit | `ChargeUnit.cpp` drop/takeoff/charge transforms | Landing roll, takeoff blend, tracked yaw, charge booster flame | Implemented with simplified warning pulse |
 | Missiles, bombs, crystals | Original projectile and Boss sources | Direction/age rotation, missile tail flame, crystal slot local pose and launch elevation | Implemented; particle effects simplified |
-| Boss core and three cones | `Boss.cpp::UpdateTransforms` | Root/core/cone parent matrices; Cruise, Charge, Needle, Boxer, Spread, Full Barrage, entrance and defeat poses | Mode poses and fixed-step blending implemented; strike articulation is approximate |
+| Boss core and three cones | `Boss.cpp::UpdateTransforms` | Root/core/cone parent matrices; Cruise, Charge, Needle, Boxer, Spread, Full Barrage, entrance and defeat poses | Full Barrage movement order is source-aligned; Boxer has alternating pullback, hold, strike and recovery poses; Needle Combo now pulls all three cones back and advances them in order; original-frame visual comparison remains open |
 | Boss crystal halo | `Boss.cpp::UpdateCrystalTransforms` | Six Spike and four Cube instances rotate in local XY around a Boss parent, with original model scales and launch height | Numeric slot positions tested |
-| Punch, Rocket Punch, Ultimate | `RobotArm.cpp`, `UltimateRocketPunch.cpp` | Fist/upper arm pose and rocket flame; Ultimate formation, Ready combined fist, flying combined fist/flame, split return | Implemented; staged Ultimate return timing/pose remains simplified |
+| Punch, Rocket Punch, Ultimate | `RobotArm.cpp`, `UltimateRocketPunch.cpp` | Fist/upper arm pose and rocket flame; Ultimate formation, Ready combined fist, flying combined fist/flame, split return | Staged return and separate docking now use the original phase structure; manual pose comparison pending |
 | Shield and explosion OBJ | Original damage/defeat effects | Visual events create copied shield and explosion planes with independent visual lifetime | Geometry and state cues implemented; particles and exact color blending remain simplified |
 
 ## Verification
@@ -64,11 +64,13 @@ now use the original local XY halo before the Boss parent yaw is applied.
 
 ## Remaining visual differences
 
-Boss cone strikes use the existing simplified combat state to move the active
-cone. Mode transitions now blend, and attack positions bypass an extra blend,
-but the original has more detailed winding up and recovery. Likewise,
-Ultimate return docking, shield/explosion blending, and cockpit startup remain
-approximations. These differences are visual;
+Boss Boxer and Needle Combo now use source-level pose paths, while their
+existing collision timing is unchanged. The model tips and collision volumes
+still need to be checked together in matching original/SDL footage. Likewise,
+Ultimate return docking, shield/explosion blending, and cockpit startup have
+since received source-level parity work documented in
+`presentation-parity-audit.md`; exact visual comparison remains open. These
+remaining differences are visual;
 the fixed-step input-driven battle clear tests continue to pass. Before release,
 capture matching gameplay states from a manually operated original executable
 and the SDL build, then tune these poses and material effects from the images.

@@ -84,16 +84,31 @@ int main(int, char**) {
     controls.ProcessEvent(KeyEvent(window, SDL_SCANCODE_F2, true));
     success &= Expect(controls.ApplyPending() && controls.GetSettings().windowWidth == 640,
         "Repeated key events must not resize the window");
-    controls.ProcessEvent(KeyEvent(window, SDL_SCANCODE_F2), true);
+    controls.ProcessEvent(KeyEvent(window, SDL_SCANCODE_F2),
+        WindowShortcutContext::Practice);
     success &= Expect(controls.ApplyPending() && controls.GetSettings().windowWidth == 640,
         "Practice F2 must not change the display size");
     SDL_Event practiceResize = KeyEvent(window, SDL_SCANCODE_F2);
     practiceResize.key.mod = SDL_KMOD_CTRL;
-    controls.ProcessEvent(practiceResize, true);
+    controls.ProcessEvent(practiceResize, WindowShortcutContext::Practice);
     success &= Expect(controls.ApplyPending() &&
         controls.GetSettings().windowWidth > 640,
         "Ctrl+F2 must resize during practice");
     success &= Expect(controls.Apply(baseline), "Restore after practice shortcut");
+    controls.ProcessEvent(KeyEvent(window, SDL_SCANCODE_F1),
+        WindowShortcutContext::Combat);
+    controls.ProcessEvent(KeyEvent(window, SDL_SCANCODE_F2),
+        WindowShortcutContext::Combat);
+    success &= Expect(controls.ApplyPending() &&
+        controls.GetSettings().windowWidth == 640,
+        "Combat F1/F2 must remain inspection controls");
+    SDL_Event combatResize = KeyEvent(window, SDL_SCANCODE_F1);
+    combatResize.key.mod = SDL_KMOD_CTRL;
+    controls.ProcessEvent(combatResize, WindowShortcutContext::Combat);
+    success &= Expect(controls.ApplyPending() &&
+        controls.GetSettings().windowWidth > 640,
+        "Combat Ctrl+F1 must resize the display");
+    success &= Expect(controls.Apply(baseline), "Restore after combat shortcut");
     SDL_Event foreign = KeyEvent(window, SDL_SCANCODE_F2);
     foreign.key.windowID += 1;
     controls.ProcessEvent(foreign);

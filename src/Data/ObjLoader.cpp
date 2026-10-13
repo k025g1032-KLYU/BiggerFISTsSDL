@@ -78,6 +78,7 @@ std::string PathToUtf8(const std::filesystem::path& path) {
 bool LoadMaterialTextures(const std::filesystem::path& mtlPath,
     const std::unordered_set<std::string>& materialNames,
     std::unordered_map<std::string, std::filesystem::path>& texturePaths,
+    std::unordered_map<std::string, MeshMaterial>& materials,
     std::string& error) {
     std::ifstream file(mtlPath);
     if (!file) {
@@ -87,13 +88,40 @@ bool LoadMaterialTextures(const std::filesystem::path& mtlPath,
     std::string line;
     std::string currentMaterial;
     std::unordered_map<std::string, std::filesystem::path> materialTextures;
+    std::size_t lineNumber = 0;
     while (std::getline(file, line)) {
+        ++lineNumber;
         std::istringstream input(line);
         std::string command;
         input >> command;
         if (command == "newmtl") {
             std::getline(input, currentMaterial);
             currentMaterial = TrimWhitespace(currentMaterial);
+            if (materialNames.contains(currentMaterial))
+                materials.try_emplace(currentMaterial);
+        } else if ((command == "Ka" || command == "Kd" || command == "Ks") &&
+            materialNames.contains(currentMaterial)) {
+            float color[3]{};
+            if (!(input >> color[0] >> color[1] >> color[2]) ||
+                !std::all_of(std::begin(color), std::end(color),
+                    [](float value) { return std::isfinite(value) && value >= 0.0f; })) {
+                error = PathToUtf8(mtlPath) + ":" + std::to_string(lineNumber) +
+                    ": Invalid material color";
+                return false;
+            }
+            MeshMaterial& material = materials[currentMaterial];
+            float* destination = command == "Ka" ? material.ambient :
+                command == "Kd" ? material.diffuse : material.specular;
+            std::copy_n(color, 3, destination);
+        } else if (command == "d" && materialNames.contains(currentMaterial)) {
+            float opacity = 0.0f;
+            if (!(input >> opacity) || !std::isfinite(opacity) ||
+                opacity < 0.0f || opacity > 1.0f) {
+                error = PathToUtf8(mtlPath) + ":" + std::to_string(lineNumber) +
+                    ": Invalid material opacity";
+                return false;
+            }
+            materials[currentMaterial].opacity = opacity;
         } else if (command == "map_Kd" && materialNames.contains(currentMaterial)) {
             std::string filename;
             std::getline(input, filename);
@@ -139,7 +167,7 @@ bool LoadObjModel(const std::filesystem::path& objPath, MeshData& result, std::s
     MeshData mesh;
     std::vector<Position> positions;
     std::vector<Texcoord> texcoords;
-    size_t normalCount = 0;
+    std::vector<Position> normals;
     std::unordered_map<FaceKey, std::uint32_t, FaceKeyHash> vertexLookup;
     std::string mtlFilename;
     std::string materialName;
@@ -174,7 +202,7 @@ bool LoadObjModel(const std::filesystem::path& objPath, MeshData& result, std::s
                 error = "Invalid normal";
                 break;
             }
-            ++normalCount;
+            normals.push_back(value);
         } else if (command == "mtllib") {
             if (!mtlFilename.empty()) {
                 error = "Multiple material libraries are not supported";
@@ -208,7 +236,7 @@ bool LoadObjModel(const std::filesystem::path& objPath, MeshData& result, std::s
                 if (corners >= face.size() || !ParseFaceKey(text, key) ||
                     static_cast<size_t>(key.position) > positions.size() ||
                     static_cast<size_t>(key.uv) > texcoords.size() ||
-                    static_cast<size_t>(key.normal) > normalCount) {
+                    static_cast<size_t>(key.normal) > normals.size()) {
                     error = "Unsupported face or invalid vertex index";
                     break;
                 }
@@ -222,9 +250,13 @@ bool LoadObjModel(const std::filesystem::path& objPath, MeshData& result, std::s
                     }
                     const auto& position = positions[static_cast<size_t>(key.position - 1)];
                     const auto& uv = texcoords[static_cast<size_t>(key.uv - 1)];
+                    const auto& normal = normals[static_cast<size_t>(key.normal - 1)];
                     const std::uint32_t index = static_cast<std::uint32_t>(mesh.vertices.size());
                     // Blender OBJ coordinates are right-handed. The game world is left-handed.
-                    mesh.vertices.push_back({ { -position.x, position.y, position.z }, { uv.u, 1.0f - uv.v } });
+                    mesh.vertices.push_back({
+                        {-position.x, position.y, position.z},
+                        {uv.u, 1.0f - uv.v},
+                        {-normal.x, normal.y, normal.z}});
                     vertexLookup.emplace(key, index);
                     face[corners++] = index;
                 }
@@ -266,12 +298,14 @@ bool LoadObjModel(const std::filesystem::path& objPath, MeshData& result, std::s
         return false;
     }
     std::unordered_map<std::string, std::filesystem::path> texturePaths;
+    std::unordered_map<std::string, MeshMaterial> materials;
     if (!LoadMaterialTextures(objPath.parent_path() / PathFromUtf8(mtlFilename),
-            usedMaterials, texturePaths, error)) {
+            usedMaterials, texturePaths, materials, error)) {
         return false;
     }
     for (size_t i = 0; i < mesh.submeshes.size(); ++i) {
         mesh.submeshes[i].texturePath = texturePaths.at(materialGroups[i]);
+        mesh.submeshes[i].material = materials.at(materialGroups[i]);
     }
     const auto& firstTexture = mesh.submeshes.front().texturePath;
     if (std::all_of(mesh.submeshes.begin(), mesh.submeshes.end(),

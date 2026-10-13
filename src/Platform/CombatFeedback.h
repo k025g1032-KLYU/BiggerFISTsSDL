@@ -31,10 +31,14 @@ public:
     void PlaySystemRestart();
     void PlayPunchSwing();
     void PlayRocketReconnect();
-    void PlayPlayerHit(PlayerHitType type, bool damagedHitPoints);
+    void PlayPlayerHit(PlayerHitType type, bool damagedHitPoints,
+        bool bossNeedleHit = false);
     void PlayBattleEvent(BattleFeedbackEvent event);
     void PlayCue(const std::string& name);
     void StopCue(const std::string& name);
+    void SetCueGain(const std::string& name, float gain);
+    void SetRocketLaunchGain(float gain);
+    void StopBattleAudio();
     void SetEngineLoop(bool enabled);
     bool IsEngineLoopQueued() const;
     void Shutdown();
@@ -46,7 +50,9 @@ public:
     void SetMusic(const std::string& name);
     const std::string& GetCurrentMusic() const { return currentMusic_; }
     void PlayTutorialVoice(const std::string& name);
+    void StopTutorialVoice();
     bool IsTutorialVoicePlaying() const;
+    bool IsTutorialSystemVoicePlaying() const;
     void UpdateMusic(float seconds);
 
 private:
