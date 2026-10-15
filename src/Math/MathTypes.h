@@ -21,6 +21,7 @@ Matrix4x4 MakeRotationXMatrix(float radians);
 Matrix4x4 MakeRotationYMatrix(float radians);
 Matrix4x4 MakeScaleMatrix(float x, float y, float z);
 Matrix4x4 MultiplyMatrices(const Matrix4x4& left, const Matrix4x4& right);
+bool TryMakeNormalMatrix(const Matrix4x4& world, Matrix4x4& result);
 Matrix4x4 MakeAspectCorrectionMatrix(float aspectRatio);
 
 Vector3 SubtractVectors(const Vector3& left, const Vector3& right);

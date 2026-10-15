@@ -83,6 +83,15 @@ void BattleBoss::Reset(const Vector3& position) {
     attackTimer_ = 0.0f;
     hitPoints_ = config_.coreHitPoints;
     coreHitFlashRemaining_ = 0.0f;
+    knockbackDirection_ = {0.0f, 0.0f, 1.0f};
+    knockbackInitialSpeed_ = 0.0f;
+    knockbackRemaining_ = 0.0f;
+    knockbackDuration_ = 0.0f;
+    staggerRemaining_ = 0.0f;
+    ultimateWallCarryDirection_ = {0.0f, 0.0f, 1.0f};
+    ultimateWallCarrySpeed_ = 0.0f;
+    ultimateWallCarryActive_ = false;
+    ultimateWallImpactPauseRemaining_ = 0.0f;
     behaviorRandomState_ = 0x6d2b79f5u;
     lastIdleAction_ = BossMode::Entrance;
     boxerCooldown_ = 0.0f;
@@ -1017,6 +1026,18 @@ bool BattleBoss::ReceiveHit(int damage) {
         mode_ = BossMode::Defeating;
         modeTime_ = 0.0f;
         attackRegistered_ = false;
+        activeAttackId_ = 0;
+        needleImpactAttackId_ = 0;
+        needleComboPending_ = false;
+        fullBarragePending_ = false;
+        boxerNeedleIndex_ = -1;
+        needlePose_ = BossNeedlePose::Spread;
+        for (BossCrystalSlot& slot : spikeSlots_) {
+            slot.launchTime = 0.0f;
+        }
+        for (BossCrystalSlot& slot : cubeSlots_) {
+            slot.launchTime = 0.0f;
+        }
         defeatPhase_ = DefeatPhase::Airborne;
         defeatPhaseTime_ = 0.0f;
         defeatSmallExplosionTime_ = 0.0f;
@@ -1027,6 +1048,48 @@ bool BattleBoss::ReceiveHit(int damage) {
         SetDefeatLaunchDirection(direction);
     }
     return true;
+}
+
+void BattleBoss::ApplyKnockback(const Vector3& impactPosition,
+    float distance) {
+    if (mode_ == BossMode::Defeating || mode_ == BossMode::Defeated ||
+        distance <= 0.00001f) {
+        return;
+    }
+    const float deltaX = position_.x - impactPosition.x;
+    const float deltaZ = position_.z - impactPosition.z;
+    const float length = std::hypot(deltaX, deltaZ);
+    knockbackDirection_ = length > 0.00001f
+        ? Vector3{deltaX / length, 0.0f, deltaZ / length}
+        : Vector3{0.0f, 0.0f, 1.0f};
+    knockbackDuration_ = config_.lightKnockbackDuration;
+    knockbackRemaining_ = knockbackDuration_;
+    knockbackInitialSpeed_ = distance * 2.0f / knockbackDuration_;
+}
+
+void BattleBoss::BeginUltimateWallCarry(const Vector3& direction,
+    float speed) {
+    if (mode_ == BossMode::Defeated || !std::isfinite(speed) ||
+        speed <= 0.00001f || !std::isfinite(direction.x) ||
+        !std::isfinite(direction.z)) {
+        return;
+    }
+    const float length = std::hypot(direction.x, direction.z);
+    if (length <= 0.00001f) {
+        return;
+    }
+    if (mode_ != BossMode::Defeating) {
+        if (mode_ == BossMode::Boxer) boxerNeedleIndex_ = -1;
+        if (mode_ == BossMode::Boxer || mode_ == BossMode::SpreadCounter)
+            BeginBehavior(BossMode::Idle);
+        staggerRemaining_ = config_.ultimateStaggerDuration;
+        needlePose_ = BossNeedlePose::Spread;
+    }
+    knockbackRemaining_ = 0.0f;
+    ultimateWallCarryDirection_ = {direction.x / length, 0.0f,
+        direction.z / length};
+    ultimateWallCarrySpeed_ = speed;
+    ultimateWallCarryActive_ = true;
 }
 
 void BattleBoss::SetDefeatLaunchDirection(const Vector3& direction) {
@@ -1088,14 +1151,26 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
     coreHitFlashRemaining_ = std::max(0.0f,
         coreHitFlashRemaining_ - seconds);
     previousPosition_ = position_;
-    modeTime_ += seconds;
+    if (ultimateWallCarryActive_) {
+        UpdateUltimateWallCarry(seconds);
+        UpdateVisualPose(seconds);
+        return attacks;
+    }
+    if (ultimateWallImpactPauseRemaining_ > 0.0f) {
+        ultimateWallImpactPauseRemaining_ = std::max(0.0f,
+            ultimateWallImpactPauseRemaining_ - seconds);
+        UpdateVisualPose(seconds);
+        return attacks;
+    }
+    if (staggerRemaining_ <= 0.0f) modeTime_ += seconds;
     if (mode_ == BossMode::Defeating) {
         UpdateDefeat(seconds);
         UpdateVisualPose(seconds);
         return attacks;
     }
     lastPlayerPosition_ = playerPosition;
-    if ((mode_ != BossMode::Entrance || entranceRecovering_) &&
+    if (staggerRemaining_ <= 0.0f &&
+        (mode_ != BossMode::Entrance || entranceRecovering_) &&
         mode_ != BossMode::Defeating && mode_ != BossMode::FullBarrage &&
         mode_ != BossMode::NeedleCombo && mode_ != BossMode::Charge) {
         const bool isBoxerStriking = mode_ == BossMode::Boxer &&
@@ -1123,6 +1198,12 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
         fullBarragePending_ = false;
         fullBarrageUsed_ = true;
         BeginBehavior(BossMode::FullBarrage);
+    } else if (staggerRemaining_ > 0.0f) {
+        staggerRemaining_ = std::max(0.0f, staggerRemaining_ - seconds);
+        UpdateCrystals(seconds, attacks);
+        UpdateKnockback(seconds);
+        UpdateVisualPose(seconds);
+        return attacks;
     } else if (needleComboPending_ && mode_ == BossMode::Idle) {
         needleComboPending_ = false;
         needleComboUsed_ = true;
@@ -1248,7 +1329,8 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
                 chargeBodyAttackId_ = nextAttackId_++;
             }
         } else if (chargePhase_ == ChargePhase::Charging) {
-            if (MoveChargeWithinBattlefield(config_.chargeSpeed * seconds)) {
+            if (MoveWithinBattlefield(chargeDirection_,
+                    config_.chargeSpeed * seconds)) {
                 chargePhase_ = ChargePhase::WallImpact;
                 chargePhaseTime_ = 0.0f;
                 break;
@@ -1679,11 +1761,7 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
         if (!attackRegistered_ && modeTime_ >=
                 config_.spreadWindupDuration + config_.spreadSpinDuration) {
             attackRegistered_ = true;
-            if (std::hypot(playerPosition.x - position_.x,
-                    playerPosition.z - position_.z) <= config_.spreadBurstRadius +
-                    FirstPersonTuning::kPlayerColliderRadius) {
-                attacks.push_back({BossAttackType::SpreadBurst, position_});
-            }
+            attacks.push_back({BossAttackType::SpreadBurst, position_});
         }
         if (modeTime_ >= config_.spreadWindupDuration +
                 config_.spreadSpinDuration + 1.0f) {
@@ -1696,6 +1774,7 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
         break;
     }
     UpdateCrystals(seconds, attacks);
+    UpdateKnockback(seconds);
     position_.x = std::clamp(position_.x,
         FirstPersonTuning::kBattlefieldMinimumX + config_.coreRadius,
         FirstPersonTuning::kBattlefieldMaximumX - config_.coreRadius);
@@ -1715,10 +1794,51 @@ std::vector<BossAttackEvent> BattleBoss::Update(float seconds,
     return attacks;
 }
 
-bool BattleBoss::MoveChargeWithinBattlefield(float distance) {
+void BattleBoss::UpdateKnockback(float seconds) {
+    if (knockbackRemaining_ <= 0.00001f ||
+        knockbackDuration_ <= 0.00001f) {
+        return;
+    }
+    const float speedRatio = std::clamp(knockbackRemaining_ /
+        knockbackDuration_, 0.0f, 1.0f);
+    const Vector3 before = position_;
+    const bool reachedBoundary = MoveWithinBattlefield(knockbackDirection_,
+        knockbackInitialSpeed_ * speedRatio * seconds);
+    if (mode_ == BossMode::NeedleCombo && needleVisualInitialized_) {
+        for (Vector3& current : needleVisualCurrent_) {
+            current.x += position_.x - before.x;
+            current.z += position_.z - before.z;
+        }
+    }
+    knockbackRemaining_ = std::max(0.0f,
+        knockbackRemaining_ - seconds);
+    if (reachedBoundary) knockbackRemaining_ = 0.0f;
+}
+
+void BattleBoss::UpdateUltimateWallCarry(float seconds) {
+    const Vector3 before = position_;
+    const bool reachedWall = MoveWithinBattlefield(
+        ultimateWallCarryDirection_, ultimateWallCarrySpeed_ * seconds);
+    if (mode_ == BossMode::NeedleCombo && needleVisualInitialized_) {
+        for (Vector3& current : needleVisualCurrent_) {
+            current.x += position_.x - before.x;
+            current.z += position_.z - before.z;
+        }
+    }
+    if (reachedWall) {
+        ultimateWallCarryActive_ = false;
+        if (mode_ == BossMode::Defeating) {
+            ultimateWallImpactPauseRemaining_ =
+                config_.ultimateWallImpactPauseDuration;
+        }
+    }
+}
+
+bool BattleBoss::MoveWithinBattlefield(const Vector3& direction,
+    float distance) {
     const Vector3 start = position_;
-    position_.x += chargeDirection_.x * distance;
-    position_.z += chargeDirection_.z * distance;
+    position_.x += direction.x * distance;
+    position_.z += direction.z * distance;
     const float unclampedX = position_.x;
     const float unclampedZ = position_.z;
     position_.x = std::clamp(position_.x,
@@ -1746,6 +1866,9 @@ bool BattleBoss::MoveChargeWithinBattlefield(float distance) {
         return false;
     }
     const float b = 2.0f * (offsetX * moveX + offsetZ * moveZ);
+    if (c <= 0.00001f && b >= 0.0f) {
+        return false;
+    }
     const float discriminant = b * b - 4.0f * a * c;
     if (discriminant < 0.0f) {
         return false;

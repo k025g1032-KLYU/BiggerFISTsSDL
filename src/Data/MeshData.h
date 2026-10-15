@@ -11,9 +11,9 @@ struct MeshVertex {
 };
 
 struct MeshMaterial {
-    float ambient[3]{1.0f, 1.0f, 1.0f};
-    float diffuse[3]{1.0f, 1.0f, 1.0f};
-    float specular[3]{0.0f, 0.0f, 0.0f};
+    float ambient[3]{0.3f, 0.3f, 0.3f};
+    float diffuse[3]{0.7f, 0.7f, 0.7f};
+    float specular[3]{0.5f, 0.5f, 0.5f};
     float opacity = 1.0f;
 };
 

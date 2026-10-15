@@ -51,6 +51,10 @@ int main() {
             "LFist has drawable triangles");
         passed &= Expect(model.texturePath.filename() == "Lfist.png", "resolve LFist map_Kd PNG");
         passed &= Expect(std::filesystem::exists(model.texturePath), "original LFist PNG exists");
+        passed &= Expect(!model.submeshes.empty() &&
+            model.submeshes.front().material.diffuse[0] == 0.7f &&
+            model.submeshes.front().material.specular[0] == 0.5f,
+            "use KamataEngine diffuse default when the MTL omits Kd");
     } else {
         std::cerr << error << '\n';
     }

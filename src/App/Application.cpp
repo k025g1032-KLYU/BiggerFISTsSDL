@@ -23,6 +23,7 @@
 #include "Rendering/MeshRenderer.h"
 #include "Rendering/FirstPersonScenePresenter.h"
 #include "Gameplay/Combat/CombatSession.h"
+#include "Gameplay/Combat/PlayerAudioEvents.h"
 #include "Gameplay/Combat/EncounterConfig.h"
 #include "Data/StoryConfig.h"
 #include "Game/GameFlow.h"
@@ -598,6 +599,7 @@ int Application::Run(const ApplicationOptions& options) {
                             if (command == PracticeCommand::FullStartup ||
                                 command == PracticeCommand::QuickStartup ||
                                 command == PracticeCommand::BossStartup) {
+                                combatFeedback->StopBattleAudio();
                                 combatFeedback->StopCue("cockpitStart");
                                 combatSession->Reset();
                                 firstPersonGame->ResetCombatState();
@@ -666,7 +668,9 @@ int Application::Run(const ApplicationOptions& options) {
                                 BattleVisualEffect::Explosion,
                                 impact->position, impact->scale}});
                             combatFeedback->PlayBattleEvent(
-                                BattleFeedbackEvent::ProjectileExploded);
+                                impact->shieldAbsorbed
+                                    ? BattleFeedbackEvent::ShieldedProjectileExploded
+                                    : BattleFeedbackEvent::ProjectileExploded);
                         }
                         const TutorialStep previousStep = tutorial->GetStep();
                         tutorial->Update(static_cast<float>(FixedStepClock::kStepSeconds),
@@ -705,6 +709,7 @@ int Application::Run(const ApplicationOptions& options) {
                         if (command == PracticeCommand::FullStartup ||
                             command == PracticeCommand::QuickStartup ||
                             command == PracticeCommand::BossStartup) {
+                            combatFeedback->StopBattleAudio();
                             combatFeedback->StopCue("cockpitStart");
                             combatSession->Reset();
                             firstPersonGame->ResetCombatState();
@@ -727,6 +732,7 @@ int Application::Run(const ApplicationOptions& options) {
                             }
                         }
                         if (stepInput.game.resetTarget.pressed) {
+                            combatFeedback->StopBattleAudio();
                             firstPersonGame->ResetCombatState();
                             tutorialEncounter->ResetTargets(*firstPersonGame);
                             combatThirdPerson = false;
@@ -734,6 +740,10 @@ int Application::Run(const ApplicationOptions& options) {
                         }
                     }
                     const BattlePhase previousPhase = combatSession->GetPhase();
+                    if (stepInput.game.resetTarget.pressed ||
+                        (previousPhase == BattlePhase::GameOver &&
+                            stepInput.game.battleStart.pressed))
+                        combatFeedback->StopBattleAudio();
                     const int previousBaseHitPoints = combatSession->GetBaseHitPoints();
                     const int previousWaveIndex = combatSession->GetWaveIndex();
                     const BattleBoss* previousBoss = combatSession->GetBoss();
@@ -784,20 +794,10 @@ int Application::Run(const ApplicationOptions& options) {
                         combatFeedback->PlayBattleEvent(feedbackEvent);
                     }
                 }
-                if (firstPersonGame->GetEvents().punchHit) {
-                    combatFeedback->PlayPunchHit();
-                }
-                if (firstPersonGame->GetEvents().rocketHit) {
-                    combatFeedback->PlayRocketHit();
-                }
-                if (firstPersonGame->GetEvents().leftPunchBegan ||
-                    firstPersonGame->GetEvents().rightPunchBegan) {
-                    combatFeedback->PlayPunchSwing();
-                }
-                if (firstPersonGame->GetEvents().leftRocketReconnected ||
-                    firstPersonGame->GetEvents().rightRocketReconnected) {
-                    combatFeedback->PlayRocketReconnect();
-                }
+                for (const BattleFeedbackEvent audioEvent : BuildPlayerAudioEvents(
+                        firstPersonGame->GetEvents(),
+                        firstPersonGame->GetTargets(), combatSession.has_value()))
+                    combatFeedback->PlayBattleEvent(audioEvent);
                 for (const PlayerHitFeedback& hit :
                         firstPersonGame->GetEvents().playerHits) {
                     combatFeedback->PlayPlayerHit(hit.type,
@@ -863,6 +863,10 @@ int Application::Run(const ApplicationOptions& options) {
                     !firstPersonGame->GetEvents().dodgeStarted) {
                     combatFeedback->PlayCue("footstep");
                 }
+                if (combatSession && !combatSession->IsPractice() &&
+                    (combatSession->GetPhase() == BattlePhase::Clear ||
+                        combatSession->GetPhase() == BattlePhase::GameOver))
+                    combatFeedback->StopBattleAudio();
                 combatFeedback->SetEngineLoop(
                     (combatSession || (gameFlow &&
                         gameFlow->GetPhase() == FlowPhase::Tutorial)) &&

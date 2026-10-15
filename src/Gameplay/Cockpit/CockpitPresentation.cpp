@@ -97,7 +97,7 @@ bool CockpitPresentation::IsAllGreenVisible() const {
 }
 
 float CockpitPresentation::GetOverlayAlpha() const {
-    if (mode_ == CockpitMode::FullStartup) return 0.94f;
+    if (mode_ == CockpitMode::FullStartup) return 0.75f;
     if (mode_ == CockpitMode::EmergencyReboot)
         return 0.65f * Smooth(elapsed_ / 0.5f);
     return IsStartupActive() ? 0.78f : 0.0f;

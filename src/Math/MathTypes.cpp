@@ -73,6 +73,32 @@ Matrix4x4 MultiplyMatrices(const Matrix4x4& left, const Matrix4x4& right) {
     return result;
 }
 
+bool TryMakeNormalMatrix(const Matrix4x4& world, Matrix4x4& result) {
+    result = MakeIdentityMatrix();
+    const Vector3 rows[3]{
+        {world.elements[0][0], world.elements[0][1], world.elements[0][2]},
+        {world.elements[1][0], world.elements[1][1], world.elements[1][2]},
+        {world.elements[2][0], world.elements[2][1], world.elements[2][2]}
+    };
+    const Vector3 cofactors[3]{
+        CrossVectors(rows[1], rows[2]),
+        CrossVectors(rows[2], rows[0]),
+        CrossVectors(rows[0], rows[1])
+    };
+    const float determinant = DotVectors(rows[0], cofactors[0]);
+    if (!std::isfinite(determinant) || std::abs(determinant) <= 0.000000000001f) {
+        return false;
+    }
+    for (int row = 0; row < 3; ++row) {
+        const float values[3]{cofactors[row].x, cofactors[row].y, cofactors[row].z};
+        for (int column = 0; column < 3; ++column) {
+            result.elements[row][column] = values[column] / determinant;
+            if (!std::isfinite(result.elements[row][column])) return false;
+        }
+    }
+    return true;
+}
+
 Matrix4x4 MakeAspectCorrectionMatrix(float aspectRatio) {
     if (!std::isfinite(aspectRatio) || aspectRatio <= 0.0f) {
         return MakeIdentityMatrix();

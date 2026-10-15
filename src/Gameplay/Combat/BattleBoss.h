@@ -66,6 +66,8 @@ public:
     std::vector<BossAttackEvent> Update(float seconds,
         const Vector3& playerPosition, const BossPlayerThreat& threat = {});
     bool ReceiveHit(int damage);
+    void ApplyKnockback(const Vector3& impactPosition, float distance);
+    void BeginUltimateWallCarry(const Vector3& direction, float speed);
     void SetDefeatLaunchDirection(const Vector3& direction);
     bool RegisterNeedleStrikeHit(std::uint64_t attackId);
     bool RegisterChargeTipHit(std::uint64_t attackId);
@@ -81,6 +83,7 @@ public:
     int GetHitPoints() const { return hitPoints_; }
     int GetMaximumHitPoints() const { return config_.coreHitPoints; }
     bool IsDefeated() const { return mode_ == BossMode::Defeated; }
+    bool IsUltimateWallCarryActive() const { return ultimateWallCarryActive_; }
     float GetModeTime() const { return modeTime_; }
     bool IsRocketDodging() const { return rocketDodgeTimer_ > 0.0f; }
     bool DidBeginRocketDodgeThisStep() const { return beganRocketDodgeThisStep_; }
@@ -130,7 +133,9 @@ private:
     void UpdateVisualPose(float seconds);
     void InitializeNeedleVisual(const Vector3& playerPosition);
     void UpdateDefeat(float seconds);
-    bool MoveChargeWithinBattlefield(float distance);
+    void UpdateKnockback(float seconds);
+    void UpdateUltimateWallCarry(float seconds);
+    bool MoveWithinBattlefield(const Vector3& direction, float distance);
 
     BossCombatConfig config_;
     BossMode mode_ = BossMode::Entrance;
@@ -156,6 +161,15 @@ private:
     float attackTimer_ = 0.0f;
     int hitPoints_ = 0;
     float coreHitFlashRemaining_ = 0.0f;
+    Vector3 knockbackDirection_{0.0f, 0.0f, 1.0f};
+    float knockbackInitialSpeed_ = 0.0f;
+    float knockbackRemaining_ = 0.0f;
+    float knockbackDuration_ = 0.0f;
+    float staggerRemaining_ = 0.0f;
+    Vector3 ultimateWallCarryDirection_{0.0f, 0.0f, 1.0f};
+    float ultimateWallCarrySpeed_ = 0.0f;
+    bool ultimateWallCarryActive_ = false;
+    float ultimateWallImpactPauseRemaining_ = 0.0f;
     std::uint32_t behaviorRandomState_ = 0x6d2b79f5u;
     BossMode lastIdleAction_ = BossMode::Entrance;
     float boxerCooldown_ = 0.0f;

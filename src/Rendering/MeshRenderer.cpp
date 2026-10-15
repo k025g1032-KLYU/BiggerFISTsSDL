@@ -180,7 +180,8 @@ SDL_GPUGraphicsPipeline* CreatePipeline(
     SDL_GPUDevice* device,
     SDL_Window* window,
     SDL_GPUTextureFormat depthFormat,
-    bool depthWrite, bool depthTest = true, bool additive = false
+    bool depthWrite, bool depthTest = true, bool additive = false,
+    SDL_GPUCullMode cullMode = SDL_GPU_CULLMODE_BACK
 ) {
     SDL_GPUShader* vertexShader = LoadShader(
         device,
@@ -226,7 +227,7 @@ SDL_GPUGraphicsPipeline* CreatePipeline(
     vertexDescription.pitch = static_cast<Uint32>(sizeof(MeshVertex));
     vertexDescription.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
 
-    SDL_GPUVertexAttribute attributes[2]{};
+    SDL_GPUVertexAttribute attributes[3]{};
     attributes[0].location = 0;
     attributes[0].buffer_slot = 0;
     attributes[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
@@ -235,6 +236,10 @@ SDL_GPUGraphicsPipeline* CreatePipeline(
     attributes[1].buffer_slot = 0;
     attributes[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
     attributes[1].offset = static_cast<Uint32>(offsetof(MeshVertex, uv));
+    attributes[2].location = 2;
+    attributes[2].buffer_slot = 0;
+    attributes[2].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+    attributes[2].offset = static_cast<Uint32>(offsetof(MeshVertex, normal));
 
     SDL_GPUGraphicsPipelineCreateInfo info{};
     info.vertex_shader = vertexShader;
@@ -242,10 +247,11 @@ SDL_GPUGraphicsPipeline* CreatePipeline(
     info.vertex_input_state.vertex_buffer_descriptions = &vertexDescription;
     info.vertex_input_state.num_vertex_buffers = 1;
     info.vertex_input_state.vertex_attributes = attributes;
-    info.vertex_input_state.num_vertex_attributes = 2;
+    info.vertex_input_state.num_vertex_attributes = 3;
     info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
     info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
-    info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+    info.rasterizer_state.cull_mode = cullMode;
+    info.rasterizer_state.front_face = SDL_GPU_FRONTFACE_CLOCKWISE;
     info.rasterizer_state.enable_depth_clip = true;
     info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
     info.depth_stencil_state.enable_depth_test = depthTest;
@@ -357,13 +363,19 @@ bool MeshRenderer::Initialize(SDL_Window* window, std::span<const MeshData> mesh
     }
     pipeline_ = CreatePipeline(device_, window_, depthFormat, true);
     transparentPipeline_ = CreatePipeline(device_, window_, depthFormat, false);
-    additivePipeline_ = CreatePipeline(device_, window_, depthFormat, false, true, true);
-    firstPersonPipeline_ = CreatePipeline(device_, window_, depthFormat, false, false);
+    additivePipeline_ = CreatePipeline(device_, window_, depthFormat,
+        false, true, true, SDL_GPU_CULLMODE_NONE);
+    firstPersonPipeline_ = CreatePipeline(device_, window_, depthFormat,
+        false, false, false, SDL_GPU_CULLMODE_NONE);
     if (pipeline_ == nullptr || transparentPipeline_ == nullptr ||
         additivePipeline_ == nullptr || firstPersonPipeline_ == nullptr) {
         Shutdown();
         return false;
     }
+    const SDL_GPUTextureFormat swapchainFormat =
+        SDL_GetGPUSwapchainTextureFormat(device_, window_);
+    encodeSrgbOutput_ = swapchainFormat != SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB &&
+        swapchainFormat != SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM_SRGB;
     SDL_GPUSamplerCreateInfo samplerInfo{};
     samplerInfo.min_filter = SDL_GPU_FILTER_LINEAR;
     samplerInfo.mag_filter = SDL_GPU_FILTER_LINEAR;
@@ -402,7 +414,8 @@ bool MeshRenderer::Initialize(SDL_Window* window, std::span<const MeshData> mesh
             if (found == loadedPaths.end()) {
                 const auto utf8Path = group.texturePath.u8string();
                 const std::string texturePath(reinterpret_cast<const char*>(utf8Path.data()), utf8Path.size());
-                SDL_GPUTexture* texture = LoadPngTexture(device_, texturePath.c_str());
+                SDL_GPUTexture* texture = LoadPngTexture(device_, texturePath.c_str(),
+                    SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB);
                 if (texture == nullptr) {
                     Shutdown();
                     return false;
@@ -473,11 +486,16 @@ bool MeshRenderer::Render(const ModelScene& scene, WindowSettings& windowSetting
     }
     transformScratch_.resize(scene.models.size());
     for (std::size_t i = 0; i < scene.models.size(); ++i) {
+        ModelVertexUniforms& uniforms = transformScratch_[i];
         if (!TryBuildModelTransform(scene, scene.models[i], outputWidth, outputHeight,
-                transformScratch_[i])) {
+                uniforms.transform) ||
+            !TryBuildModelWorldTransform(scene, scene.models[i], uniforms.world)) {
             SDL_Log("Could not build transform for scene model %u", static_cast<Uint32>(i));
             SDL_SubmitGPUCommandBuffer(commands);
             return false;
+        }
+        if (!TryMakeNormalMatrix(uniforms.world, uniforms.normalTransform)) {
+            uniforms.normalTransform = MakeIdentityMatrix();
         }
     }
 
@@ -509,7 +527,7 @@ bool MeshRenderer::Render(const ModelScene& scene, WindowSettings& windowSetting
         const GpuMesh& mesh = meshes_[scene.models[i].meshIndex];
         const Vector3& tint = scene.models[i].colorTint;
         SDL_PushGPUVertexUniformData(commands, 0, &transformScratch_[i],
-            static_cast<Uint32>(sizeof(Matrix4x4)));
+            static_cast<Uint32>(sizeof(ModelVertexUniforms)));
         SDL_GPUBufferBinding vertexBinding{};
         vertexBinding.buffer = mesh.vertexBuffer;
         SDL_BindGPUVertexBuffers(pass, 0, &vertexBinding, 1);
@@ -518,10 +536,16 @@ bool MeshRenderer::Render(const ModelScene& scene, WindowSettings& windowSetting
         indexBinding.buffer = mesh.indexBuffer;
         SDL_BindGPUIndexBuffer(pass, &indexBinding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
         for (const GpuDrawRange& draw : mesh.drawRanges) {
-            const float colorUniform[8]{tint.x, tint.y, tint.z,
+            const float colorUniform[20]{tint.x, tint.y, tint.z,
                 scene.models[i].opacity,
                 draw.material.ambient[0], draw.material.ambient[1],
-                draw.material.ambient[2], draw.material.opacity};
+                draw.material.ambient[2], draw.material.opacity,
+                draw.material.diffuse[0], draw.material.diffuse[1],
+                draw.material.diffuse[2], 0.5f,
+                draw.material.specular[0], draw.material.specular[1],
+                draw.material.specular[2], 0.0f,
+                scene.cameraPosition.x, scene.cameraPosition.y,
+                scene.cameraPosition.z, encodeSrgbOutput_ ? 1.0f : 0.0f};
             SDL_PushGPUFragmentUniformData(commands, 0, colorUniform,
                 static_cast<Uint32>(sizeof(colorUniform)));
             SDL_GPUTextureSamplerBinding textureBinding{};

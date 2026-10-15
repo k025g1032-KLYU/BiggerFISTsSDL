@@ -198,7 +198,8 @@ bool TutorialEncounter::ResolveAfterPlayer(FirstPersonGame& player) {
         const PlayerHitResult result = player.ReceivePlayerHit(
             PlayerHitType::Projectile);
         projectileImpact_ = TutorialProjectileImpact{missilePosition_,
-            result.shieldLayersLost > 0 ? 0.55f : 1.0f};
+            result.shieldLayersLost > 0 ? 0.55f : 1.0f,
+            result.shieldLayersLost > 0};
         RemoveTrainingMissile(player);
         return true;
     }

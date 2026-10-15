@@ -161,7 +161,8 @@ private:
     bool SpawnEnemy(const EnemySpawnPlan& plan, float attackDelayOffset = 0.0f,
         std::optional<float> initialBomberRotation = std::nullopt);
     void SpawnProjectile(BattleProjectileType type, const Vector3& position,
-        const Vector3& direction = {0.0f, 0.0f, -1.0f}, float phase = 0.0f);
+        const Vector3& direction = {0.0f, 0.0f, -1.0f}, float phase = 0.0f,
+        bool playLaunchSound = false);
     void UpdateEnemies(float seconds);
     void UpdateChargeEnemy(BattleEnemy& enemy, float seconds);
     void UpdateBoss(float seconds);

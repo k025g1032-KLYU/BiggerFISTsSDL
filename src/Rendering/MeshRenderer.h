@@ -33,6 +33,11 @@ public:
     void Shutdown();
 
 private:
+    struct ModelVertexUniforms {
+        Matrix4x4 transform;
+        Matrix4x4 world;
+        Matrix4x4 normalTransform;
+    };
     struct GpuDrawRange {
         Uint32 firstIndex = 0;
         Uint32 indexCount = 0;
@@ -54,6 +59,7 @@ private:
     SDL_GPUGraphicsPipeline* firstPersonPipeline_ = nullptr;
     std::vector<GpuMesh> meshes_;
     SDL_GPUSampler* sampler_ = nullptr;
+    bool encodeSrgbOutput_ = false;
     std::unique_ptr<DepthBuffer> depthBuffer_;
-    std::vector<Matrix4x4> transformScratch_;
+    std::vector<ModelVertexUniforms> transformScratch_;
 };

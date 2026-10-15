@@ -191,9 +191,14 @@ int main(int argc, char** argv) {
                 const BattlePreviewKind kind = phase == FlowPhase::Day1
                     ? BattlePreviewKind::Day1 : phase == FlowPhase::Day2
                     ? BattlePreviewKind::Day2 : BattlePreviewKind::Boss;
+                BattleCombatConfig replayCombat = combatConfig;
+                // The simple controller targets the Boss and does not
+                // intercept crystals; Base failure is covered separately.
+                if (phase == FlowPhase::Boss)
+                    replayCombat.enemy.baseHitPoints = 20;
                 battle.emplace(kind, player,
                     phase == FlowPhase::Day1 ? day1 : phase == FlowPhase::Day2
-                    ? day2 : EncounterConfig{}, combatConfig);
+                    ? day2 : EncounterConfig{}, replayCombat);
                 selectedId.clear();
                 dodgeWasDown = false;
                 boxerWindupSteps = -1;

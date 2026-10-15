@@ -71,6 +71,20 @@ int main() {
     ExpectPoint(MultiplyMatrices(combined, identity), 1.0f, 2.0f, 3.0f,
         -3.0f, 0.0f, 17.0f, "right identity multiplication");
 
+    Matrix4x4 normalMatrix{};
+    ExpectTrue(TryMakeNormalMatrix(scale, normalMatrix), "nonuniform normal matrix");
+    ExpectNear(normalMatrix.elements[0][0], 0.5f, "inverse X scale for normal");
+    ExpectNear(normalMatrix.elements[1][1], 1.0f / 3.0f, "inverse Y scale for normal");
+    ExpectNear(normalMatrix.elements[2][2], 0.25f, "inverse Z scale for normal");
+    ExpectTrue(TryMakeNormalMatrix(combined, normalMatrix), "rotated nonuniform normal matrix");
+    ExpectPoint(normalMatrix, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.5f, 0.0f, "normal follows rotation without translation");
+    ExpectTrue(TryMakeNormalMatrix(MakeScaleMatrix(-2.0f, 3.0f, 4.0f), normalMatrix),
+        "mirrored normal matrix");
+    ExpectNear(normalMatrix.elements[0][0], -0.5f, "mirrored normal direction");
+    ExpectTrue(!TryMakeNormalMatrix(MakeScaleMatrix(0.0f, 1.0f, 1.0f), normalMatrix),
+        "singular normal matrix rejected");
+
     ExpectPoint(MakeAspectCorrectionMatrix(2.0f), 0.6f, 0.6f, 0.0f,
         0.3f, 0.6f, 0.0f, "wide output correction");
     ExpectPoint(MakeAspectCorrectionMatrix(0.5f), 0.6f, 0.6f, 0.0f,

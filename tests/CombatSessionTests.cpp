@@ -1,6 +1,7 @@
 #include "Data/BattleCombatConfig.h"
 #include "Game/FirstPersonGame.h"
 #include "Gameplay/Combat/CombatSession.h"
+#include "Gameplay/Combat/PlayerAudioEvents.h"
 #include "Gameplay/Combat/EncounterConfig.h"
 #include "Gameplay/Player/FirstPersonTuning.h"
 #include "Input/FixedStepInputBuffer.h"
@@ -11,6 +12,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <string>
+#include <tuple>
 #include <utility>
 
 namespace {
@@ -112,6 +114,78 @@ int main(int argc, char** argv) {
         std::printf("FAIL: %s\n", error.c_str());
         return 1;
     }
+    FirstPersonEvents simultaneous{};
+    simultaneous.leftPunchBegan = simultaneous.rightPunchBegan = true;
+    simultaneous.leftRocketReconnected =
+        simultaneous.rightRocketReconnected = true;
+    simultaneous.targetHits = {
+        {"static_a", PunchArmSide::Left, PunchArmAttackType::Punch},
+        {"static_b", PunchArmSide::Right, PunchArmAttackType::RocketPunch},
+        {"enemy", PunchArmSide::Left, PunchArmAttackType::Punch}};
+    const std::vector<FirstPersonTarget> audioTargets{
+        {"static_a"}, {"static_b"},
+        {"enemy", {}, 1, {}, false, 1.25f, 1.0f,
+            TargetDisplayKind::Enemy}};
+    const auto playerCues = BuildPlayerAudioEvents(simultaneous,
+        audioTargets, true);
+    if (std::count(playerCues.begin(), playerCues.end(),
+            BattleFeedbackEvent::PunchSwing) != 2 ||
+        std::count(playerCues.begin(), playerCues.end(),
+            BattleFeedbackEvent::RocketReconnect) != 2 ||
+        std::count(playerCues.begin(), playerCues.end(),
+            BattleFeedbackEvent::PunchImpact) != 1 ||
+        std::count(playerCues.begin(), playerCues.end(),
+            BattleFeedbackEvent::RocketImpact) != 1) {
+        std::puts("FAIL: player audio merged arms or replayed battle hit cues");
+        return 1;
+    }
+    BattleCombatConfig groupedCombat = combat;
+    groupedCombat.enemy.deploymentMinimumX = -1.4f;
+    groupedCombat.enemy.deploymentMaximumX = 1.4f;
+    groupedCombat.enemy.deploymentMinimumZ = 12.0f;
+    groupedCombat.enemy.deploymentMaximumZ = 12.01f;
+    groupedCombat.enemy.missileInitialFireDelay = 1000.0f;
+    PlayerCombatConfig groupedPlayerCombat{};
+    groupedPlayerCombat.ultimateRadius = 30.0f;
+    FirstPersonGame groupedPlayer(GameConfig{}, {0.0f, 5.85f, 0.0f},
+        std::vector<FirstPersonTarget>{}, groupedPlayerCombat);
+    CombatSession groupedSession(BattlePreviewKind::Practice,
+        groupedPlayer, {}, groupedCombat);
+    GameInput groupedInput{};
+    groupedInput.practiceCommand = PracticeCommand::MissileUnits;
+    groupedSession.Update(kStep, groupedInput, 0.0f, 0.0f);
+    for (int tick = 0; tick < 300; ++tick)
+        groupedSession.Update(kStep, {}, 0.0f, 0.0f);
+    groupedInput = {};
+    groupedInput.leftMouseDown = groupedInput.rightMouseDown = true;
+    for (int tick = 0; tick < 400 &&
+            groupedPlayer.GetUltimateState() != UltimateState::Ready; ++tick)
+        groupedSession.Update(kStep, groupedInput, 0.0f, 0.0f);
+    const bool ultimateReady = groupedPlayer.GetUltimateState() ==
+        UltimateState::Ready;
+    bool groupedDefeat = false;
+    for (int tick = 0; tick < 180 && ultimateReady && !groupedDefeat;
+        ++tick) {
+        int defeatedBefore = static_cast<int>(std::count_if(
+            groupedSession.GetEnemies().begin(),
+            groupedSession.GetEnemies().end(),
+            [](const BattleEnemy& enemy) { return enemy.defeated; }));
+        groupedSession.Update(kStep, {}, 0.0f, 0.0f);
+        const int defeatedAfter = static_cast<int>(std::count_if(
+            groupedSession.GetEnemies().begin(),
+            groupedSession.GetEnemies().end(),
+            [](const BattleEnemy& enemy) { return enemy.defeated; }));
+        if (defeatedAfter - defeatedBefore >= 2) {
+            groupedDefeat = std::count(
+                groupedSession.GetFeedbackEvents().begin(),
+                groupedSession.GetFeedbackEvents().end(),
+                BattleFeedbackEvent::EnemyDefeated) == 1;
+        }
+    }
+    if (!ultimateReady || !groupedDefeat) {
+        std::puts("FAIL: grouped Ultimate defeats require one sound per tick");
+        return 1;
+    }
     const auto defeatCheck = [&](BattleAttackType type,
         const Vector3& previous, const Vector3& current,
         const Vector3& expected) {
@@ -128,6 +202,13 @@ int main(int argc, char** argv) {
             std::abs(enemy.defeatVelocity.x - expected.x) < 0.001f &&
             std::abs(enemy.defeatVelocity.y - expected.y) < 0.001f &&
             std::abs(enemy.defeatVelocity.z - expected.z) < 0.001f &&
+            std::count(testSession.GetFeedbackEvents().begin(),
+                testSession.GetFeedbackEvents().end(),
+                BattleFeedbackEvent::EnemyDefeated) ==
+                (type == BattleAttackType::Ultimate ? 0 : 1) &&
+            std::count(testSession.GetFeedbackEvents().begin(),
+                testSession.GetFeedbackEvents().end(),
+                BattleFeedbackEvent::PunchImpact) == 0 &&
             !testSession.ApplyTargetDamage(id, 1,
                 {type, previous, current});
         testSession.Update(kStep, {}, 0.0f, 0.0f);
@@ -236,6 +317,59 @@ int main(int argc, char** argv) {
     }
     CombatSession bossSession(BattlePreviewKind::Boss, player, {}, combat);
     bossSession.Start(true);
+    for (const auto [attack, distance] :
+        {std::tuple{BattleAttackType::Punch,
+                combat.boss.punchKnockbackDistance},
+            std::tuple{BattleAttackType::RocketPunch,
+                combat.boss.rocketKnockbackDistance}}) {
+        FirstPersonGame hitPlayer(GameConfig{}, {0.0f, 5.85f, 0.0f},
+            std::vector<FirstPersonTarget>{});
+        CombatSession hitSession(BattlePreviewKind::Boss, hitPlayer, {}, combat);
+        hitSession.Start(true);
+        const float startZ = hitSession.GetBoss()->GetPosition().z;
+        if (!hitSession.ApplyTargetDamage("target_boss_core", 1,
+                {attack, {0.0f, 5.85f, 29.0f},
+                    {0.0f, 5.85f, 30.0f}})) {
+            std::puts("FAIL: Boss hit was not accepted by CombatSession");
+            return 1;
+        }
+        hitSession.Update(kStep, {}, 0.0f, 0.0f);
+        const float traveled = hitSession.GetBoss()->GetPosition().z - startZ;
+        if (std::abs(traveled - distance * 2.0f /
+                combat.boss.lightKnockbackDuration * kStep) >
+                0.001f) {
+            std::puts("FAIL: CombatSession did not apply attack-specific Boss knockback");
+            return 1;
+        }
+    }
+    FirstPersonGame carryPlayer(GameConfig{}, {0.0f, 5.85f, 0.0f},
+        std::vector<FirstPersonTarget>{});
+    CombatSession carrySession(BattlePreviewKind::Boss, carryPlayer, {}, combat);
+    carrySession.Start(true);
+    if (!carrySession.ApplyTargetDamage("target_boss_core", 1,
+            {BattleAttackType::Ultimate, {-1.0f, 5.85f, 30.0f},
+                {0.0f, 5.85f, 30.0f}}, true) ||
+        !carrySession.GetBoss()->IsUltimateWallCarryActive()) {
+        std::puts("FAIL: Ultimate did not start Boss wall carry");
+        return 1;
+    }
+    carrySession.Update(kStep, {}, 0.0f, 0.0f);
+    if (std::abs(carrySession.GetBoss()->GetPosition().x -
+            carryPlayer.GetUltimateSpeed() * kStep) > 0.001f ||
+        std::abs(carrySession.GetBoss()->GetPreviousPosition().x) > 0.001f) {
+        std::puts("FAIL: Boss did not follow Ultimate flight speed");
+        return 1;
+    }
+    for (int step = 0; step < 120 &&
+            carrySession.GetBoss()->IsUltimateWallCarryActive(); ++step)
+        carrySession.Update(kStep, {}, 0.0f, 0.0f);
+    if (carrySession.GetBoss()->IsUltimateWallCarryActive() ||
+        std::abs(carrySession.GetBoss()->GetPosition().x -
+            (FirstPersonTuning::kBattlefieldMaximumX -
+                combat.boss.coreRadius)) > 0.001f) {
+        std::puts("FAIL: Ultimate did not carry Boss to battlefield wall");
+        return 1;
+    }
     if (!bossSession.GetBoss() ||
         std::abs(bossSession.GetBoss()->GetVisualPose().rootRotation.x +
             1.570796327f) > 0.001f ||
@@ -470,7 +604,10 @@ int main(int argc, char** argv) {
     }
     if (windupSession.GetProjectiles().empty() ||
         windupSession.GetEnemies().front().missileState !=
-            BattleEnemy::MissileState::FireRecovery) {
+            BattleEnemy::MissileState::FireRecovery ||
+        std::count(windupSession.GetFeedbackEvents().begin(),
+            windupSession.GetFeedbackEvents().end(),
+            BattleFeedbackEvent::ProjectileLaunched) != 1) {
         std::puts("FAIL: MissileUnit did not launch after windup");
         return 1;
     }
@@ -714,8 +851,19 @@ int main(int argc, char** argv) {
     practiceHitInput.practiceCommand = PracticeCommand::SingleMissile;
     practiceHit.Update(kStep, practiceHitInput, 0.0f, 0.0f);
     if (practiceHit.GetProjectiles().size() != 1 ||
+        std::count(practiceHit.GetFeedbackEvents().begin(),
+            practiceHit.GetFeedbackEvents().end(),
+            BattleFeedbackEvent::ProjectileLaunched) != 0 ||
         !practiceHit.ApplyTargetDamage(
-            practiceHit.GetProjectiles().front().id, 1) ||
+            practiceHit.GetProjectiles().front().id, 1,
+            {BattleAttackType::Punch, {0.0f, 0.0f, 0.0f},
+                {0.0f, 0.0f, 1.0f}}) ||
+        std::count(practiceHit.GetFeedbackEvents().begin(),
+            practiceHit.GetFeedbackEvents().end(),
+            BattleFeedbackEvent::ProjectileExploded) != 1 ||
+        std::count(practiceHit.GetFeedbackEvents().begin(),
+            practiceHit.GetFeedbackEvents().end(),
+            BattleFeedbackEvent::PunchImpact) != 1 ||
         practiceHit.GetProjectiles().front().age >= 0.0f) {
         std::puts("FAIL: practice projectile interception must apply damage");
         return 1;
@@ -731,6 +879,28 @@ int main(int argc, char** argv) {
         std::puts("FAIL: projectile intercept did not emit exactly one explosion");
         return 1;
     }
+    BattleCombatConfig shieldCombat = combat;
+    shieldCombat.projectile.missileRadius = 2.0f;
+    FirstPersonGame shieldPlayer(GameConfig{}, {0.0f, 5.85f, 0.0f},
+        std::vector<FirstPersonTarget>{});
+    CombatSession shieldSession(BattlePreviewKind::Practice, shieldPlayer,
+        {}, shieldCombat);
+    GameInput shieldCommand{};
+    shieldCommand.practiceCommand = PracticeCommand::SingleMissile;
+    shieldSession.Update(kStep, shieldCommand, 0.0f, 0.0f);
+    int shieldExplosionCues = 0;
+    for (int tick = 0; tick < 360 && shieldExplosionCues == 0; ++tick) {
+        shieldSession.Update(kStep, {}, 0.0f, 0.0f);
+        shieldExplosionCues += static_cast<int>(std::count(
+            shieldSession.GetFeedbackEvents().begin(),
+            shieldSession.GetFeedbackEvents().end(),
+            BattleFeedbackEvent::ShieldedProjectileExploded));
+    }
+    if (shieldExplosionCues != 1 ||
+        shieldPlayer.GetVitality().GetShieldLayers() != 2) {
+        std::puts("FAIL: shield absorption did not select the quiet explosion");
+        return 1;
+    }
     practiceHit.Update(kStep, {}, 0.0f, 0.0f);
     if (explosionCount() != 0) {
         std::puts("FAIL: projectile intercept repeated its explosion");
@@ -742,7 +912,12 @@ int main(int argc, char** argv) {
     const int bossHitPoints = practiceHit.GetBoss()
         ? practiceHit.GetBoss()->GetHitPoints() : -1;
     if (bossHitPoints < 1 ||
-        !practiceHit.ApplyTargetDamage("target_boss_core", 1) ||
+        !practiceHit.ApplyTargetDamage("target_boss_core", 1,
+            {BattleAttackType::RocketPunch, {0.0f, 0.0f, 0.0f},
+                {0.0f, 0.0f, 1.0f}}) ||
+        std::count(practiceHit.GetFeedbackEvents().begin(),
+            practiceHit.GetFeedbackEvents().end(),
+            BattleFeedbackEvent::RocketImpact) != 1 ||
         !practiceHit.GetBoss() ||
         practiceHit.GetBoss()->GetHitPoints() != bossHitPoints - 1) {
         std::puts("FAIL: practice Boss core must receive damage");
@@ -801,6 +976,29 @@ int main(int argc, char** argv) {
     if (!practice.GetBoss() ||
         practice.GetBoss()->GetMode() != BossMode::Idle) {
         std::puts("FAIL: practice Boss did not finish entrance");
+        return 1;
+    }
+    FirstPersonGame burstPlayer(GameConfig{}, {0.0f, 5.85f, 0.0f},
+        std::vector<FirstPersonTarget>{});
+    CombatSession burstSession(BattlePreviewKind::Practice, burstPlayer,
+        {}, combat);
+    GameInput burstCommand{};
+    burstCommand.practiceCommand = PracticeCommand::BossSpawn;
+    burstSession.Update(kStep, burstCommand, 0.0f, 0.0f);
+    for (int step = 0; step < 120; ++step)
+        burstSession.Update(kStep, {}, 0.0f, 0.0f);
+    burstCommand.practiceCommand = PracticeCommand::BossSpreadBurst;
+    burstSession.Update(kStep, burstCommand, 0.0f, 0.0f);
+    int burstCues = 0;
+    for (int step = 0; step < 240; ++step) {
+        burstSession.Update(kStep, {}, 0.0f, 0.0f);
+        burstCues += static_cast<int>(std::count(
+            burstSession.GetFeedbackEvents().begin(),
+            burstSession.GetFeedbackEvents().end(),
+            BattleFeedbackEvent::BossSpreadBurstExploded));
+    }
+    if (burstCues != 1) {
+        std::puts("FAIL: Boss Spread Burst did not emit one explosion sound");
         return 1;
     }
     practiceInput.practiceCommand = PracticeCommand::BossCycleNeedles;

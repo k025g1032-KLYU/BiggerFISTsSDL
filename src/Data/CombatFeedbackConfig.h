@@ -30,7 +30,11 @@ struct CombatFeedbackConfig {
     float chargeHitGain = 0.0f;
     float dodgeGain = 0.0f;
     float ultimateLaunchGain = 0.0f;
-    float battleCueGain = 0.5f;
+    float bossModeChangeGain = 0.0f;
+    float bossCrystalRiserGain = 0.0f;
+    float bossSpreadBurstExplosionGain = 0.0f;
+    float shieldedProjectileExplosionGain = 0.0f;
+    float tutorialPersonnelGain = 0.0f;
     float bossSmallExplosionGain = 0.2f;
     float bossFinalExplosionGain = 0.95f;
     float bossSharpShieldHitGain = 0.45f;

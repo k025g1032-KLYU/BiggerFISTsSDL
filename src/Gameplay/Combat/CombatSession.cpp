@@ -450,7 +450,8 @@ bool CombatSession::SpawnEnemy(const EnemySpawnPlan& plan,
 }
 
 void CombatSession::SpawnProjectile(BattleProjectileType type,
-    const Vector3& position, const Vector3& direction, float phase) {
+    const Vector3& position, const Vector3& direction, float phase,
+    bool playLaunchSound) {
     BattleProjectile projectile;
     projectile.id = NextTargetId();
     projectile.type = type;
@@ -475,7 +476,7 @@ void CombatSession::SpawnProjectile(BattleProjectileType type,
     if (player_.SpawnTarget({projectile.id, projectile.position, 1, {}, false,
             radius, 1.0f, TargetDisplayKind::Projectile})) {
         projectiles_.push_back(std::move(projectile));
-        if (type == BattleProjectileType::Missile) {
+        if (playLaunchSound) {
             feedbackEvents_.push_back(BattleFeedbackEvent::ProjectileLaunched);
         }
     }
@@ -653,9 +654,15 @@ void CombatSession::UpdateBoss(float seconds) {
                 (config_.boss.spreadBurstRadius +
                     FirstPersonTuning::kPlayerColliderRadius) /
                     (1.1f * 1.35f));
-            ReceivePlayerHit(PlayerHitType::BossSpreadBurst,
-                {playerPosition.x - attack.position.x, 0.0f,
-                    playerPosition.z - attack.position.z});
+            feedbackEvents_.push_back(BattleFeedbackEvent::BossSpreadBurstExploded);
+            if (std::hypot(playerPosition.x - attack.position.x,
+                    playerPosition.z - attack.position.z) <=
+                    config_.boss.spreadBurstRadius +
+                    FirstPersonTuning::kPlayerColliderRadius) {
+                ReceivePlayerHit(PlayerHitType::BossSpreadBurst,
+                    {playerPosition.x - attack.position.x, 0.0f,
+                        playerPosition.z - attack.position.z});
+            }
         } else {
             ReceivePlayerHit(PlayerHitType::Projectile,
                 {playerPosition.x - attack.position.x, 0.0f,
@@ -793,7 +800,8 @@ void CombatSession::UpdateEnemies(float seconds) {
                         config_.enemy.missileFirePauseBeforeLaunch) {
                         SpawnProjectile(BattleProjectileType::Missile,
                             {enemy.position.x, enemy.position.y,
-                                enemy.position.z - 1.1f});
+                                enemy.position.z - 1.1f},
+                            {0.0f, 0.0f, -1.0f}, 0.0f, true);
                         enemy.missileState = BattleEnemy::MissileState::FireRecovery;
                         enemy.stateTimer = 0.0f;
                     }
@@ -1136,7 +1144,9 @@ void CombatSession::ResolveProjectileImpacts() {
             const PlayerHitResult hit = ReceivePlayerHit(PlayerHitType::Projectile);
             EmitExplosion(projectile.position,
                 hit.shieldLayersLost > 0 ? 0.55f : 1.0f);
-            feedbackEvents_.push_back(BattleFeedbackEvent::ProjectileExploded);
+            feedbackEvents_.push_back(hit.shieldLayersLost > 0
+                ? BattleFeedbackEvent::ShieldedProjectileExploded
+                : BattleFeedbackEvent::ProjectileExploded);
             player_.RemoveTarget(projectile.id);
             projectile.age = -1.0f;
         } else if (Collision::SweepSphereAgainstSphere(projectile.previousPosition,
@@ -1233,6 +1243,10 @@ bool CombatSession::ApplyTargetDamageImpl(std::string_view id, int damage,
         if (applied) {
             if (emitUltimateImpact)
                 feedbackEvents_.push_back(BattleFeedbackEvent::BossDamaged);
+            else if (impact && impact->type != BattleAttackType::Ultimate)
+                feedbackEvents_.push_back(impact->type == BattleAttackType::Punch
+                    ? BattleFeedbackEvent::PunchImpact
+                    : BattleFeedbackEvent::RocketImpact);
             if (impact) {
                 const float attackRadius = impact->type == BattleAttackType::Ultimate
                     ? player_.GetUltimateRadius()
@@ -1268,9 +1282,24 @@ bool CombatSession::ApplyTargetDamageImpl(std::string_view id, int damage,
                         (config_.boss.coreRadius + 0.08f),
                     boss_->GetPosition().z + normal.z *
                         (config_.boss.coreRadius + 0.08f)}, 0.45f);
+                if (impact->type == BattleAttackType::Ultimate) {
+                    boss_->BeginUltimateWallCarry({
+                        impact->position.x - impact->previousPosition.x,
+                        0.0f,
+                        impact->position.z - impact->previousPosition.z},
+                        player_.GetUltimateSpeed());
+                } else {
+                    const float knockbackDistance =
+                        impact->type == BattleAttackType::Punch
+                        ? config_.boss.punchKnockbackDistance
+                        : config_.boss.rocketKnockbackDistance;
+                    boss_->ApplyKnockback(impact->position,
+                        knockbackDistance);
+                }
             }
         }
         if (applied && boss_->GetMode() == BossMode::Defeating) {
+            activeBossAttacks_.clear();
             if (impact) {
                 boss_->SetDefeatLaunchDirection({
                     impact->position.x - impact->previousPosition.x,
@@ -1301,7 +1330,8 @@ bool CombatSession::ApplyTargetDamageImpl(std::string_view id, int damage,
                 config_.enemy.defeatUpwardSpeed, direction.z * speed};
             enemy.defeatRotation = {0.0f, enemy.visualYaw, 0.0f};
             enemy.previousDefeatRotation = enemy.defeatRotation;
-            feedbackEvents_.push_back(BattleFeedbackEvent::EnemyDefeated);
+            if (!impact || impact->type != BattleAttackType::Ultimate)
+                feedbackEvents_.push_back(BattleFeedbackEvent::EnemyDefeated);
             enemy.stateTimer = 0.0f;
             player_.RemoveTarget(id);
             return true;
@@ -1311,6 +1341,10 @@ bool CombatSession::ApplyTargetDamageImpl(std::string_view id, int damage,
         if (projectile.id == id && projectile.age >= 0.0f) {
             projectile.age = -1.0f;
             feedbackEvents_.push_back(BattleFeedbackEvent::ProjectileExploded);
+            if (impact && impact->type != BattleAttackType::Ultimate)
+                feedbackEvents_.push_back(impact->type == BattleAttackType::Punch
+                    ? BattleFeedbackEvent::PunchImpact
+                    : BattleFeedbackEvent::RocketImpact);
             EmitExplosion(projectile.position);
             player_.RemoveTarget(id);
             return true;
@@ -1329,6 +1363,7 @@ void CombatSession::ProcessUltimateHits() {
     const Vector3& previous = player_.GetPreviousUltimatePosition();
     const Vector3& current = player_.GetUltimatePosition();
     const float radius = player_.GetUltimateRadius();
+    bool defeatedEnemy = false;
     for (BattleEnemy& enemy : enemies_) {
         if (enemy.defeated || ultimateHitIds_.contains(enemy.id) ||
             !Collision::SweepSphereAgainstMovingSphere(previous, current, radius,
@@ -1339,6 +1374,7 @@ void CombatSession::ProcessUltimateHits() {
         if (ApplyTargetDamage(enemy.id, 100,
                 {BattleAttackType::Ultimate, previous, current})) {
             ultimateHitIds_.insert(enemy.id);
+            defeatedEnemy = true;
         }
     }
     for (BattleProjectile& projectile : projectiles_) {
@@ -1369,6 +1405,8 @@ void CombatSession::ProcessUltimateHits() {
             ultimateHitIds_.insert(std::string(kBossTargetId));
         }
     }
+    if (defeatedEnemy)
+        feedbackEvents_.push_back(BattleFeedbackEvent::EnemyDefeated);
     std::erase_if(projectiles_, [](const BattleProjectile& projectile) {
         return projectile.age < 0.0f;
     });

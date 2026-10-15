@@ -968,6 +968,133 @@ int main(int argc, char** argv) {
             boxerHit, needleHit, crystalShots, burstHit);
         return 1;
     }
+    BossCombatConfig knockbackConfig = config.boss;
+    knockbackConfig.idleMoveSpeed = 0.0f;
+    knockbackConfig.spreadPressureRetreatSpeed = 0.0f;
+    knockbackConfig.idleDecisionInterval = 100.0f;
+    knockbackConfig.crystalSpikeInitialDelay = 100.0f;
+    knockbackConfig.crystalCubeInitialDelay = 100.0f;
+    const auto measureKnockback = [&](float distance) {
+        BattleBoss testBoss(knockbackConfig);
+        testBoss.Reset({0.0f, knockbackConfig.hoverHeight, 20.0f});
+        testBoss.BeginBehavior(BossMode::Idle);
+        if (!testBoss.ReceiveHit(1)) return -1.0f;
+        testBoss.ApplyKnockback({0.0f, knockbackConfig.hoverHeight, 10.0f},
+            distance);
+        testBoss.Update(kStep, distantPlayer);
+        if (std::abs(testBoss.GetPosition().z - 20.0f -
+                distance * 2.0f / knockbackConfig.lightKnockbackDuration *
+                    kStep) > 0.001f) {
+            return -1.0f;
+        }
+        if (std::abs(testBoss.GetPreviousPosition().z - 20.0f) > 0.001f)
+            return -1.0f;
+        for (int step = 1; step < 30; ++step)
+            testBoss.Update(kStep, distantPlayer);
+        for (int step = 30; step < 60; ++step)
+            testBoss.Update(kStep, distantPlayer);
+        const float traveled = testBoss.GetPosition().z - 20.0f;
+        testBoss.Reset({0.0f, knockbackConfig.hoverHeight, 20.0f});
+        testBoss.BeginBehavior(BossMode::Idle);
+        testBoss.Update(kStep, distantPlayer);
+        if (std::abs(testBoss.GetPosition().z - 20.0f) > 0.001f)
+            return -1.0f;
+        return traveled;
+    };
+    const float punchTravel = measureKnockback(
+        config.boss.punchKnockbackDistance);
+    const float rocketTravel = measureKnockback(
+        config.boss.rocketKnockbackDistance);
+    if (punchTravel < 1.7f || rocketTravel < punchTravel + 0.5f) {
+        std::puts("FAIL: Boss Punch or Rocket knockback distance");
+        return 1;
+    }
+    BattleBoss staggerBoss(knockbackConfig);
+    for (const BossMode mode : {BossMode::Boxer, BossMode::SpreadCounter}) {
+        staggerBoss.Reset({0.0f, knockbackConfig.hoverHeight, 20.0f});
+        staggerBoss.BeginBehavior(mode);
+        staggerBoss.BeginUltimateWallCarry({0.0f, 0.0f, 1.0f}, 30.0f);
+        if (staggerBoss.GetMode() != BossMode::Idle ||
+            staggerBoss.GetNeedlePose() != BossNeedlePose::Spread) {
+            std::puts("FAIL: Ultimate did not interrupt Boss attack mode");
+            return 1;
+        }
+    }
+    staggerBoss.Reset({0.0f, knockbackConfig.hoverHeight, 20.0f});
+    staggerBoss.BeginBehavior(BossMode::Boxer);
+    staggerBoss.ApplyKnockback({0.0f, knockbackConfig.hoverHeight, 10.0f},
+        knockbackConfig.punchKnockbackDistance);
+    if (staggerBoss.GetMode() != BossMode::Boxer) {
+        std::puts("FAIL: light Boss hit interrupted Boxer");
+        return 1;
+    }
+    staggerBoss.Reset({0.0f, knockbackConfig.hoverHeight, 20.0f});
+    staggerBoss.BeginBehavior(BossMode::Idle);
+    const float facingBefore = staggerBoss.GetVisualPose().rootRotation.y;
+    staggerBoss.BeginUltimateWallCarry({0.0f, 0.0f, 1.0f}, 30.0f);
+    staggerBoss.Update(kStep, {10.0f, knockbackConfig.hoverHeight, 20.0f});
+    if (std::abs(std::remainder(
+            staggerBoss.GetVisualPose().rootRotation.y - facingBefore,
+            2.0f * std::numbers::pi_v<float>)) > 0.001f) {
+        std::puts("FAIL: staggered Boss turned during behavior pause");
+        return 1;
+    }
+    BattleBoss boundaryBoss(knockbackConfig);
+    boundaryBoss.Reset({0.0f, knockbackConfig.hoverHeight,
+        42.0f - knockbackConfig.coreRadius - 0.05f});
+    boundaryBoss.BeginBehavior(BossMode::Idle);
+    boundaryBoss.ApplyKnockback({0.0f, knockbackConfig.hoverHeight, 30.0f},
+        knockbackConfig.rocketKnockbackDistance);
+    for (int step = 0; step < 45; ++step)
+        boundaryBoss.Update(kStep, distantPlayer);
+    if (boundaryBoss.GetPosition().z > 42.0f -
+            knockbackConfig.coreRadius + 0.001f) {
+        std::puts("FAIL: Boss knockback crossed battlefield boundary");
+        return 1;
+    }
+    boundaryBoss.Reset({0.0f, knockbackConfig.hoverHeight, -7.0f});
+    boundaryBoss.BeginBehavior(BossMode::Idle);
+    boundaryBoss.ApplyKnockback({0.0f, knockbackConfig.hoverHeight, 3.0f},
+        knockbackConfig.punchKnockbackDistance);
+    boundaryBoss.Update(kStep, distantPlayer);
+    if (boundaryBoss.GetPosition().z < -16.0f + 7.0f +
+            knockbackConfig.coreRadius - 0.001f) {
+        std::puts("FAIL: Boss knockback crossed Base boundary");
+        return 1;
+    }
+    BattleBoss wallCarryBoss(knockbackConfig);
+    wallCarryBoss.Reset({0.0f, knockbackConfig.hoverHeight, 20.0f});
+    wallCarryBoss.BeginBehavior(BossMode::Idle);
+    if (!wallCarryBoss.ReceiveHit(1)) return 1;
+    wallCarryBoss.BeginUltimateWallCarry({1.0f, 0.0f, 0.25f}, 30.0f);
+    const float carryStartHeight = wallCarryBoss.GetPosition().y;
+    int carrySteps = 0;
+    while (wallCarryBoss.IsUltimateWallCarryActive() && carrySteps < 120) {
+        wallCarryBoss.Update(kStep, distantPlayer);
+        ++carrySteps;
+        if (wallCarryBoss.GetMode() != BossMode::Idle ||
+            std::abs(wallCarryBoss.GetModeTime()) > 0.001f ||
+            std::abs(wallCarryBoss.GetPosition().y - carryStartHeight) >
+                0.001f ||
+            wallCarryBoss.GetPosition().x >
+                FirstPersonTuning::kBattlefieldMaximumX -
+                    knockbackConfig.coreRadius + 0.001f) {
+            std::puts("FAIL: Boss moved or attacked incorrectly during wall carry");
+            return 1;
+        }
+    }
+    if (carrySteps < 2 || wallCarryBoss.IsUltimateWallCarryActive() ||
+        std::abs(wallCarryBoss.GetPosition().x -
+            (FirstPersonTuning::kBattlefieldMaximumX -
+                knockbackConfig.coreRadius)) > 0.001f) {
+        std::puts("FAIL: diagonal Ultimate carry did not stop at wall");
+        return 1;
+    }
+    wallCarryBoss.Reset({0.0f, knockbackConfig.hoverHeight, 20.0f});
+    if (wallCarryBoss.IsUltimateWallCarryActive()) {
+        std::puts("FAIL: reset retained Ultimate wall carry");
+        return 1;
+    }
     if (!boss.ReceiveHit(3) || boss.GetHitPoints() != 17 ||
         !boss.ReceiveHit(17) || boss.GetHitPoints() != 1 ||
         boss.ReceiveHit(1)) {
@@ -979,10 +1106,29 @@ int main(int argc, char** argv) {
         boss.Update(kStep, player);
         enteredFinalBarrage |= boss.GetMode() == BossMode::FullBarrage;
     }
+    boss.BeginBehavior(BossMode::NeedleCombo);
+    for (int step = 0; step < 15; ++step)
+        boss.Update(kStep, player);
+    const float coneBeforeDefeat = boss.GetVisualPose().cones[0].rootTranslation.x;
+    if (boss.GetNeedlePose() != BossNeedlePose::NeedleStrike ||
+        std::abs(coneBeforeDefeat) < 0.2f) {
+        std::printf("FAIL: Boss defeat pose test did not start from NeedleCombo (pose=%d rootX=%.3f rotY=%.3f mode=%d)\n",
+            static_cast<int>(boss.GetNeedlePose()), coneBeforeDefeat,
+            boss.GetVisualPose().cones[0].rotation.y,
+            static_cast<int>(boss.GetMode()));
+        return 1;
+    }
     const float pitchBeforeDefeat = boss.GetVisualPose().rootRotation.x;
     if (!enteredFinalBarrage || !boss.ReceiveHit(1) ||
-        boss.GetMode() != BossMode::Defeating || boss.ReceiveHit(1)) {
+        boss.GetMode() != BossMode::Defeating ||
+        boss.GetNeedlePose() != BossNeedlePose::Spread ||
+        boss.ReceiveHit(1)) {
         std::puts("FAIL: Boss final barrage did not unlock defeat");
+        return 1;
+    }
+    if (std::abs(boss.GetVisualPose().cones[0].rootTranslation.x -
+            coneBeforeDefeat) > 0.001f) {
+        std::puts("FAIL: Boss cone snapped when defeat began");
         return 1;
     }
     if (std::abs(boss.GetVisualPose().rootRotation.x -
@@ -990,13 +1136,58 @@ int main(int argc, char** argv) {
         std::puts("FAIL: Boss root pitch snapped at the start of defeat");
         return 1;
     }
+    boss.BeginUltimateWallCarry({1.0f, 0.0f, 0.0f}, 30.0f);
+    const float heightBeforeWall = boss.GetPosition().y;
+    float coneDuringCarry = coneBeforeDefeat;
+    for (int step = 0; step < 120 &&
+            boss.IsUltimateWallCarryActive(); ++step) {
+        const std::vector<BossAttackEvent> attacks = boss.Update(kStep, player);
+        if (step == 10)
+            coneDuringCarry = boss.GetVisualPose().cones[0].rootTranslation.x;
+        if (!attacks.empty() || boss.GetMode() != BossMode::Defeating ||
+            boss.DidEmitDefeatSmallExplosionThisStep() ||
+            std::abs(boss.GetPosition().y - heightBeforeWall) > 0.001f) {
+            std::puts("FAIL: lethal Ultimate played defeat before wall impact");
+            return 1;
+        }
+    }
+    if (std::abs(coneDuringCarry) >= std::abs(coneBeforeDefeat) ||
+        std::abs(boss.GetVisualPose().cones[0].rootTranslation.x) > 0.1f) {
+        std::puts("FAIL: Boss cones did not blend to Spread during defeat");
+        return 1;
+    }
+    if (boss.IsUltimateWallCarryActive() ||
+        std::abs(boss.GetPosition().x -
+            (FirstPersonTuning::kBattlefieldMaximumX -
+                config.boss.coreRadius)) > 0.001f) {
+        std::printf("FAIL: lethal Ultimate did not reach wall (x=%.3f, limit=%.3f, active=%d)\n",
+            boss.GetPosition().x,
+            FirstPersonTuning::kBattlefieldMaximumX - config.boss.coreRadius,
+            boss.IsUltimateWallCarryActive());
+        return 1;
+    }
+    const int pauseSteps = static_cast<int>(
+        config.boss.ultimateWallImpactPauseDuration / kStep) - 1;
+    for (int step = 0; step < pauseSteps; ++step) {
+        boss.Update(kStep, player);
+        if (boss.GetMode() != BossMode::Defeating ||
+            boss.DidEmitDefeatSmallExplosionThisStep() ||
+            std::abs(boss.GetPosition().y - heightBeforeWall) > 0.001f) {
+            std::puts("FAIL: lethal Ultimate skipped wall impact pause");
+            return 1;
+        }
+    }
     bool roseAfterDefeat = false;
     bool touchedGround = false;
     bool bounced = false;
     bool emittedSmallExplosion = false;
     const float defeatStartHeight = boss.GetPosition().y;
     for (int step = 0; step < 500 && !boss.IsDefeated(); ++step) {
-        boss.Update(kStep, player);
+        const std::vector<BossAttackEvent> attacks = boss.Update(kStep, player);
+        if (!attacks.empty()) {
+            std::puts("FAIL: Boss attacked during defeat");
+            return 1;
+        }
         roseAfterDefeat |= boss.GetPosition().y > defeatStartHeight + 0.05f;
         touchedGround |= boss.GetPosition().y <=
             config.boss.coreRadius + 0.001f;

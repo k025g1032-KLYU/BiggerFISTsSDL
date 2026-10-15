@@ -246,8 +246,8 @@ void FirstPersonScenePresenter::SyncTutorial(const FirstPersonGame& game,
                 0.0f,
                 tailDirection.z * (target.radius + 0.213f)});
             flame.scaleAxes = {0.12f, 0.213f, 0.12f};
-            flame.transparent = true;
-            flame.renderLayer = ModelRenderLayer::AdditiveEffect;
+            flame.transparent = false;
+            flame.renderLayer = ModelRenderLayer::World;
             Rotate(flame, {std::numbers::pi_v<float> * 0.5f,
                 std::atan2(tailDirection.x, tailDirection.z), 0.0f});
             scene_.models.push_back(std::move(flame));
@@ -284,8 +284,8 @@ void FirstPersonScenePresenter::SyncRocketFlames(
             : Vector3{std::numbers::pi_v<float> * 0.5f - pitch,
                 yaw + std::numbers::pi_v<float>, 0.0f});
         flame.colorTint = {1.0f, 1.0f, 1.0f};
-        flame.transparent = true;
-        flame.renderLayer = ModelRenderLayer::AdditiveEffect;
+        flame.transparent = false;
+        flame.renderLayer = ModelRenderLayer::World;
         scene_.models.push_back(std::move(flame));
     };
     addFlame(game.GetLeftArm(), "left");
@@ -476,8 +476,8 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
             if (ModelInstance* flame = FindModelById(scene_,
                     "battle_" + enemy.id + "_flame")) {
                 flame->scaleAxes = {0.5f, 1.15f, 0.5f};
-                flame->transparent = true;
-                flame->renderLayer = ModelRenderLayer::AdditiveEffect;
+                flame->transparent = false;
+                flame->renderLayer = ModelRenderLayer::World;
                 Rotate(*flame, {std::numbers::pi_v<float> * 0.5f,
                     std::atan2(-enemy.chargeDirection.x,
                         -enemy.chargeDirection.z), 0.0f});
@@ -541,8 +541,8 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
             if (ModelInstance* flame = FindModelById(scene_,
                     "battle_" + projectile.id + "_tail")) {
                 flame->scaleAxes = {0.12f, 0.213f, 0.12f};
-                flame->transparent = true;
-                flame->renderLayer = ModelRenderLayer::AdditiveEffect;
+                flame->transparent = false;
+                flame->renderLayer = ModelRenderLayer::World;
                 Rotate(*flame, {std::numbers::pi_v<float> * 0.5f,
                     std::atan2(tail.x, tail.z), 0.0f});
             }
@@ -608,8 +608,7 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
                 }
             }
         }
-        const bool showHalo = boss->GetMode() != BossMode::Defeating &&
-            boss->GetMode() != BossMode::Defeated;
+        const bool showHalo = boss->GetMode() != BossMode::Defeated;
         for (std::size_t index = 0;
                 showHalo && index < boss->GetSpikeSlots().size(); ++index) {
             const BossCrystalSlot& slot = boss->GetSpikeSlots()[index];
@@ -685,8 +684,8 @@ void FirstPersonScenePresenter::SyncBattle(const CombatSession& battle,
                 Rotate(flame, {std::numbers::pi_v<float> * 0.5f,
                     std::atan2(-direction.x, -direction.z), 0.0f});
                 flame.colorTint = {1.0f, 1.0f, 1.0f};
-                flame.transparent = true;
-                flame.renderLayer = ModelRenderLayer::AdditiveEffect;
+                flame.transparent = false;
+                flame.renderLayer = ModelRenderLayer::World;
                 scene_.models.push_back(std::move(flame));
             }
         }

@@ -171,7 +171,7 @@ constexpr std::array<std::pair<std::string_view, float ProjectileCombatConfig::*
         {"crystalCubeOscillationAmplitude", &ProjectileCombatConfig::crystalCubeOscillationAmplitude},
         {"crystalCubeOscillationFrequency", &ProjectileCombatConfig::crystalCubeOscillationFrequency},
     }};
-constexpr std::array<std::pair<std::string_view, float BossCombatConfig::*>, 140>
+constexpr std::array<std::pair<std::string_view, float BossCombatConfig::*>, 145>
     kBossFields{{
         {"poseBlendSpeed", &BossCombatConfig::poseBlendSpeed},
         {"cruisePoseBlendSpeed", &BossCombatConfig::cruisePoseBlendSpeed},
@@ -302,6 +302,11 @@ constexpr std::array<std::pair<std::string_view, float BossCombatConfig::*>, 140
         {"spreadWindupDuration", &BossCombatConfig::spreadWindupDuration},
         {"spreadSpinDuration", &BossCombatConfig::spreadSpinDuration},
         {"spreadBurstRadius", &BossCombatConfig::spreadBurstRadius},
+        {"punchKnockbackDistance", &BossCombatConfig::punchKnockbackDistance},
+        {"rocketKnockbackDistance", &BossCombatConfig::rocketKnockbackDistance},
+        {"lightKnockbackDuration", &BossCombatConfig::lightKnockbackDuration},
+        {"ultimateStaggerDuration", &BossCombatConfig::ultimateStaggerDuration},
+        {"ultimateWallImpactPauseDuration", &BossCombatConfig::ultimateWallImpactPauseDuration},
         {"defeatLaunchHorizontalSpeed", &BossCombatConfig::defeatLaunchHorizontalSpeed},
         {"defeatLaunchUpwardSpeed", &BossCombatConfig::defeatLaunchUpwardSpeed},
         {"defeatGravity", &BossCombatConfig::defeatGravity},

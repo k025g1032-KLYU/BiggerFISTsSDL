@@ -85,7 +85,7 @@ bool VerifyTutorialProjectileModel() {
     return body && body->meshIndex == 41 &&
         std::abs(body->scale - 0.45f / 1.25f) < 0.0001f &&
         tail && tail->meshIndex == 43 &&
-        tail->renderLayer == ModelRenderLayer::AdditiveEffect;
+        tail->renderLayer == ModelRenderLayer::World;
 }
 
 bool VerifyTutorialVisualEffects() {
@@ -144,7 +144,8 @@ bool VerifyPracticeBossFinalEffect(const BattleCombatConfig& combat) {
     BattleAssetCatalog assets;
     for (const char* key : {"boss_core", "boss_cone_left",
             "boss_cone_right", "boss_cone_lower", "explosion_flash",
-            "explosion_fire", "explosion_smoke"}) {
+            "explosion_fire", "explosion_smoke", "boss_crystal_spike",
+            "boss_crystal_cube"}) {
         assets.Add(key, ModelInstance{});
     }
     FirstPersonScenePresenter presenter(ModelScene{});
@@ -163,7 +164,42 @@ bool VerifyPracticeBossFinalEffect(const BattleCombatConfig& combat) {
         for (const BattleProjectile& projectile : session.GetProjectiles())
             session.ApplyTargetDamage(projectile.id, 1);
     }
+    GameInput restartBarrage{};
+    restartBarrage.practiceCommand = PracticeCommand::BossFullBarrage;
+    session.Update(kStep, restartBarrage, 0.0f, 0.0f);
     if (!session.ApplyTargetDamage("target_boss_core", 1)) return false;
+    const std::vector<BattleHitbox> defeatHitboxes = session.GetHitboxes();
+    if (std::any_of(defeatHitboxes.begin(),
+            defeatHitboxes.end(), [](const BattleHitbox& hitbox) {
+                return hitbox.kind == BattleHitboxKind::BossAttack ||
+                    hitbox.kind == BattleHitboxKind::BossCore;
+            })) {
+        std::puts("FAIL: Boss kept a collision hitbox after defeat");
+        return false;
+    }
+    const BattleBoss* defeatedBoss = session.GetBoss();
+    const bool hasReadyCrystal = std::any_of(
+        defeatedBoss->GetSpikeSlots().begin(),
+        defeatedBoss->GetSpikeSlots().end(),
+        [](const BossCrystalSlot& slot) {
+            return !slot.consumed && slot.reloadTime <= 0.0f;
+        }) || std::any_of(defeatedBoss->GetCubeSlots().begin(),
+            defeatedBoss->GetCubeSlots().end(),
+            [](const BossCrystalSlot& slot) {
+                return !slot.consumed && slot.reloadTime <= 0.0f;
+            });
+    presenter.SyncBattle(session, assets);
+    const bool hasDefeatHalo = std::any_of(
+        presenter.GetScene().models.begin(),
+        presenter.GetScene().models.end(), [](const ModelInstance& model) {
+            return model.id.starts_with("battle_boss_spike_slot_") ||
+                model.id.starts_with("battle_boss_cube_slot_");
+        });
+    if (!hasReadyCrystal || !hasDefeatHalo) {
+        std::printf("FAIL: Boss halo disappeared at the start of defeat (ready=%d shown=%d)\n",
+            hasReadyCrystal, hasDefeatHalo);
+        return false;
+    }
     int finalExplosions = 0;
     bool sawFinalEffect = false;
     for (int tick = 0; tick < 600; ++tick) {
@@ -371,7 +407,12 @@ ReplayResult Play(BattlePreviewKind kind, int renderFps,
     const EncounterConfig& encounter, const BattleCombatConfig& combat) {
     FirstPersonGame player(GameConfig{}, {0.0f, 5.85f, 0.0f},
         std::vector<FirstPersonTarget>{});
-    CombatSession session(kind, player, encounter, combat);
+    BattleCombatConfig replayCombat = combat;
+    // The scripted controller does not intercept crystals; Base damage and
+    // GameOver are verified separately from this input-driven clear replay.
+    if (kind == BattlePreviewKind::Boss)
+        replayCombat.enemy.baseHitPoints = 20;
+    CombatSession session(kind, player, encounter, replayCombat);
     FixedStepClock clock;
     GameInput start{};
     start.battleStart.pressed = true;

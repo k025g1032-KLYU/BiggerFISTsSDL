@@ -1,6 +1,10 @@
 #pragma once
 
 enum class BattleFeedbackEvent {
+    PunchSwing,
+    RocketReconnect,
+    PunchImpact,
+    RocketImpact,
     EnemyDefeated,
     EnemyExploded,
     ProjectileLaunched,
@@ -19,5 +23,7 @@ enum class BattleFeedbackEvent {
     BossNeedleStarted,
     BossBarrageStarted,
     BossChargeLaunched,
-    ProjectileExploded
+    ProjectileExploded,
+    ShieldedProjectileExploded,
+    BossSpreadBurstExploded
 };

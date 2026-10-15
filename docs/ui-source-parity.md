@@ -74,6 +74,20 @@
 
   `build/Debug/BiggerFISTsSDL.exe --replay-input=build/Debug/presentation-ui-flow.replay --capture-frame=build/ui-ending.bmp --capture-at-frame=870 --smoke-test --smoke-frames=902`
 
+## Startup opacity and opening-curtain follow-up (2026-10-14)
+
+- The user selected 0.75 opacity for the full startup blackout instead of the
+  original 0.94. Quick/Boss startup remains 0.78 and emergency reboot remains
+  0.65. This is an intentional presentation difference.
+- When the curtain opens into Tutorial, Day1, Day2, or Boss, the UI draws the
+  same full-viewport startup blackout beneath the moving curtain. Startup
+  checks and HUD still wait for the normal startup phase; only the underlying
+  opacity is shown early. This removes the brightness jump at curtain exit.
+- `FullGameUiTests` checks all four phases, overlay order, and opacity
+  continuity. Debug and Release builds and the relevant UI, cockpit, and flow
+  tests pass. Fixed-input Debug captures `build/opening-110.bmp` and
+  `build/opening-130.bmp` show the curtain opening and the first startup check.
+
 ## Verification still required
 
 - Capture matching original and SDL states at 1280×720 beyond Title. The

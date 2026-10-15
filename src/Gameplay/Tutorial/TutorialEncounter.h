@@ -9,6 +9,7 @@
 struct TutorialProjectileImpact {
     Vector3 position{};
     float scale = 1.0f;
+    bool shieldAbsorbed = false;
 };
 
 class TutorialEncounter {

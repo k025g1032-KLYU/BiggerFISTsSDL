@@ -1,5 +1,6 @@
 #include "Platform/CombatFeedback.h"
 
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -20,6 +21,14 @@ int main(int argc, char** argv) {
         std::printf("FAIL: audio initialization: %s\n", error.c_str());
         return 1;
     }
+    if (std::abs(config.bossModeChangeGain - 0.50f) > 0.001f ||
+        std::abs(config.bossCrystalRiserGain - 0.55f) > 0.001f ||
+        std::abs(config.bossSpreadBurstExplosionGain - 0.75f) > 0.001f ||
+        std::abs(config.shieldedProjectileExplosionGain - 0.30f) > 0.001f ||
+        std::abs(config.tutorialPersonnelGain - 0.95f) > 0.001f) {
+        std::puts("FAIL: original audio gains were not loaded");
+        return 1;
+    }
     feedback.PlayPunchHit();
     feedback.PlayRocketHit();
     feedback.PlayRocketLaunch();
@@ -28,6 +37,23 @@ int main(int argc, char** argv) {
     feedback.PlaySystemRestart();
     feedback.PlayPunchSwing();
     feedback.PlayRocketReconnect();
+    feedback.StopBattleAudio();
+    const size_t initialVoiceCount = feedback.GetAllocatedBattleVoiceCount();
+    for (int index = 0; index < 5; ++index)
+        feedback.PlayPunchSwing();
+    if (feedback.GetAllocatedBattleVoiceCount() < initialVoiceCount + 3) {
+        std::puts("FAIL: simultaneous sounds replaced an active voice");
+        return 1;
+    }
+    feedback.StopBattleAudio();
+    if (feedback.GetQueuedBattleVoiceCount() != 0) {
+        std::puts("FAIL: battle audio remained queued after stop");
+        return 1;
+    }
+    feedback.PlayBattleEvent(BattleFeedbackEvent::BossSpreadBurstExploded);
+    feedback.PlayBattleEvent(BattleFeedbackEvent::ShieldedProjectileExploded);
+    feedback.PlayBattleEvent(BattleFeedbackEvent::PunchImpact);
+    feedback.PlayBattleEvent(BattleFeedbackEvent::RocketImpact);
     feedback.PlayPlayerHit(PlayerHitType::Projectile, false);
     feedback.PlayPlayerHit(PlayerHitType::Projectile, true);
     feedback.PlayPlayerHit(PlayerHitType::Projectile, false, true);
@@ -61,6 +87,11 @@ int main(int argc, char** argv) {
         return 1;
     }
     feedback.SetMusic("elevator");
+    if (feedback.GetCurrentMusic() != "elevator" ||
+        !feedback.IsMusicQueued("elevator")) {
+        std::puts("FAIL: tutorial music did not start immediately");
+        return 1;
+    }
     feedback.UpdateMusic(1.0f / 60.0f);
     feedback.PlayTutorialVoice("personnel.wav");
     if (feedback.GetCurrentMusic() != "elevator" ||
@@ -69,11 +100,13 @@ int main(int argc, char** argv) {
         return 1;
     }
     feedback.SetMusic("boss");
-    feedback.UpdateMusic(0.5f);
-    if (feedback.GetCurrentMusic() != "boss") {
-        std::puts("FAIL: battle music did not switch after fade");
+    if (feedback.GetCurrentMusic() != "boss" ||
+        !feedback.IsMusicQueued("boss") ||
+        feedback.IsMusicQueued("elevator")) {
+        std::puts("FAIL: battle music did not switch immediately");
         return 1;
     }
+    feedback.UpdateMusic(1.0f / 60.0f);
     SDL_Delay(50);
     feedback.Shutdown();
 
@@ -108,6 +141,17 @@ int main(int argc, char** argv) {
     std::filesystem::remove(invalidConfig);
     if (acceptedInvalidCue || error.find("line 1") == std::string::npos) {
         std::puts("FAIL: invalid cue must report its line");
+        return 1;
+    }
+    {
+        std::ofstream output(invalidConfig);
+        output << "bossModeChangeGain -1\n";
+    }
+    const bool acceptedInvalidGain = LoadCombatFeedbackConfig(
+        invalidConfig, config, error);
+    std::filesystem::remove(invalidConfig);
+    if (acceptedInvalidGain || error.find("line 1") == std::string::npos) {
+        std::puts("FAIL: invalid gain must report its line");
         return 1;
     }
     std::puts("PASS: WAV loading, SDL audio playback and missing-file diagnostics");

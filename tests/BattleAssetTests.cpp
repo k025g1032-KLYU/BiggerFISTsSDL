@@ -4,6 +4,7 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <string>
 #include <vector>
 
 int main(int argc, char** argv) {
@@ -60,6 +61,17 @@ int main(int argc, char** argv) {
         std::printf("FAIL: battlefield or model catalog is incomplete: %zu instances, %zu meshes\n",
             scene.models.size(), meshes.size());
         return 1;
+    }
+    constexpr float sideWallZ[] = {-10.0f, 13.0f, 36.0f};
+    for (int index = 0; index < 3; ++index) {
+        const ModelInstance* leftWall = FindModelById(scene, "left_wall_" + std::to_string(index));
+        const ModelInstance* rightWall = FindModelById(scene, "right_wall_" + std::to_string(index));
+        if (!leftWall || !rightWall ||
+            leftWall->position.x != -24.0f || rightWall->position.x != 24.0f ||
+            leftWall->position.z != sideWallZ[index] || rightWall->position.z != sideWallZ[index]) {
+            std::printf("FAIL: side wall tile %d does not match the original centered layout\n", index);
+            return 1;
+        }
     }
     std::printf("PASS: %zu battlefield instances and %zu battle meshes loaded\n",
         scene.models.size(), meshes.size());

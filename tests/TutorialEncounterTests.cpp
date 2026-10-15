@@ -237,6 +237,7 @@ int main() {
     const auto projectileImpact = encounter.ConsumeProjectileImpact();
     pass &= Check(projectileImpact.has_value() &&
         projectileImpact->scale == 0.55f &&
+        projectileImpact->shieldAbsorbed &&
         !encounter.ConsumeProjectileImpact().has_value(),
         "Training projectile creates one shield-scaled impact event");
     for (int tick = 0; tick < 71; ++tick)

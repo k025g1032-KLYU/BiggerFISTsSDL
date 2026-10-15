@@ -276,12 +276,17 @@ void DrawHud(UiDrawList& list, const FirstPersonGame& player,
     }
 }
 
-void DrawCockpitPresentation(UiDrawList& list,
+void DrawCockpitOverlay(UiDrawList& list,
     const CockpitPresentation& cockpit) {
     list.SetPlacement(UiPlacement::FullViewport);
     list.Rectangle(0, 0, 1280, 720,
         {0.0f, 0.0f, 0.0f, cockpit.GetOverlayAlpha()});
     list.SetPlacement(UiPlacement::Safe);
+}
+
+void DrawCockpitPresentation(UiDrawList& list,
+    const CockpitPresentation& cockpit) {
+    DrawCockpitOverlay(list, cockpit);
     if (cockpit.IsStartupActive()) {
         list.Text(cockpit.GetTitle(), 460, 152, 1.2f);
         for (int index = 0; index < cockpit.GetVisibleLineCount(); ++index)
@@ -592,6 +597,10 @@ void BuildFullGameUi(const FlowScreenState& flow, const TutorialSession* tutoria
         }
     } else if (flow.phase == FlowPhase::Tutorial || flow.phase == FlowPhase::Day1 ||
         flow.phase == FlowPhase::Day2 || flow.phase == FlowPhase::Boss) {
+        if (flow.presentation == FlowPresentation::Opening &&
+            cockpit.IsStartupActive()) {
+            DrawCockpitOverlay(list, cockpit);
+        }
         if (flow.presentation == FlowPresentation::Normal) {
             if (damageVignetteAlpha > 0.0f) {
                 list.SetPlacement(UiPlacement::FullViewport);

@@ -19,10 +19,10 @@ int main() {
         "startup cue only once");
     pass &= Check(cockpit.GetVisibleLineCount() == 1 &&
         cockpit.GetActivation().leftArm == 0.0f &&
-        std::abs(cockpit.GetOverlayAlpha() - 0.94f) < 0.001f &&
+        std::abs(cockpit.GetOverlayAlpha() - 0.75f) < 0.001f &&
         std::string_view(cockpit.GetTitle()) == "COCKPIT INITIALIZATION" &&
         std::string_view(cockpit.GetLine(0)) == "MAIN POWER ........ ONLINE",
-        "full startup begins with the original title, check and blackout");
+        "full startup begins with the configured title, check and blackout");
     cockpit.Update(0.45f);
     pass &= Check(cockpit.GetVisibleLineCount() == 2 &&
         cockpit.GetHudVisibility().armor &&

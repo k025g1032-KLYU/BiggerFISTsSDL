@@ -41,6 +41,8 @@ public:
     void StopBattleAudio();
     void SetEngineLoop(bool enabled);
     bool IsEngineLoopQueued() const;
+    size_t GetAllocatedBattleVoiceCount() const;
+    size_t GetQueuedBattleVoiceCount() const;
     void Shutdown();
     bool HasAudioDevice() const { return audioDevice_ != 0; }
     bool HasGamepad() const { return gamepad_ != nullptr; }
@@ -49,6 +51,7 @@ public:
         std::string& error);
     void SetMusic(const std::string& name);
     const std::string& GetCurrentMusic() const { return currentMusic_; }
+    bool IsMusicQueued(const std::string& name) const;
     void PlayTutorialVoice(const std::string& name);
     void StopTutorialVoice();
     bool IsTutorialVoicePlaying() const;
@@ -60,6 +63,7 @@ private:
         SDL_AudioSpec spec{};
         std::vector<Uint8> samples;
         std::vector<SDL_AudioStream*> voices;
+        std::vector<Uint64> busyUntil;
         size_t nextVoice = 0;
     };
 
@@ -84,9 +88,7 @@ private:
     std::unordered_map<std::string, Clip> tutorialVoices_;
     std::unordered_map<std::string, Clip> cues_;
     std::string currentMusic_;
-    std::string pendingMusic_;
     std::string currentVoice_;
-    float musicFadeRemaining_ = 0.0f;
     bool tutorialCheckPending_ = false;
     bool tutorialCheckPlayed_ = false;
     bool engineRequested_ = false;

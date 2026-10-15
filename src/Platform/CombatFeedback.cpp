@@ -39,10 +39,12 @@ bool CombatFeedback::CreateVoices(Clip& clip, size_t count) {
         if (stream == nullptr) {
             return false;
         }
-        clip.voices.push_back(stream);
         if (!SDL_BindAudioStream(audioDevice_, stream)) {
+            SDL_DestroyAudioStream(stream);
             return false;
         }
+        clip.voices.push_back(stream);
+        clip.busyUntil.push_back(0);
     }
     return true;
 }
@@ -112,13 +114,20 @@ bool CombatFeedback::Initialize(const std::filesystem::path& soundDirectory,
                     SDL_DestroyAudioStream(stream);
                 }
                 clip->voices.clear();
+                clip->busyUntil.clear();
             }
             impact_.voices.clear();
+            impact_.busyUntil.clear();
             rocketLaunch_.voices.clear();
+            rocketLaunch_.busyUntil.clear();
             punchSwing_.voices.clear();
+            punchSwing_.busyUntil.clear();
             rocketReconnect_.voices.clear();
+            rocketReconnect_.busyUntil.clear();
             chargeHit_.voices.clear();
+            chargeHit_.busyUntil.clear();
             dodge_.voices.clear();
+            dodge_.busyUntil.clear();
             if (audioDevice_ != 0) {
                 SDL_CloseAudioDevice(audioDevice_);
                 audioDevice_ = 0;
@@ -190,13 +199,22 @@ void CombatFeedback::PlayClip(Clip& clip, float gain) {
     if (audioDevice_ == 0 || clip.voices.empty()) {
         return;
     }
-    size_t selected = clip.nextVoice;
+    size_t selected = clip.voices.size();
+    const Uint64 now = SDL_GetTicksNS();
     for (size_t index = 0; index < clip.voices.size(); ++index) {
         const size_t candidate = (clip.nextVoice + index) % clip.voices.size();
-        if (SDL_GetAudioStreamQueued(clip.voices[candidate]) == 0) {
+        if (now >= clip.busyUntil[candidate] &&
+            SDL_GetAudioStreamQueued(clip.voices[candidate]) == 0) {
             selected = candidate;
             break;
         }
+    }
+    if (selected == clip.voices.size()) {
+        if (!CreateVoices(clip, 1)) {
+            SDL_Log("Could not create overlapping sound stream: %s", SDL_GetError());
+            return;
+        }
+        selected = clip.voices.size() - 1;
     }
     SDL_AudioStream* voice = clip.voices[selected];
     clip.nextVoice = (selected + 1) % clip.voices.size();
@@ -205,6 +223,11 @@ void CombatFeedback::PlayClip(Clip& clip, float gain) {
             static_cast<int>(clip.samples.size())) ||
         !SDL_FlushAudioStream(voice)) {
         SDL_Log("Could not play combat sound: %s", SDL_GetError());
+    } else {
+        const Uint64 frames = clip.samples.size() /
+            static_cast<Uint64>(SDL_AUDIO_FRAMESIZE(clip.spec));
+        clip.busyUntil[selected] = now + frames * 1000000000ULL /
+            static_cast<Uint64>(clip.spec.freq);
     }
 }
 
@@ -306,6 +329,8 @@ void CombatFeedback::StopCue(const std::string& name) {
     if (found == cues_.end()) return;
     for (SDL_AudioStream* voice : found->second.voices)
         SDL_ClearAudioStream(voice);
+    std::fill(found->second.busyUntil.begin(),
+        found->second.busyUntil.end(), 0);
 }
 
 void CombatFeedback::SetCueGain(const std::string& name, float gain) {
@@ -326,10 +351,12 @@ void CombatFeedback::StopBattleAudio() {
             &bossSharpHit_, &bossRiser_, &battleExplosion_}) {
         for (SDL_AudioStream* voice : clip->voices)
             SDL_ClearAudioStream(voice);
+        std::fill(clip->busyUntil.begin(), clip->busyUntil.end(), 0);
     }
     for (auto& [name, clip] : cues_) {
         for (SDL_AudioStream* voice : clip.voices)
             SDL_ClearAudioStream(voice);
+        std::fill(clip.busyUntil.begin(), clip.busyUntil.end(), 0);
     }
     engineRequested_ = false;
     engineFadeRemaining_ = 0.0f;
@@ -351,8 +378,46 @@ bool CombatFeedback::IsEngineLoopQueued() const {
         SDL_GetAudioStreamQueued(found->second.voices.front()) > 0;
 }
 
+size_t CombatFeedback::GetAllocatedBattleVoiceCount() const {
+    size_t count = 0;
+    for (const Clip* clip : {&impact_, &rocketLaunch_, &punchSwing_,
+            &rocketReconnect_, &chargeHit_, &dodge_, &bossChangeMode_,
+            &bossSharpHit_, &bossRiser_, &battleExplosion_})
+        count += clip->voices.size();
+    for (const auto& [name, clip] : cues_)
+        count += clip.voices.size();
+    return count;
+}
+
+size_t CombatFeedback::GetQueuedBattleVoiceCount() const {
+    size_t count = 0;
+    for (const Clip* clip : {&impact_, &rocketLaunch_, &punchSwing_,
+            &rocketReconnect_, &chargeHit_, &dodge_, &bossChangeMode_,
+            &bossSharpHit_, &bossRiser_, &battleExplosion_}) {
+        for (SDL_AudioStream* voice : clip->voices)
+            count += SDL_GetAudioStreamQueued(voice) > 0 ? 1 : 0;
+    }
+    for (const auto& [name, clip] : cues_) {
+        for (SDL_AudioStream* voice : clip.voices)
+            count += SDL_GetAudioStreamQueued(voice) > 0 ? 1 : 0;
+    }
+    return count;
+}
+
 void CombatFeedback::PlayBattleEvent(BattleFeedbackEvent event) {
     switch (event) {
+    case BattleFeedbackEvent::PunchSwing:
+        PlayPunchSwing();
+        break;
+    case BattleFeedbackEvent::RocketReconnect:
+        PlayRocketReconnect();
+        break;
+    case BattleFeedbackEvent::PunchImpact:
+        PlayPunchHit();
+        break;
+    case BattleFeedbackEvent::RocketImpact:
+        PlayRocketHit();
+        break;
     case BattleFeedbackEvent::EnemyDefeated:
         PlayClip(impact_, 0.9f);
         Rumble(config_.punchRumbleLow, config_.punchRumbleHigh,
@@ -373,10 +438,10 @@ void CombatFeedback::PlayBattleEvent(BattleFeedbackEvent event) {
         PlayCue("missileLaunch");
         break;
     case BattleFeedbackEvent::BossNeedlePoseChanged:
-        PlayClip(bossChangeMode_, config_.battleCueGain);
+        PlayClip(bossChangeMode_, config_.bossModeChangeGain);
         break;
     case BattleFeedbackEvent::BossCrystalLaunched:
-        PlayClip(bossRiser_, config_.battleCueGain);
+        PlayClip(bossRiser_, config_.bossCrystalRiserGain);
         break;
     case BattleFeedbackEvent::BossDamaged:
         PlayClip(impact_, config_.rocketImpactGain);
@@ -420,6 +485,13 @@ void CombatFeedback::PlayBattleEvent(BattleFeedbackEvent event) {
     case BattleFeedbackEvent::ProjectileExploded:
         PlayCue("projectileExplosion");
         break;
+    case BattleFeedbackEvent::ShieldedProjectileExploded:
+        PlayClip(cues_.at("projectileExplosion"),
+            config_.shieldedProjectileExplosionGain);
+        break;
+    case BattleFeedbackEvent::BossSpreadBurstExploded:
+        PlayClip(battleExplosion_, config_.bossSpreadBurstExplosionGain);
+        break;
     }
 }
 
@@ -451,25 +523,37 @@ bool CombatFeedback::InitializeFullGameAudio(
 }
 
 void CombatFeedback::SetMusic(const std::string& name) {
-    if (name == currentMusic_ && pendingMusic_.empty()) return;
+    if (name == currentMusic_) return;
     if (!name.empty() && !music_.contains(name)) return;
-    pendingMusic_ = name;
-    musicFadeRemaining_ = currentMusic_.empty() ? 0.0f : 0.4f;
-    if (name == "elevator" && currentMusic_ != "elevator") {
+    if (!currentMusic_.empty() && audioDevice_ != 0)
+        SDL_ClearAudioStream(music_[currentMusic_].voices.front());
+    if (name == "elevator") {
         tutorialCheckPending_ = false;
         tutorialCheckPlayed_ = false;
     }
+    currentMusic_ = name;
+    if (audioDevice_ != 0 && !currentMusic_.empty())
+        UpdateMusic(0.0f);
+}
+
+bool CombatFeedback::IsMusicQueued(const std::string& name) const {
+    const auto found = music_.find(name);
+    return found != music_.end() && !found->second.voices.empty() &&
+        SDL_GetAudioStreamQueued(found->second.voices.front()) > 0;
 }
 
 void CombatFeedback::PlayTutorialVoice(const std::string& name) {
     const auto found = tutorialVoices_.find(name);
     if (found == tutorialVoices_.end()) return;
     if (!currentVoice_.empty()) {
-        for (SDL_AudioStream* stream : tutorialVoices_[currentVoice_].voices)
+        Clip& previous = tutorialVoices_[currentVoice_];
+        for (SDL_AudioStream* stream : previous.voices)
             SDL_ClearAudioStream(stream);
+        std::fill(previous.busyUntil.begin(), previous.busyUntil.end(), 0);
     }
     currentVoice_ = name;
-    PlayClip(found->second, 0.9f);
+    PlayClip(found->second, name == "personnel.wav"
+        ? config_.tutorialPersonnelGain : 0.9f);
     if (name == "personnel.wav" && !tutorialCheckPlayed_)
         tutorialCheckPending_ = true;
 }
@@ -479,6 +563,8 @@ void CombatFeedback::StopTutorialVoice() {
         found != tutorialVoices_.end()) {
         for (SDL_AudioStream* stream : found->second.voices)
             SDL_ClearAudioStream(stream);
+        std::fill(found->second.busyUntil.begin(),
+            found->second.busyUntil.end(), 0);
     }
     currentVoice_.clear();
     tutorialCheckPending_ = false;
@@ -520,18 +606,6 @@ void CombatFeedback::UpdateMusic(float seconds) {
         tutorialCheckPlayed_ = true;
         PlayTutorialVoice("system/system_check_start.wav");
     }
-    if (musicFadeRemaining_ > 0.0f) {
-        musicFadeRemaining_ = std::max(0.0f, musicFadeRemaining_ - seconds);
-        if (!currentMusic_.empty()) {
-            auto* stream = music_[currentMusic_].voices.front();
-            SDL_SetAudioStreamGain(stream, musicFadeRemaining_ / 0.4f * 0.45f);
-        }
-    }
-    if (musicFadeRemaining_ <= 0.0f && currentMusic_ != pendingMusic_) {
-        if (!currentMusic_.empty())
-            SDL_ClearAudioStream(music_[currentMusic_].voices.front());
-        currentMusic_ = pendingMusic_;
-    }
     if (currentMusic_.empty()) return;
     Clip& clip = music_[currentMusic_];
     SDL_AudioStream* stream = clip.voices.front();
@@ -540,7 +614,7 @@ void CombatFeedback::UpdateMusic(float seconds) {
         : currentMusic_ == "hisAction" ? 0.42f
         : currentMusic_ == "boss" ? 0.48f
         : currentMusic_ == "win" ? 0.50f : 0.45f;
-    if (musicFadeRemaining_ <= 0.0f) SDL_SetAudioStreamGain(stream, gain);
+    SDL_SetAudioStreamGain(stream, gain);
     if (SDL_GetAudioStreamQueued(stream) <=
             static_cast<int>(clip.samples.size() / 4)) {
         if (!SDL_PutAudioStreamData(stream, clip.samples.data(),
@@ -555,11 +629,11 @@ void CombatFeedback::Shutdown() {
         for (auto& [name, clip] : *collection) {
             for (SDL_AudioStream* stream : clip.voices) SDL_DestroyAudioStream(stream);
             clip.voices.clear();
+            clip.busyUntil.clear();
         }
         collection->clear();
     }
     currentMusic_.clear();
-    pendingMusic_.clear();
     currentVoice_.clear();
     tutorialCheckPending_ = false;
     tutorialCheckPlayed_ = false;
@@ -600,14 +674,21 @@ void CombatFeedback::Shutdown() {
             SDL_DestroyAudioStream(stream);
         }
         clip->voices.clear();
+        clip->busyUntil.clear();
         clip->samples.clear();
     }
     impact_.voices.clear();
+    impact_.busyUntil.clear();
     rocketLaunch_.voices.clear();
+    rocketLaunch_.busyUntil.clear();
     punchSwing_.voices.clear();
+    punchSwing_.busyUntil.clear();
     rocketReconnect_.voices.clear();
+    rocketReconnect_.busyUntil.clear();
     chargeHit_.voices.clear();
+    chargeHit_.busyUntil.clear();
     dodge_.voices.clear();
+    dodge_.busyUntil.clear();
     impact_.samples.clear();
     rocketLaunch_.samples.clear();
     punchSwing_.samples.clear();

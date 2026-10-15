@@ -4,7 +4,8 @@
 #include <limits>
 #include <memory>
 
-SDL_GPUTexture* LoadPngTexture(SDL_GPUDevice* device, const char* path) {
+SDL_GPUTexture* LoadPngTexture(SDL_GPUDevice* device, const char* path,
+    SDL_GPUTextureFormat format) {
     if (device == nullptr || path == nullptr || path[0] == '\0') {
         SDL_Log("LoadPngTexture requires a GPU device and a non-empty path");
         return nullptr;
@@ -41,7 +42,7 @@ SDL_GPUTexture* LoadPngTexture(SDL_GPUDevice* device, const char* path) {
 
     SDL_GPUTextureCreateInfo textureInfo{};
     textureInfo.type = SDL_GPU_TEXTURETYPE_2D;
-    textureInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    textureInfo.format = format;
     textureInfo.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
     textureInfo.width = width;
     textureInfo.height = height;
@@ -124,6 +125,7 @@ SDL_GPUTexture* LoadPngTexture(SDL_GPUDevice* device, const char* path) {
         SDL_ReleaseGPUTexture(device, texture);
         return nullptr;
     }
-    SDL_Log("PNG upload submitted: %s (%u x %u, RGBA8)", path, width, height);
+    SDL_Log("PNG upload submitted: %s (%u x %u, RGBA8%s)", path, width, height,
+        format == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB ? " sRGB" : "");
     return texture;
 }

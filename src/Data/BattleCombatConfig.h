@@ -210,6 +210,11 @@ struct BossCombatConfig {
     float spreadWindupDuration = 0.25f;
     float spreadSpinDuration = 0.9f;
     float spreadBurstRadius = 9.5f;
+    float punchKnockbackDistance = 1.75f;
+    float rocketKnockbackDistance = 2.50f;
+    float lightKnockbackDuration = 0.18f;
+    float ultimateStaggerDuration = 0.65f;
+    float ultimateWallImpactPauseDuration = 0.20f;
     float defeatLaunchHorizontalSpeed = 8.0f;
     float defeatLaunchUpwardSpeed = 11.0f;
     float defeatGravity = 9.0f;

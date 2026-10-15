@@ -115,6 +115,7 @@ public:
     const Vector3& GetUltimatePosition() const { return ultimatePosition_; }
     const Vector3& GetPreviousUltimatePosition() const { return previousUltimatePosition_; }
     const Vector3& GetUltimateDirection() const { return ultimateDirection_; }
+    float GetUltimateSpeed() const { return combatConfig_.ultimateSpeed; }
     Vector3 GetUltimateFormationPosition() const;
     float GetUltimateFormationRatio() const;
     float GetUltimateRadius() const { return combatConfig_.ultimateRadius; }

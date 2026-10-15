@@ -164,7 +164,7 @@ int main() {
     cockpit.Update(1.35f);
     BuildFullGameUi(flow, &tutorial, nullptr, player, 0.0, cockpit,
         false, scene, list);
-    const int overlay = FindRectangle(list, 0, 0, 1280, 720, 0.94f);
+    const int overlay = FindRectangle(list, 0, 0, 1280, 720, 0.75f);
     const int base = FindText(list, "BASE HP", 600, 12, 1.2f);
     pass &= Check(overlay >= 0 && base > overlay,
         "Startup blackout is drawn before the enabled HUD");
@@ -389,7 +389,30 @@ int main() {
     pass &= Check(FindRectangle(list, 0, -360, 1280, 720) >= 0 &&
         FindText(list, "BASE HP", 600, 12, 1.2f) < 0,
         "Cinematic curtain suppresses battle HUD");
+    cockpit.Start(CockpitMode::FullStartup);
+    constexpr FlowPhase startupPhases[]{FlowPhase::Tutorial, FlowPhase::Day1,
+        FlowPhase::Day2, FlowPhase::Boss};
+    for (const FlowPhase phase : startupPhases) {
+        flow.phase = phase;
+        flow.presentation = FlowPresentation::Opening;
+        BuildFullGameUi(flow, nullptr, &day1, player, 0.0, cockpit,
+            false, scene, list);
+        const int startupOverlay = FindRectangle(list, 0, 0, 1280, 720,
+            cockpit.GetOverlayAlpha());
+        const int openingCurtain = FindRectangle(list, 0, -360, 1280, 720);
+        pass &= Check(startupOverlay >= 0 && openingCurtain > startupOverlay &&
+            list.GetCommands()[startupOverlay].placement ==
+                UiPlacement::FullViewport &&
+            FindText(list, "COCKPIT INITIALIZATION", 460, 152, 1.2f) < 0,
+            "Opening curtain reveals the startup overlay before checks begin");
+    }
     flow.presentation = FlowPresentation::Normal;
+    BuildFullGameUi(flow, nullptr, &day1, player, 0.0, cockpit,
+        false, scene, list);
+    pass &= Check(FindRectangle(list, 0, 0, 1280, 720,
+            cockpit.GetOverlayAlpha()) >= 0,
+        "Startup overlay keeps the same opacity after the curtain opens");
+    cockpit.Reset();
 
     PlayerCombatConfig quickDodge{};
     quickDodge.dodgeCooldown = 0.0f;

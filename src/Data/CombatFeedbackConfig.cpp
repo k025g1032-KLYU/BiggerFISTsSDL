@@ -22,7 +22,9 @@ constexpr std::array requiredKeys{
     "chargeHitRumbleMs", "dodgeWav", "dodgeGain",
     "ultimateLaunchGain", "dodgeRumbleLow", "dodgeRumbleHigh",
     "dodgeRumbleMs", "bossChangeModeWav", "bossSharpHitWav",
-    "bossRiserWav", "battleExplosionWav", "battleCueGain",
+    "bossRiserWav", "battleExplosionWav", "bossModeChangeGain",
+    "bossCrystalRiserGain", "bossSpreadBurstExplosionGain",
+    "shieldedProjectileExplosionGain", "tutorialPersonnelGain",
     "systemRestartRumbleLow",
     "systemRestartRumbleHigh", "systemRestartRumbleMs",
     "bossSmallExplosionGain", "bossFinalExplosionGain",
@@ -126,7 +128,11 @@ bool LoadCombatFeedbackConfig(const std::filesystem::path& path,
                 key == "rocketLaunchGain" || key == "punchSwingGain" ||
                 key == "rocketReconnectGain" || key == "chargeHitGain" ||
                 key == "dodgeGain" || key == "ultimateLaunchGain" ||
-                key == "battleCueGain" ||
+                key == "bossModeChangeGain" ||
+                key == "bossCrystalRiserGain" ||
+                key == "bossSpreadBurstExplosionGain" ||
+                key == "shieldedProjectileExplosionGain" ||
+                key == "tutorialPersonnelGain" ||
                 key == "bossSmallExplosionGain" ||
                 key == "bossFinalExplosionGain" ||
                 key == "bossSharpShieldHitGain" ||
@@ -147,8 +153,16 @@ bool LoadCombatFeedbackConfig(const std::filesystem::path& path,
                 parsed.dodgeGain = gain;
             } else if (key == "ultimateLaunchGain") {
                 parsed.ultimateLaunchGain = gain;
-            } else if (key == "battleCueGain") {
-                parsed.battleCueGain = gain;
+            } else if (key == "bossModeChangeGain") {
+                parsed.bossModeChangeGain = gain;
+            } else if (key == "bossCrystalRiserGain") {
+                parsed.bossCrystalRiserGain = gain;
+            } else if (key == "bossSpreadBurstExplosionGain") {
+                parsed.bossSpreadBurstExplosionGain = gain;
+            } else if (key == "shieldedProjectileExplosionGain") {
+                parsed.shieldedProjectileExplosionGain = gain;
+            } else if (key == "tutorialPersonnelGain") {
+                parsed.tutorialPersonnelGain = gain;
             } else if (key == "bossSmallExplosionGain") {
                 parsed.bossSmallExplosionGain = gain;
             } else if (key == "bossFinalExplosionGain") {
